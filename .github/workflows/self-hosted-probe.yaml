@@ -1,0 +1,52 @@
+# Self-hosted runner probe (PP-4k0). Temporary: checks, from inside a job, that
+# the Bazzite runner VM serves only Tim's same-repo PRs and cannot reach the LAN,
+# the tailnet, or the host. Not a required check; removed before merge.
+
+name: Self-hosted probe
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Self-hosted probe
+    # The runner VM registers with this run's own label. The supervisor on
+    # Bazzite cancels any other job that asks for a self-hosted runner.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Describe the runner
+        run: |
+          echo "runner: ${RUNNER_NAME} (${RUNNER_ENVIRONMENT})"
+          nproc
+          free -g
+          df -h /
+          docker version --format 'docker {{.Server.Version}}'
+
+      - name: Public internet works
+        run: |
+          curl -fsS -o /dev/null -w 'api.github.com %{http_code}\n' https://api.github.com
+          docker run --rm hello-world | head -3
+
+      - name: Private networks are blocked
+        if: runner.environment == 'self-hosted'
+        run: |
+          open=0
+          for target in 192.168.68.94:22 192.168.68.94:54321 192.168.68.1:80 \
+                        100.87.228.116:22 100.100.100.100:53 10.0.2.2:22 172.16.0.1:80; do
+            if timeout 3 bash -c "echo > /dev/tcp/${target%:*}/${target#*:}" 2>/dev/null; then
+              echo "::error::reached ${target}"
+              open=1
+            else
+              echo "blocked ${target}"
+            fi
+          done
+          exit "$open"
