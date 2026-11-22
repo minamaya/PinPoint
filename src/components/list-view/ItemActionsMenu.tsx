@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { cn } from "~/lib/utils";
+import { markFocusReturn } from "./focus-return";
 import { NameTooltip } from "./NameTooltip";
 
 /** One entry in an item's ⋯ menu: text only (design-bible §26.3). */
@@ -214,6 +215,17 @@ export function ItemActionsMenu({
 }: ItemActionsMenuProps): React.JSX.Element {
   const descriptionId = React.useId();
   const keepFocusRef = React.useRef(false);
+  // The ⋯ button, kept here as well as in the caller's ref, so closing the
+  // menu can mark the focus it hands back (focus-return).
+  const ownTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const setTrigger = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      ownTriggerRef.current = node;
+      if (typeof triggerRef === "function") triggerRef(node);
+      else if (triggerRef) triggerRef.current = node;
+    },
+    [triggerRef]
+  );
   const shown = sections.filter((section) => entriesOf(section).length > 0);
   const ordered = [
     ...shown.filter((section) => !isDestructiveSection(section)),
@@ -235,7 +247,7 @@ export function ItemActionsMenu({
       <NameTooltip label={label} className={triggerClassName}>
         <DropdownMenuTrigger asChild>
           <button
-            ref={triggerRef}
+            ref={setTrigger}
             type="button"
             aria-label={label}
             aria-describedby={describedByIds}
@@ -257,9 +269,13 @@ export function ItemActionsMenu({
       <DropdownMenuContent
         align={align}
         onCloseAutoFocus={(event) => {
-          if (!keepFocusRef.current) return;
-          keepFocusRef.current = false;
-          event.preventDefault();
+          if (keepFocusRef.current) {
+            keepFocusRef.current = false;
+            event.preventDefault();
+            return;
+          }
+          // Radix focuses the button next: a return, not an arrival.
+          markFocusReturn(ownTriggerRef.current);
         }}
       >
         {ordered.map((section, index) => (

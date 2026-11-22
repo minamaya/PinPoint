@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { returnFocusTo } from "./focus-return";
 import { ItemActionsMenu, type ItemMenuSection } from "./ItemActionsMenu";
 
 function labels(menu: HTMLElement): (string | null)[] {
@@ -272,6 +273,42 @@ describe("ItemActionsMenu", () => {
       expect(
         screen.getByRole("button", { name: "Comment actions" })
       ).not.toHaveAttribute("aria-describedby");
+    });
+
+    it("shows the tooltip for focus from nowhere, such as the first Tab after a reload", async () => {
+      render(<ItemActionsMenu label="Comment actions" sections={sections} />);
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      // Nothing had focus, so the focus event has no related target.
+      expect(document.activeElement).toBe(document.body);
+      trigger.focus();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
+
+    it("opens no tooltip for a focus handed back with returnFocusTo, and only that one", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          <ItemActionsMenu label="Comment actions" sections={sections} />
+        </>
+      );
+      const before = screen.getByRole("button", { name: "Before" });
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      returnFocusTo(trigger);
+      expect(trigger).toHaveFocus();
+      await pastTooltipDelay();
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+      // The mark is taken: the next arrival by Tab shows the tooltip.
+      before.focus();
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
     });
   });
 });

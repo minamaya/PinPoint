@@ -8,19 +8,28 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { takeFocusReturn } from "./focus-return";
 
-/** Where focus comes back from when a control's own overlay closes. */
+/** An open overlay that focus can come straight back from. */
 const OVERLAY = '[role="menu"],[role="dialog"],[role="alertdialog"]';
 
 /**
- * Whether focus is returning to the control rather than arriving by Tab:
- * from a menu, sheet, or dialog it opened, or from nowhere (an element
- * that was removed, such as a closed editor, or a programmatic focus).
+ * Whether focus is being handed back to the control rather than arriving
+ * by Tab: marked by whatever handed it back (focus-return), or coming
+ * straight from inside a menu or dialog still on the page. A focus with no
+ * previous element is never taken as a return on its own: it is also the
+ * first Tab after a reload or from the address bar.
  */
 function isReturningFocus(event: React.FocusEvent): boolean {
+  if (event.target instanceof Element && takeFocusReturn(event.target)) {
+    return true;
+  }
   const from = event.relatedTarget;
-  if (!(from instanceof Element) || !from.isConnected) return true;
-  return from.closest(OVERLAY) !== null;
+  return (
+    from instanceof Element &&
+    from.isConnected &&
+    from.closest(OVERLAY) !== null
+  );
 }
 
 /**
@@ -34,9 +43,10 @@ function isReturningFocus(event: React.FocusEvent): boolean {
  * own description (which item a ⋯ belongs to) behind it. On the span, the
  * button keeps exactly its own description.
  *
- * It also stays shut when focus comes back to the button from a menu,
- * sheet, dialog, or editor the button opened; Radix would otherwise open
- * it on that focus. Arriving by Tab and hovering still show it.
+ * It also stays shut when focus is handed back to the button from a menu,
+ * sheet, dialog, or editor the button opened, which the component handing
+ * it back marks (markFocusReturn, returnFocusTo); Radix would otherwise
+ * open it on that focus. Arriving by Tab and hovering still show it.
  */
 export function NameTooltip({
   label,

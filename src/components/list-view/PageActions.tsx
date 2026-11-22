@@ -29,6 +29,7 @@ import {
   type PageActionsPlan,
 } from "~/lib/list-view/overflow";
 import { cn } from "~/lib/utils";
+import { markFocusReturn } from "./focus-return";
 import { NameTooltip } from "./NameTooltip";
 import { useMeasuredWidths } from "./use-measured-widths";
 
@@ -208,27 +209,21 @@ function entryKey(entry: PageMenuEntry): string {
   return entry.key;
 }
 
-/** The entries an action brings into ⋯ when it folds (§3.9). */
+/**
+ * The entries an action brings into ⋯ when it folds (§3.9), with its state:
+ * a running action stays busy and disabled there.
+ */
 function foldedEntriesOf(action: PageAction): readonly PageMenuEntry[] {
   if ("entries" in action) return action.foldedEntries ?? action.entries;
-  if ("href" in action) {
-    return [
-      {
-        key: action.key,
-        label: action.label,
-        testId: action.testId,
-        href: action.href,
-      },
-    ];
-  }
-  return [
-    {
-      key: action.key,
-      label: action.label,
-      testId: action.testId,
-      onSelect: action.onSelect,
-    },
-  ];
+  const base = {
+    key: action.key,
+    label: action.label,
+    busy: action.busy,
+    testId: action.testId,
+  };
+  return "href" in action
+    ? [{ ...base, href: action.href }]
+    : [{ ...base, onSelect: action.onSelect }];
 }
 
 /** ⋯'s only entry as its own button (list-views §3.7). */
@@ -338,7 +333,11 @@ function ActionsSheet({
       <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
         <DrawerTrigger asChild>{trigger}</DrawerTrigger>
       </ActionTooltip>
-      <DrawerContent className="bg-card data-[vaul-drawer-direction=bottom]:max-h-[92dvh] data-[vaul-drawer-direction=bottom]:rounded-t-2xl">
+      <DrawerContent
+        className="bg-card data-[vaul-drawer-direction=bottom]:max-h-[92dvh] data-[vaul-drawer-direction=bottom]:rounded-t-2xl"
+        // The sheet hands focus back to ⋯: a return, not an arrival.
+        onCloseAutoFocus={() => markFocusReturn(opener.current)}
+      >
         <div className="flex shrink-0 items-center gap-1 border-b border-border p-1 pl-4">
           <DrawerTitle className="flex-1 text-lg font-bold">
             {PAGE_ACTIONS_MENU_LABEL}
@@ -472,7 +471,10 @@ function ActionButton({
           </button>
         </DropdownMenuTrigger>
       </ActionTooltip>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={() => markFocusReturn(menuTriggerRef.current)}
+      >
         <MenuEntries sections={[action.entries]} opener={menuTriggerRef} />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -522,7 +524,12 @@ function ActionsMenu({
       <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       </ActionTooltip>
-      <DropdownMenuContent align="end" className="min-w-52">
+      <DropdownMenuContent
+        align="end"
+        className="min-w-52"
+        // Radix focuses ⋯ next: a return, not an arrival.
+        onCloseAutoFocus={() => markFocusReturn(triggerRef.current)}
+      >
         <MenuEntries sections={sections} opener={triggerRef} />
       </DropdownMenuContent>
     </DropdownMenu>

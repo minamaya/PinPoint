@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { NameTooltip } from "~/components/list-view/NameTooltip";
+import { returnFocusTo } from "~/components/list-view/focus-return";
 import { Textarea } from "~/components/ui/textarea";
 import { toast } from "sonner";
 import {
@@ -150,7 +151,8 @@ export function EditableIssueTitle({
   useEffect(() => {
     if (isEditing || !restoreFocusRef.current) return;
     restoreFocusRef.current = false;
-    (isMobile ? menuTriggerRef.current : editButtonRef.current)?.focus();
+    // Marked as a return, so Edit title's tooltip stays shut (NameTooltip).
+    returnFocusTo(isMobile ? menuTriggerRef.current : editButtonRef.current);
   }, [isEditing, isMobile]);
 
   // Tag the current edit session whenever the action returns an error
