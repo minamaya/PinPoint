@@ -23,18 +23,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
 import { useIsMobile } from "~/hooks/use-is-mobile";
 import {
   planPageActions,
   type PageActionsPlan,
 } from "~/lib/list-view/overflow";
 import { cn } from "~/lib/utils";
+import { markFocusReturn } from "./focus-return";
+import { NameTooltip } from "./NameTooltip";
 import { useMeasuredWidths } from "./use-measured-widths";
 
 /**
@@ -189,56 +185,45 @@ function ActionFace({
 /**
  * An icon button's tooltip, its accessible name on desktop (design-bible
  * §26.2). It wraps every face so the button keeps its place in the tree
- * when the face changes, and shows only for an icon face. It goes inside a
- * menu or sheet trigger and forwards that trigger's props, so the trigger's
- * open state stays on the button.
+ * when the face changes, and shows only for an icon face. It goes around a
+ * menu or sheet trigger, never inside it, so neither the tooltip's state
+ * nor its description lands on the button (NameTooltip).
  */
-type ActionTooltipProps = Omit<
-  React.ComponentPropsWithoutRef<typeof TooltipTrigger>,
-  "asChild"
-> & { label: string; face: Face };
-
-const ActionTooltip = React.forwardRef<
-  React.ElementRef<typeof TooltipTrigger>,
-  ActionTooltipProps
->(function ActionTooltip({ label, face, children, ...triggerProps }, ref) {
+function ActionTooltip({
+  label,
+  face,
+  children,
+}: {
+  label: string;
+  face: Face;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild {...triggerProps} ref={ref}>
-        {children}
-      </TooltipTrigger>
-      {face === "icon" ? (
-        <TooltipContent className="max-md:hidden">{label}</TooltipContent>
-      ) : null}
-    </Tooltip>
+    <NameTooltip label={label} show={face === "icon"}>
+      {children}
+    </NameTooltip>
   );
-});
+}
 
 function entryKey(entry: PageMenuEntry): string {
   return entry.key;
 }
 
-/** The entries an action brings into ⋯ when it folds (§3.9). */
+/**
+ * The entries an action brings into ⋯ when it folds (§3.9), with its state:
+ * a running action stays busy and disabled there.
+ */
 function foldedEntriesOf(action: PageAction): readonly PageMenuEntry[] {
   if ("entries" in action) return action.foldedEntries ?? action.entries;
-  if ("href" in action) {
-    return [
-      {
-        key: action.key,
-        label: action.label,
-        testId: action.testId,
-        href: action.href,
-      },
-    ];
-  }
-  return [
-    {
-      key: action.key,
-      label: action.label,
-      testId: action.testId,
-      onSelect: action.onSelect,
-    },
-  ];
+  const base = {
+    key: action.key,
+    label: action.label,
+    busy: action.busy,
+    testId: action.testId,
+  };
+  return "href" in action
+    ? [{ ...base, href: action.href }]
+    : [{ ...base, onSelect: action.onSelect }];
 }
 
 /** ⋯'s only entry as its own button (list-views §3.7). */
@@ -333,18 +318,26 @@ const sheetRowClass =
 /** ⋯ on phones: a sheet of the same entries (list-views §3.10, §12.2). */
 function ActionsSheet({
   trigger,
+  face,
   sections,
   opener,
 }: {
   trigger: React.ReactNode;
+  face: Face;
   sections: readonly (readonly PageMenuEntry[])[];
   opener: React.RefObject<HTMLButtonElement | null>;
 }): React.JSX.Element {
   const [open, setOpen] = React.useState(false);
   return (
     <Drawer direction="bottom" open={open} onOpenChange={setOpen}>
-      <DrawerTrigger asChild>{trigger}</DrawerTrigger>
-      <DrawerContent className="bg-card data-[vaul-drawer-direction=bottom]:max-h-[92dvh] data-[vaul-drawer-direction=bottom]:rounded-t-2xl">
+      <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
+        <DrawerTrigger asChild>{trigger}</DrawerTrigger>
+      </ActionTooltip>
+      <DrawerContent
+        className="bg-card data-[vaul-drawer-direction=bottom]:max-h-[92dvh] data-[vaul-drawer-direction=bottom]:rounded-t-2xl"
+        // The sheet hands focus back to ⋯: a return, not an arrival.
+        onCloseAutoFocus={() => markFocusReturn(opener.current)}
+      >
         <div className="flex shrink-0 items-center gap-1 border-b border-border p-1 pl-4">
           <DrawerTitle className="flex-1 text-lg font-bold">
             {PAGE_ACTIONS_MENU_LABEL}
@@ -460,8 +453,8 @@ function ActionButton({
   }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <ActionTooltip label={action.label} face={face}>
+      <ActionTooltip label={action.label} face={face}>
+        <DropdownMenuTrigger asChild>
           <button
             ref={menuTriggerRef}
             type="button"
@@ -476,9 +469,12 @@ function ActionButton({
               chevron
             />
           </button>
-        </ActionTooltip>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+        </DropdownMenuTrigger>
+      </ActionTooltip>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={() => markFocusReturn(menuTriggerRef.current)}
+      >
         <MenuEntries sections={[action.entries]} opener={menuTriggerRef} />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -498,32 +494,42 @@ function ActionsMenu({
   const isMobile = useIsMobile();
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const trigger = (
-    <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={PAGE_ACTIONS_MENU_LABEL}
-        data-testid="page-actions-menu"
-        className={buttonClass(false, face)}
-      >
-        <ActionFace
-          icon={MoreHorizontal}
-          label={PAGE_ACTIONS_MENU_LABEL}
-          face={face}
-          chevron={false}
-        />
-      </button>
-    </ActionTooltip>
+    <button
+      ref={triggerRef}
+      type="button"
+      aria-label={PAGE_ACTIONS_MENU_LABEL}
+      data-testid="page-actions-menu"
+      className={buttonClass(false, face)}
+    >
+      <ActionFace
+        icon={MoreHorizontal}
+        label={PAGE_ACTIONS_MENU_LABEL}
+        face={face}
+        chevron={false}
+      />
+    </button>
   );
   if (isMobile) {
     return (
-      <ActionsSheet trigger={trigger} sections={sections} opener={triggerRef} />
+      <ActionsSheet
+        trigger={trigger}
+        face={face}
+        sections={sections}
+        opener={triggerRef}
+      />
     );
   }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-52">
+      <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      </ActionTooltip>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-52"
+        // Radix focuses ⋯ next: a return, not an arrival.
+        onCloseAutoFocus={() => markFocusReturn(triggerRef.current)}
+      >
         <MenuEntries sections={sections} opener={triggerRef} />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -618,84 +624,80 @@ export function PageActions({
   if (actions.length === 0 && ownSections.length === 0) return null;
 
   return (
-    // One provider for the page's tooltips, at the app's delay
-    // (ClientProviders), so the actions render anywhere.
-    <TooltipProvider delayDuration={300}>
-      <div
-        ref={containerRef}
-        data-page-actions=""
-        className={cn(
-          // Never narrower than one icon button, so a lone ⋯ always fits.
-          "relative flex min-w-11 flex-1 items-center justify-end gap-2 md:min-w-9",
-          className
-        )}
-      >
-        {shown.map((action) => (
-          <ActionButton key={action.key} action={action} face={face} />
-        ))}
-        {showMore ? <ActionsMenu face={face} sections={sections} /> : null}
+    <div
+      ref={containerRef}
+      data-page-actions=""
+      className={cn(
+        // Never narrower than one icon button, so a lone ⋯ always fits.
+        "relative flex min-w-11 flex-1 items-center justify-end gap-2 md:min-w-9",
+        className
+      )}
+    >
+      {shown.map((action) => (
+        <ActionButton key={action.key} action={action} face={face} />
+      ))}
+      {showMore ? <ActionsMenu face={face} sections={sections} /> : null}
 
-        {/* Each action's width labeled and as an icon, as static faces kept
+      {/* Each action's width labeled and as an icon, as static faces kept
             out of the accessibility tree and clipped so they never widen the
             page (CORE-RESP-002 boundary). */}
-        <div
-          ref={laneRef}
-          aria-hidden="true"
-          className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
+      <div
+        ref={laneRef}
+        aria-hidden="true"
+        className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
+      >
+        {buttons.map((action) => (
+          <React.Fragment key={action.key}>
+            <span
+              data-measure={`${action.key}:labeled`}
+              className={cn(
+                "absolute w-max",
+                buttonClass(action.primary, "labeled")
+              )}
+            >
+              <ActionFace
+                icon={action.icon}
+                label={action.label}
+                face="labeled"
+                chevron={"entries" in action}
+              />
+            </span>
+            <span
+              data-measure={`${action.key}:icon`}
+              className={cn("absolute", buttonClass(action.primary, "icon"))}
+            >
+              <ActionFace
+                icon={action.icon}
+                label={action.label}
+                face="icon"
+                chevron={false}
+              />
+            </span>
+          </React.Fragment>
+        ))}
+        <span
+          data-measure="more:labeled"
+          className={cn("absolute w-max", buttonClass(false, "labeled"))}
         >
-          {buttons.map((action) => (
-            <React.Fragment key={action.key}>
-              <span
-                data-measure={`${action.key}:labeled`}
-                className={cn(
-                  "absolute w-max",
-                  buttonClass(action.primary, "labeled")
-                )}
-              >
-                <ActionFace
-                  icon={action.icon}
-                  label={action.label}
-                  face="labeled"
-                  chevron={"entries" in action}
-                />
-              </span>
-              <span
-                data-measure={`${action.key}:icon`}
-                className={cn("absolute", buttonClass(action.primary, "icon"))}
-              >
-                <ActionFace
-                  icon={action.icon}
-                  label={action.label}
-                  face="icon"
-                  chevron={false}
-                />
-              </span>
-            </React.Fragment>
-          ))}
-          <span
-            data-measure="more:labeled"
-            className={cn("absolute w-max", buttonClass(false, "labeled"))}
-          >
-            <ActionFace
-              icon={MoreHorizontal}
-              label={PAGE_ACTIONS_MENU_LABEL}
-              face="labeled"
-              chevron={false}
-            />
-          </span>
-          <span
-            data-measure="more:icon"
-            className={cn("absolute", buttonClass(false, "icon"))}
-          >
-            <ActionFace
-              icon={MoreHorizontal}
-              label={PAGE_ACTIONS_MENU_LABEL}
-              face="icon"
-              chevron={false}
-            />
-          </span>
-        </div>
+          <ActionFace
+            icon={MoreHorizontal}
+            label={PAGE_ACTIONS_MENU_LABEL}
+            face="labeled"
+            chevron={false}
+          />
+        </span>
+        <span
+          data-measure="more:icon"
+          className={cn("absolute", buttonClass(false, "icon"))}
+        >
+          <ActionFace
+            icon={MoreHorizontal}
+            label={PAGE_ACTIONS_MENU_LABEL}
+            face="icon"
+            chevron={false}
+          />
+        </span>
       </div>
-    </TooltipProvider>
+    </div>
   );
 }

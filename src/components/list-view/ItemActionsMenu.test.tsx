@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { returnFocusTo } from "./focus-return";
 import { ItemActionsMenu, type ItemMenuSection } from "./ItemActionsMenu";
 
 function labels(menu: HTMLElement): (string | null)[] {
@@ -193,5 +194,179 @@ describe("ItemActionsMenu", () => {
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Editor" })).toHaveFocus()
     );
+  });
+
+  describe("tooltip and description", () => {
+    const sections: ItemMenuSection[] = [
+      [{ key: "edit", label: "Edit", onSelect: vi.fn() }],
+    ];
+    /** Past the tooltip's 300ms delay, so a tooltip about to open has. */
+    const pastTooltipDelay = (): Promise<void> =>
+      new Promise((resolve) => setTimeout(resolve, 400));
+
+    it("opens no tooltip when closing the menu returns focus to its button, and keeps its description", async () => {
+      const user = userEvent.setup();
+      render(
+        <ItemActionsMenu
+          label="Section actions"
+          description="the Rubbers section"
+          sections={sections}
+        />
+      );
+      const trigger = screen.getByRole("button", { name: "Section actions" });
+
+      // Closed with Escape: focus comes back to the button.
+      trigger.focus();
+      await user.keyboard("{Enter}");
+      await screen.findByRole("menu");
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(trigger).toHaveFocus());
+      await pastTooltipDelay();
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      expect(trigger).toHaveAccessibleDescription("the Rubbers section");
+
+      // Closed by choosing an entry: the same.
+      await user.keyboard("{Enter}");
+      await user.click(await screen.findByRole("menuitem", { name: "Edit" }));
+      await waitFor(() => expect(trigger).toHaveFocus());
+      await pastTooltipDelay();
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      expect(trigger).toHaveAccessibleDescription("the Rubbers section");
+    });
+
+    it("keeps exactly its own description while the tooltip is open", async () => {
+      const user = userEvent.setup();
+      render(
+        <ItemActionsMenu
+          label="Section actions"
+          description="the Rubbers section"
+          sections={sections}
+        />
+      );
+      const trigger = screen.getByRole("button", { name: "Section actions" });
+      await user.hover(trigger);
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Section actions"
+      );
+      expect(trigger).toHaveAccessibleDescription("the Rubbers section");
+      expect(trigger.getAttribute("aria-describedby")?.split(" ")).toHaveLength(
+        1
+      );
+    });
+
+    it("still shows the tooltip when the button is reached by Tab", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          <ItemActionsMenu label="Comment actions" sections={sections} />
+        </>
+      );
+      screen.getByRole("button", { name: "Before" }).focus();
+      await user.tab();
+      expect(
+        screen.getByRole("button", { name: "Comment actions" })
+      ).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+      expect(
+        screen.getByRole("button", { name: "Comment actions" })
+      ).not.toHaveAttribute("aria-describedby");
+    });
+
+    it("shows the tooltip for focus from nowhere, such as the first Tab after a reload", async () => {
+      render(<ItemActionsMenu label="Comment actions" sections={sections} />);
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      // Nothing had focus, so the focus event has no related target.
+      expect(document.activeElement).toBe(document.body);
+      trigger.focus();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
+
+    it("opens no tooltip for a focus handed back with returnFocusTo, and only that one", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          <ItemActionsMenu label="Comment actions" sections={sections} />
+        </>
+      );
+      const before = screen.getByRole("button", { name: "Before" });
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      returnFocusTo(trigger);
+      expect(trigger).toHaveFocus();
+      await pastTooltipDelay();
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+      // The mark is taken: the next arrival by Tab shows the tooltip.
+      before.focus();
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
+
+    it("shows the tooltip on a Tab arrival after the menu was dismissed by a click outside", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          {/* Non-modal: an outside click dismisses without refocusing ⋯. */}
+          <ItemActionsMenu
+            label="Comment actions"
+            modal={false}
+            sections={sections}
+          />
+        </>
+      );
+      const before = screen.getByRole("button", { name: "Before" });
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      await user.click(trigger);
+      await screen.findByRole("menu");
+      await user.click(before);
+      await waitFor(() =>
+        expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+      );
+      expect(before).toHaveFocus();
+
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
+
+    it("shows the tooltip on a Tab arrival after focus was handed back to a button that already had it", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          <ItemActionsMenu label="Comment actions" sections={sections} />
+        </>
+      );
+      const before = screen.getByRole("button", { name: "Before" });
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      before.focus();
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      // Already focused: no focus event, so no mark may be left behind.
+      returnFocusTo(trigger);
+      await user.tab({ shift: true });
+      expect(before).toHaveFocus();
+      await waitFor(() =>
+        expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+      );
+
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
   });
 });

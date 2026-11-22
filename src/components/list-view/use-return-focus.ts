@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { returnFocusTo } from "./focus-return";
 
 /**
  * Focus return for a dialog a page action opens from state. With no
@@ -31,7 +32,8 @@ export function useReturnFocus(): ReturnFocus {
         // was open) leaves Radix's default in place.
         if (!opener?.isConnected) return;
         event.preventDefault();
-        opener.focus();
+        // Marked, so the opener's tooltip stays shut (NameTooltip).
+        returnFocusTo(opener);
       },
     }),
     []

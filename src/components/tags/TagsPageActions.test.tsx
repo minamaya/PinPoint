@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TagsPageActions } from "./TagsPageActions";
@@ -9,12 +9,18 @@ vi.mock("~/app/(app)/c/tags/actions", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
+/** The page actions in display order, from their accessible names. */
 function controls(): (string | null)[] {
+  const row = document.querySelector("[data-page-actions]");
+  if (!(row instanceof HTMLElement)) return [];
   return [
-    ...document.querySelectorAll(
-      "[data-page-actions] > a, [data-page-actions] > button"
-    ),
-  ].map((element) => element.getAttribute("aria-label"));
+    ...within(row).queryAllByRole("button"),
+    ...within(row).queryAllByRole("link"),
+  ]
+    .sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    )
+    .map((element) => element.getAttribute("aria-label"));
 }
 
 /** The Tags page's actions (spec 11.12–11.14; design-bible §26). */

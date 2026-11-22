@@ -14,13 +14,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { markFocusReturn } from "./focus-return";
+import { NameTooltip } from "./NameTooltip";
 
 /** One entry in an item's ⋯ menu: text only (design-bible §26.3). */
 export type ItemMenuEntry = {
@@ -219,6 +215,22 @@ export function ItemActionsMenu({
 }: ItemActionsMenuProps): React.JSX.Element {
   const descriptionId = React.useId();
   const keepFocusRef = React.useRef(false);
+  // The ⋯ button, kept here as well as in the caller's ref, so closing the
+  // menu can mark the focus it hands back (focus-return).
+  const ownTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  // The caller's ref as of the last commit, read by a callback ref of
+  // stable identity, so an inline callback ref is not detached and
+  // reattached on every render. Updated in an effect, never during render.
+  const callerRef = React.useRef(triggerRef);
+  React.useLayoutEffect(() => {
+    callerRef.current = triggerRef;
+  }, [triggerRef]);
+  const setTrigger = React.useCallback((node: HTMLButtonElement | null) => {
+    ownTriggerRef.current = node;
+    const ref = callerRef.current;
+    if (typeof ref === "function") ref(node);
+    else if (ref) ref.current = node;
+  }, []);
   const shown = sections.filter((section) => entriesOf(section).length > 0);
   const ordered = [
     ...shown.filter((section) => !isDestructiveSection(section)),
@@ -233,58 +245,62 @@ export function ItemActionsMenu({
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <DropdownMenu modal={modal}>
-        <Tooltip>
-          <DropdownMenuTrigger asChild>
-            <TooltipTrigger asChild>
-              <button
-                ref={triggerRef}
-                type="button"
-                aria-label={label}
-                aria-describedby={describedByIds}
-                data-testid={testId}
-                className={cn(triggerClass, triggerClassName)}
-              >
-                <MoreHorizontal
-                  aria-hidden="true"
-                  className="size-[18px] md:size-4"
-                />
-              </button>
-            </TooltipTrigger>
-          </DropdownMenuTrigger>
-          <TooltipContent className="max-md:hidden">{label}</TooltipContent>
-        </Tooltip>
-        {description !== undefined ? (
-          <span id={descriptionId} hidden>
-            {description}
-          </span>
-        ) : null}
-        <DropdownMenuContent
-          align={align}
-          onCloseAutoFocus={(event) => {
-            if (!keepFocusRef.current) return;
+    <DropdownMenu modal={modal}>
+      {/* The tooltip wraps the trigger, so the button's description stays
+            exactly its own and focus coming back on close opens no tooltip
+            (NameTooltip). */}
+      <NameTooltip label={label} className={triggerClassName}>
+        <DropdownMenuTrigger asChild>
+          <button
+            ref={setTrigger}
+            type="button"
+            aria-label={label}
+            aria-describedby={describedByIds}
+            data-testid={testId}
+            className={triggerClass}
+          >
+            <MoreHorizontal
+              aria-hidden="true"
+              className="size-[18px] md:size-4"
+            />
+          </button>
+        </DropdownMenuTrigger>
+      </NameTooltip>
+      {description !== undefined ? (
+        <span id={descriptionId} hidden>
+          {description}
+        </span>
+      ) : null}
+      <DropdownMenuContent
+        align={align}
+        onCloseAutoFocus={(event) => {
+          if (keepFocusRef.current) {
             keepFocusRef.current = false;
             event.preventDefault();
-          }}
-        >
-          {ordered.map((section, index) => (
-            <React.Fragment
-              key={entriesOf(section)
-                .map((e) => e.key)
-                .join("|")}
-            >
-              {index > 0 ? <DropdownMenuSeparator /> : null}
-              {isTitled(section) ? (
-                <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
-              ) : null}
-              {entriesOf(section).map((entry) => (
-                <MenuEntry key={entry.key} entry={entry} onChoose={onChoose} />
-              ))}
-            </React.Fragment>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </TooltipProvider>
+            return;
+          }
+          // Radix refocuses the button right after this, unless the menu was
+          // dismissed by an outside interaction; that focus is a return. A
+          // mark the focus does not take lapses at once (focus-return).
+          markFocusReturn(ownTriggerRef.current);
+        }}
+      >
+        {ordered.map((section, index) => (
+          <React.Fragment
+            key={entriesOf(section)
+              .map((e) => e.key)
+              .join("|")}
+          >
+            {index > 0 ? <DropdownMenuSeparator /> : null}
+            {isTitled(section) ? (
+              <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
+            ) : null}
+            {entriesOf(section).map((entry) => (
+              <MenuEntry key={entry.key} entry={entry} onChoose={onChoose} />
+            ))}
+          </React.Fragment>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

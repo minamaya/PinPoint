@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { ItemActionsMenu } from "~/components/list-view/ItemActionsMenu";
+import { returnFocusTo } from "~/components/list-view/focus-return";
 import { type ProseMirrorDoc } from "~/lib/tiptap/types";
 import { holdKeyboardForUpcomingField } from "~/lib/ios-keyboard";
 import { UnsavedChangesGuard } from "~/hooks/use-unsaved-changes-guard";
@@ -189,13 +190,13 @@ function DeleteCommentDialog({
   commentId,
   isOpen,
   onOpenChange,
-  returnFocusTo,
+  getReturnFocusTarget,
 }: {
   commentId: string;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   /** Where focus goes when the dialog closes without deleting. */
-  returnFocusTo: () => HTMLElement | null;
+  getReturnFocusTarget: () => HTMLElement | null;
 }): React.JSX.Element {
   const [isPending, startTransition] = useTransition();
   // Set once the delete succeeds: the comment (and its ⋯ button) is about to
@@ -225,10 +226,11 @@ function DeleteCommentDialog({
         onCloseAutoFocus={(event) => {
           const target = deletedRef.current
             ? document.getElementById(ACTIVITY_HEADING_ID)
-            : returnFocusTo();
+            : getReturnFocusTarget();
           if (target) {
             event.preventDefault();
-            target.focus();
+            // A return, so the ⋯ button's tooltip stays shut (NameTooltip).
+            returnFocusTo(target);
           }
         }}
       >
@@ -310,8 +312,9 @@ export function CommentShell({
     if (isEditing || !restoreFocusRef.current) return;
     restoreFocusRef.current = false;
     // The shorter body replaces the editor; keep the comment in view without
-    // jumping the page to put the button at an edge.
-    triggerRef.current?.focus({ preventScroll: true });
+    // jumping the page to put the button at an edge. Marked as a return, so
+    // its tooltip stays shut (NameTooltip).
+    returnFocusTo(triggerRef.current, { preventScroll: true });
     articleRef.current?.scrollIntoView({ block: "nearest" });
   }, [isEditing]);
 
@@ -394,7 +397,7 @@ export function CommentShell({
           commentId={commentId}
           isOpen={isDeleteDialogOpen}
           onOpenChange={setIsDeleteDialogOpen}
-          returnFocusTo={() => triggerRef.current}
+          getReturnFocusTarget={() => triggerRef.current}
         />
       ) : null}
     </article>
