@@ -122,8 +122,9 @@ test.describe("Issue List Features", () => {
       .not.toBe("999");
   });
 
-  // Export is an entry in ⋯, the page's only action, at every width
-  // including phones (issues-list §2.3, list-views §5.5).
+  // Export, the page's only action, is its own button rather than ⋯'s
+  // only entry, or "Export to CSV" in ⋯ if the row ever folds it
+  // (issues-list §2.3, list-views §3.7, §5.5).
   test("should export issues to CSV", async ({ page }) => {
     await page.goto("/issues");
 
@@ -133,7 +134,7 @@ test.describe("Issue List Features", () => {
     // Set up download listener before clicking
     const downloadPromise = page.waitForEvent("download");
 
-    await clickPageAction(page, "Export to CSV");
+    await clickPageAction(page, { button: "Export", entry: "Export to CSV" });
 
     // Verify download was triggered
     const download = await downloadPromise;

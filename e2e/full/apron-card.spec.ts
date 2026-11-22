@@ -131,8 +131,12 @@ test.describe("Apron card tab as an editor", () => {
     );
 
     await page.getByRole("button", { name: "Card actions" }).click();
-    await page.getByRole("menuitem", { name: "Delete card…" }).click();
-    await page.getByRole("button", { name: "Delete card" }).click();
+    // Delete only confirms, so it has no "…" (design-bible §26.3).
+    await page.getByRole("menuitem", { name: "Delete card" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete card" })
+      .click();
     await save.click();
     await expect(page.getByText("Cards saved")).toBeVisible();
 

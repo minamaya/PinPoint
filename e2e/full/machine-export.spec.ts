@@ -57,6 +57,9 @@ test.describe("Machine export", () => {
     await page.goto("/m");
     await expect(page.getByRole("heading", { name: "Machines" })).toBeVisible();
     // Their ⋯ still holds Print settings sheets (settings-sheets §2.1).
-    await expectNoPageAction(page, "Export to CSV");
+    await expectNoPageAction(page, {
+      button: "Export",
+      entry: "Export to CSV",
+    });
   });
 });

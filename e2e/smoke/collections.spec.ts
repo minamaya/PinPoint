@@ -131,7 +131,7 @@ test.describe("Personal collections (PP-wqit.1)", () => {
       ).toBeVisible();
       await expect(anonPage).toHaveURL(/\/c\/[^/]+$/);
       await expectNoPageAction(anonPage, "Share");
-      await expectNoPageAction(anonPage, "Edit collection");
+      await expectNoPageAction(anonPage, "Edit collection…");
     } finally {
       await anon.close();
     }
@@ -140,6 +140,6 @@ test.describe("Personal collections (PP-wqit.1)", () => {
     // is permission-based, not URL-based (the token only widens who can read).
     await page.goto(shareUrl);
     await expectPageAction(page, "Share");
-    await expectPageAction(page, "Edit collection");
+    await expectPageAction(page, "Edit collection…");
   });
 });

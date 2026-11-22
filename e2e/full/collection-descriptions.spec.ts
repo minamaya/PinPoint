@@ -55,7 +55,7 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
     await expect(page.getByTestId("collection-description")).toHaveCount(0);
 
     // Write one in the Edit dialog, from Edit collection in ⋯ (4.17).
-    await clickPageAction(page, "Edit collection");
+    await clickPageAction(page, "Edit collection…");
     const dialog = page.getByRole("dialog", { name: "Edit collection" });
     const editor = dialog.getByRole("textbox", { name: "Description" });
     await editor.click();
@@ -102,7 +102,7 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
     }
 
     // Clearing the description removes it.
-    await clickPageAction(page, "Edit collection");
+    await clickPageAction(page, "Edit collection…");
     await dialog.getByRole("textbox", { name: "Description" }).click();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Backspace");

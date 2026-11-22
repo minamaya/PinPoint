@@ -1,7 +1,7 @@
 # PinPoint Non‑Negotiables
 
 **Last Updated**: 2026-11-15
-**Version**: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
+**Version**: 2.15 (CORE-UI-008 added: action buttons and ⋯ menus go through `PageActions` and `ItemActionsMenu` — PP-jb9v.17). Prior: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
 
 > **Canonical catalog**: this document defines the canonical `CORE-*` rules for PinPoint. Portable skills (`.agents/skills/`) and agent context (`AGENTS.md`) cite rules by ID and provide domain/task-specific procedures.
 
@@ -513,7 +513,7 @@
 - **Do:** Use Tailwind utility classes or CSS variables
 - **Don't:** `style={{ marginTop: '10px' }}` (unless dynamic coordinates)
 
-**CORE-UI-007:** Action buttons and ⋯ menus go through the shared components
+**CORE-UI-008:** Action buttons and ⋯ menus go through the shared components
 
 - **Severity:** High
 - **Why:** One look, fold order, and overflow icon across the app (design-bible §26); hand-rolled headers and kebabs drift apart
