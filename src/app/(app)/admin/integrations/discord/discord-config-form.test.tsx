@@ -72,4 +72,24 @@ describe("DiscordConfigForm on the combined page", () => {
       screen.queryByText("Token valid. Bot logs in as @pinpoint-bot.")
     ).not.toBeInTheDocument();
   });
+
+  it("shows plain 'Token valid.' when Discord gives no bot name", async () => {
+    const user = userEvent.setup();
+    validateBotTokenMock.mockResolvedValue({ ok: true });
+    render(
+      <IntegrationsDirtyStateProvider>
+        <DiscordConfigForm guildId="" inviteLink="" hasToken />
+      </IntegrationsDirtyStateProvider>
+    );
+
+    await user.type(screen.getByLabelText(/Bot token/), "some-token");
+    const [validateTokenButton] = screen.getAllByRole("button", {
+      name: "Validate",
+    });
+    if (!validateTokenButton)
+      throw new Error("Validate token button not found");
+    await user.click(validateTokenButton);
+
+    expect(await screen.findByText("Token valid.")).toBeInTheDocument();
+  });
 });

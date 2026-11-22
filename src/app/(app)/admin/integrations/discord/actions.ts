@@ -7,6 +7,7 @@ import { discordIntegrationConfig } from "~/server/db/schema";
 import { createVaultSecret, deleteVaultSecret } from "~/server/db/vault";
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { saveDiscordConfigSchema, validateServerIdSchema } from "./schema";
 import { log } from "~/lib/logger";
 import { reportError } from "~/lib/observability/report-error";
@@ -35,12 +36,42 @@ async function verifyIntegrationsAdmin(): Promise<{ userId: string }> {
 // ─── Validation primitives ─────────────────────────────────────────────
 
 export type ValidateBotTokenResult =
-  | { ok: true; botUsername: string }
+  | { ok: true; botUsername?: string }
   | {
       ok: false;
       reason: "not_configured" | "invalid_token" | "transient";
       status?: number;
     };
+
+/**
+ * Read the display name from a 200 response. The HTTP status already answers
+ * "is the token valid / is the bot in this server", so a body that is not JSON
+ * or lacks the field never fails the probe: it yields no name and is reported
+ * best-effort so it stays visible.
+ */
+async function readDisplayName(
+  res: Response,
+  field: "username" | "name",
+  action: string
+): Promise<string | undefined> {
+  try {
+    const body: unknown = await res.json();
+    const parsed = z.object({ [field]: z.string().min(1) }).safeParse(body);
+    if (parsed.success) return parsed.data[field];
+    reportError(parsed.error, {
+      action,
+      bestEffort: true,
+      problem: `Discord 200 body has no usable "${field}"`,
+    });
+  } catch (error) {
+    reportError(error, {
+      action,
+      bestEffort: true,
+      problem: "Discord 200 body is not JSON",
+    });
+  }
+  return undefined;
+}
 
 async function probeBotToken(token: string): Promise<ValidateBotTokenResult> {
   try {
@@ -61,8 +92,12 @@ async function probeBotToken(token: string): Promise<ValidateBotTokenResult> {
       return { ok: false, reason: "transient" };
     }
     if (res.ok) {
-      const body = (await res.json()) as { username: string };
-      return { ok: true, botUsername: body.username };
+      const botUsername = await readDisplayName(
+        res,
+        "username",
+        "probeBotToken"
+      );
+      return botUsername ? { ok: true, botUsername } : { ok: true };
     }
     if (res.status === 401) {
       return { ok: false, reason: "invalid_token" };
@@ -115,8 +150,12 @@ async function probeServerMembership(
       return { ok: false, reason: "transient" };
     }
     if (res.ok) {
-      const body = (await res.json()) as { name?: string };
-      return body.name ? { ok: true, guildName: body.name } : { ok: true };
+      const guildName = await readDisplayName(
+        res,
+        "name",
+        "probeServerMembership"
+      );
+      return guildName ? { ok: true, guildName } : { ok: true };
     }
     if (res.status === 401) return { ok: false, reason: "invalid_token" };
     if (res.status === 404 || res.status === 403) {
