@@ -310,5 +310,63 @@ describe("ItemActionsMenu", () => {
         "Comment actions"
       );
     });
+
+    it("shows the tooltip on a Tab arrival after the menu was dismissed by a click outside", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          {/* Non-modal: an outside click dismisses without refocusing ⋯. */}
+          <ItemActionsMenu
+            label="Comment actions"
+            modal={false}
+            sections={sections}
+          />
+        </>
+      );
+      const before = screen.getByRole("button", { name: "Before" });
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      await user.click(trigger);
+      await screen.findByRole("menu");
+      await user.click(before);
+      await waitFor(() =>
+        expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+      );
+      expect(before).toHaveFocus();
+
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
+
+    it("shows the tooltip on a Tab arrival after focus was handed back to a button that already had it", async () => {
+      const user = userEvent.setup();
+      render(
+        <>
+          <button type="button">Before</button>
+          <ItemActionsMenu label="Comment actions" sections={sections} />
+        </>
+      );
+      const before = screen.getByRole("button", { name: "Before" });
+      const trigger = screen.getByRole("button", { name: "Comment actions" });
+      before.focus();
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      // Already focused: no focus event, so no mark may be left behind.
+      returnFocusTo(trigger);
+      await user.tab({ shift: true });
+      expect(before).toHaveFocus();
+      await waitFor(() =>
+        expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+      );
+
+      await user.tab();
+      expect(trigger).toHaveFocus();
+      expect(await screen.findByRole("tooltip")).toHaveTextContent(
+        "Comment actions"
+      );
+    });
   });
 });

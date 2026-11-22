@@ -218,14 +218,17 @@ export function ItemActionsMenu({
   // The ⋯ button, kept here as well as in the caller's ref, so closing the
   // menu can mark the focus it hands back (focus-return).
   const ownTriggerRef = React.useRef<HTMLButtonElement | null>(null);
-  const setTrigger = React.useCallback(
-    (node: HTMLButtonElement | null) => {
-      ownTriggerRef.current = node;
-      if (typeof triggerRef === "function") triggerRef(node);
-      else if (triggerRef) triggerRef.current = node;
-    },
-    [triggerRef]
-  );
+  // The caller's ref as of this render, read by a callback ref of stable
+  // identity, so an inline callback ref is not detached and reattached on
+  // every render.
+  const callerRef = React.useRef(triggerRef);
+  callerRef.current = triggerRef;
+  const setTrigger = React.useCallback((node: HTMLButtonElement | null) => {
+    ownTriggerRef.current = node;
+    const ref = callerRef.current;
+    if (typeof ref === "function") ref(node);
+    else if (ref) ref.current = node;
+  }, []);
   const shown = sections.filter((section) => entriesOf(section).length > 0);
   const ordered = [
     ...shown.filter((section) => !isDestructiveSection(section)),
@@ -274,7 +277,9 @@ export function ItemActionsMenu({
             event.preventDefault();
             return;
           }
-          // Radix focuses the button next: a return, not an arrival.
+          // Radix refocuses the button right after this, unless the menu was
+          // dismissed by an outside interaction; that focus is a return. A
+          // mark the focus does not take lapses at once (focus-return).
           markFocusReturn(ownTriggerRef.current);
         }}
       >

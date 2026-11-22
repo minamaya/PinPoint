@@ -21,7 +21,8 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { ItemActionsMenu } from "~/components/list-view/ItemActionsMenu";
-import { markFocusReturn } from "~/components/list-view/focus-return";
+// Aliased: DeleteCommentDialog has its own `returnFocusTo` prop.
+import { returnFocusTo as handFocusBack } from "~/components/list-view/focus-return";
 import { type ProseMirrorDoc } from "~/lib/tiptap/types";
 import { holdKeyboardForUpcomingField } from "~/lib/ios-keyboard";
 import { UnsavedChangesGuard } from "~/hooks/use-unsaved-changes-guard";
@@ -230,8 +231,7 @@ function DeleteCommentDialog({
           if (target) {
             event.preventDefault();
             // A return, so the ⋯ button's tooltip stays shut (NameTooltip).
-            markFocusReturn(target);
-            target.focus();
+            handFocusBack(target);
           }
         }}
       >
@@ -315,8 +315,7 @@ export function CommentShell({
     // The shorter body replaces the editor; keep the comment in view without
     // jumping the page to put the button at an edge. Marked as a return, so
     // its tooltip stays shut (NameTooltip).
-    markFocusReturn(triggerRef.current);
-    triggerRef.current?.focus({ preventScroll: true });
+    handFocusBack(triggerRef.current, { preventScroll: true });
     articleRef.current?.scrollIntoView({ block: "nearest" });
   }, [isEditing]);
 
