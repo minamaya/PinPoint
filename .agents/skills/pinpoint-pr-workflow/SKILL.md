@@ -1,6 +1,6 @@
 ---
 name: pinpoint-pr-workflow
-description: The PR-lifecycle decisions GitHub's native gates do not state — draft-first creation, Tim's UI approval while a draft, marking ready for the automated Claude Review check, adjudicating its findings, and why every push needs fresh CI and review. Also covers the merge on Tim's request (`gh pr merge`, never `--admin`), keeping the branch up to date, the Dependabot lockfile trap, merge escape hatches, post-merge worktree reaping, and GitHub MCP gotchas. Use when committing, opening or updating a PR, monitoring CI or review, addressing review comments, posting screenshots, merging or reporting a PR ready, landing the plane after a merge, or when a GitHub MCP call does something unexpected.
+description: The PR-lifecycle decisions GitHub's native gates do not state — draft-first creation, Tim's UI approval while a draft, marking ready for the automated Claude Review check, adjudicating its findings, and why every push needs fresh CI and review. Also covers the merge on Tim's request (`gh pr merge`, never `--admin`), the merge queue, the Dependabot lockfile trap, merge escape hatches, post-merge worktree reaping, and GitHub MCP gotchas. Use when committing, opening or updating a PR, monitoring CI or review, addressing review comments, posting screenshots, merging or reporting a PR ready, landing the plane after a merge, or when a GitHub MCP call does something unexpected.
 ---
 
 # PinPoint PR Workflow
@@ -220,11 +220,9 @@ When two or more Dependabot PRs that both touch `pnpm-lock.yaml` (or any lockfil
 
 **Why `rebase-strategy: auto` in `.github/dependabot.yml` doesn't save you:** "auto" means Dependabot rebases when _the dependency version_ is out of date, not when _the lockfile region_ has shifted under it. Two independent Dependabot PRs against the same main can both stay "current" by Dependabot's definition while their lockfile diffs collide.
 
-**What the up-to-date rule changes:** the ruleset requires the branch current with `main`, so the second PR must be updated before it can merge, and the duplicate key then fails the `pnpm install --frozen-lockfile` step of that PR's CI (first in `Static checks, unit tests, build`) instead of breaking `main`. A red install step with `ERR_PNPM_BROKEN_LOCKFILE` on an updated Dependabot PR is this trap, not a flake.
+**What the merge queue changes:** the queue tests each PR on top of `main` and the PRs ahead of it, so the duplicate key fails the `pnpm install --frozen-lockfile` step of the second PR's `merge_group` run (first in `Static checks, unit tests, build`) and the queue drops that PR instead of breaking `main`. A red install step with `ERR_PNPM_BROKEN_LOCKFILE` on a queued or updated Dependabot PR is this trap, not a flake.
 
 **Rule:** after the first of two lockfile-touching Dependabot PRs merges, comment `@dependabot rebase` on each remaining one (Dependabot's own command: it regenerates the lockfile against current `main`, which dedupes the entry). `gh pr update-branch <PR>` also brings it current, but a textual merge keeps the duplicate, so prefer the Dependabot rebase for lockfile PRs. Wait for the regenerated PR's CI before reporting it ready.
-
-**Casework:** 2026-05-19 — PRs #1379 and #1381 each added `brace-expansion@5.0.6:` to `packages:` independently. Both merged within ~1 minute, before branches had to be up to date. Main's `Setup Dependencies` broke until a manual dedup of `pnpm-lock.yaml` was bundled into PR #1383.
 
 ---
 
