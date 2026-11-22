@@ -46,7 +46,7 @@ Each inventory reports `memory_stores[]` with a `scope`, plus `context_files[]`,
 
 ## Phase 2 — verify, fanned out to subagents
 
-The corpus is around 48 items. Batch at roughly six per subagent (~8 subagents) and give each batch **end-to-end ownership**, so no two agents need the same context.
+Split the corpus into only as many batches as the verification work needs; each subagent adds its own cost. Give each batch **end-to-end ownership**, so no two agents need the same context.
 
 Each subagent does three things for its batch:
 
