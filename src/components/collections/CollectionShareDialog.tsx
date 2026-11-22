@@ -92,7 +92,8 @@ export function CollectionShareDialog({
   }
 
   return (
-    <Dialog>
+    // Every control here applies at once, so nothing is ever unsaved.
+    <Dialog dirty={false}>
       <DialogTrigger asChild>
         <Button
           variant="outline"

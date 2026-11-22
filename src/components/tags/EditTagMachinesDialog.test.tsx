@@ -112,4 +112,25 @@ describe("EditTagMachinesDialog", () => {
     );
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("confirms before Escape discards a changed selection, and closes at once when clean", async () => {
+    renderDialog();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit machines" })
+    );
+    await userEvent.click(screen.getByLabelText(/Attack from Mars/));
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByText("Discard changes?")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit machines" })
+    );
+    expect(screen.getByLabelText(/Attack from Mars/)).not.toBeChecked();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+  });
 });

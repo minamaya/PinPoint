@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertDialog,
@@ -15,6 +15,7 @@ import {
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -38,10 +39,27 @@ export function TagRenameDialog({
   onOpenChange,
   ...form
 }: RenameDialogProps): React.JSX.Element {
+  const { currentName } = form;
+  const [name, setName] = useState(currentName);
+
+  // Each open starts from the current name.
+  useEffect(() => {
+    if (open) setName(currentName);
+  }, [open, currentName]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dirty={name !== currentName}
+    >
       <DialogContent className="sm:max-w-sm">
-        <RenameForm {...form} onClose={() => onOpenChange(false)} />
+        <RenameForm
+          {...form}
+          name={name}
+          onNameChange={setName}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -51,13 +69,16 @@ function RenameForm({
   title,
   currentName,
   onRename,
+  name,
+  onNameChange,
   onClose,
 }: Omit<RenameDialogProps, "open" | "onOpenChange"> & {
+  name: string;
+  onNameChange: (name: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [name, setName] = useState(currentName);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -86,7 +107,7 @@ function RenameForm({
       <TagNameField
         id={`${id}-name`}
         value={name}
-        onChange={setName}
+        onChange={onNameChange}
         errorId={error === null ? undefined : `${id}-error`}
       />
       {error !== null ? (
@@ -99,9 +120,11 @@ function RenameForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" loading={pending} disabled={name.trim() === ""}>
           Rename
         </Button>

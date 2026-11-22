@@ -63,4 +63,22 @@ describe("AddTagDialog", () => {
       })
     );
   });
+
+  it("confirms before Escape discards a typed name, and closes at once when clean", async () => {
+    render(<AddTagDialog types={[{ id: "loc", name: "Location" }]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Add tag" }));
+    await userEvent.type(screen.getByLabelText(/Name/), "Topper");
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByText("Discard changes?")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Name/)).toHaveValue("Topper");
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await userEvent.click(screen.getByRole("button", { name: "Add tag" }));
+    expect(screen.getByLabelText(/Name/)).toHaveValue("");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+  });
 });

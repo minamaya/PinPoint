@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { CollectionFields } from "~/components/collections/CollectionFields";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -49,6 +50,8 @@ export function CreateCollectionDialog({
     }
   }, [open]);
 
+  const dirty = name !== "" || description !== null || selected.length > 0;
+
   function create(): void {
     setError(null);
     startTransition(async () => {
@@ -66,19 +69,14 @@ export function CreateCollectionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
       <DialogTrigger asChild>
         <Button className="gap-2" data-testid="create-collection-trigger">
           <Plus className="size-4 shrink-0" aria-hidden="true" />
           New collection
         </Button>
       </DialogTrigger>
-      <DialogContent
-        className="sm:max-w-lg"
-        // A stray backdrop click shouldn't discard an in-progress collection —
-        // only Cancel / the X / Esc close it (unsaved-form dismissal guidance).
-        onInteractOutside={(e) => e.preventDefault()}
-      >
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New collection</DialogTitle>
           <DialogDescription>
@@ -104,13 +102,11 @@ export function CreateCollectionDialog({
         )}
 
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
           <Button
             type="button"
             onClick={create}

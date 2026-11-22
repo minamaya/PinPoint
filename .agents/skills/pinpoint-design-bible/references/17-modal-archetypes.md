@@ -4,12 +4,14 @@ FormDialog / ConfirmDialog patterns, sizing, footer layout, and composer surface
 
 ## 17. Modal Archetypes
 
-Two canonical modal patterns. Use shadcn primitives directly; don't extract a composite unless duplication exceeds rule-of-three.
+Two canonical modal patterns, plus one dismissal standard for any modal that holds input. Use shadcn primitives directly; don't extract a composite unless duplication exceeds rule-of-three.
 
 ### FormDialog pattern (create/edit in a modal)
 
+A FormDialog holds input, so it follows the dismissal standard below (`dirty`, Cancel as a `DialogClose`).
+
 ```tsx
-<Dialog open={open} onOpenChange={setOpen}>
+<Dialog open={open} onOpenChange={setOpen} dirty={isDirty}>
   <DialogTrigger asChild>
     <Button variant="outline">Edit</Button>
   </DialogTrigger>
@@ -21,13 +23,44 @@ Two canonical modal patterns. Use shadcn primitives directly; don't extract a co
     <form action={updateMachine} className="space-y-4">
       <!-- fields -->
       <DialogFooter>
-        <Button variant="outline" type="button" onClick={() => setOpen(false)}>Cancel</Button>
+        <DialogClose asChild><Button variant="outline" type="button">Cancel</Button></DialogClose>
         <Button type="submit">Save</Button>
       </DialogFooter>
     </form>
   </DialogContent>
 </Dialog>
 ```
+
+### Dismissal standard (modals that hold input)
+
+Any Dialog, Sheet or Drawer that holds user input follows one standard, built into the primitives and opted into with `dirty` (CORE-UI-008). Never write a per-modal version.
+
+- **Outside clicks do nothing.** Clicking the backdrop never closes the modal.
+- **Unsaved changes are confirmed.** Escape, the close X, Cancel and a swipe-down on a Drawer open "Discard changes?" (AlertDialog archetype below; buttons Keep editing / Discard). With no unsaved changes they close at once.
+- **Closing from code is not guarded.** `setOpen(false)` after a successful save closes without asking.
+
+```tsx
+<Dialog open={open} onOpenChange={setOpen} dirty={name !== initialName}>
+  <DialogContent>
+    ...
+    <DialogFooter>
+      <DialogClose asChild>
+        <Button type="button" variant="outline">
+          Cancel
+        </Button>
+      </DialogClose>
+      <Button type="submit">Save</Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+- Pass `dirty` as a boolean on every render. Compare current state with the value at open, or test "not empty" on a create form. A native form of uncontrolled fields uses `useFormDirty()` (`~/hooks/use-form-dirty`): `dirty` on the root, `{...formProps}` on the `<form>`.
+- Cancel is a `DialogClose` / `SheetClose` / `DrawerClose`, not `onClick={() => setOpen(false)}`, so it passes through the guard.
+- `onDiscard` runs on Discard, before the modal closes. Use it when the draft outlives the modal and is not reset on open (the issue and machine-note composers clear their stored draft there).
+- A modal whose controls save as they are used (a tag picker, a share panel) passes `dirty={false}`: outside clicks still do nothing, and it closes at once.
+- A modal with nothing to type into (a pure confirm, a viewer, a picker that applies each choice at once) is listed in `READ_ONLY_MODALS` in `src/components/ui/modal-dismissal-guard.test.ts` with a reason; the test fails for any other modal that omits `dirty`.
+- The copy is fixed: title "Discard changes?", description "Unsaved changes will be lost.", buttons "Keep editing" and "Discard". `DiscardChangesDialog` renders it, and `useUnsavedChangesGuard` (page navigation) renders the same component.
 
 ### ConfirmDialog pattern (destructive confirmations)
 

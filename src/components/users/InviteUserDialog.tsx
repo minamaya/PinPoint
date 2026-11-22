@@ -7,6 +7,7 @@ import type { OwnerSelectUser } from "~/components/machines/OwnerSelect";
 
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -17,6 +18,7 @@ import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { useFormDirty, type FormDirtyProps } from "~/hooks/use-form-dirty";
 import {
   inviteUser,
   type InviteUserResult,
@@ -33,8 +35,9 @@ export function InviteUserDialog({
   onOpenChange,
   onSuccess,
 }: InviteUserDialogProps): React.JSX.Element {
+  const { dirty, formProps } = useFormDirty();
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={dirty}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Invite New User</DialogTitle>
@@ -49,6 +52,7 @@ export function InviteUserDialog({
          * showing the previous attempt's error.
          */}
         <InviteUserForm
+          formProps={formProps}
           onOpenChange={onOpenChange}
           {...(onSuccess ? { onSuccess } : {})}
         />
@@ -58,9 +62,11 @@ export function InviteUserDialog({
 }
 
 function InviteUserForm({
+  formProps,
   onOpenChange,
   onSuccess,
 }: {
+  formProps: FormDirtyProps;
   onOpenChange: (open: boolean) => void;
   onSuccess?: (userId: string, user: OwnerSelectUser) => void;
 }): React.JSX.Element {
@@ -98,7 +104,7 @@ function InviteUserForm({
   }, [state, onSuccess, onOpenChange]);
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className="space-y-4" {...formProps}>
       {state && !state.ok && (
         <Alert variant="destructive">
           <AlertDescription>{state.message}</AlertDescription>
@@ -182,13 +188,11 @@ function InviteUserForm({
       </div>
 
       <DialogFooter className="pt-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onOpenChange(false)}
-        >
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" loading={isPending}>
           {isPending ? "Inviting..." : "Invite User"}
         </Button>

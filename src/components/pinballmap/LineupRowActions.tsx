@@ -20,6 +20,7 @@ import { ConfirmButton } from "~/components/machines/PinballmapListingControl";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -385,6 +386,7 @@ function LinkEntryDialog({
   return (
     <Dialog
       open={open}
+      dirty={selected !== null}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setSelected(null);
@@ -427,15 +429,11 @@ function LinkEntryDialog({
           </div>
         ) : null}
         <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={() => {
-              setOpen(false);
-            }}
-          >
-            Cancel
-          </Button>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={pending}>
+              Cancel
+            </Button>
+          </DialogClose>
           <Button
             disabled={chosen === null}
             loading={pending}

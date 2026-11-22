@@ -1,13 +1,14 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -22,8 +23,19 @@ import { createTagTypeAction } from "~/app/(app)/c/tags/actions";
 /** "Add tag type" on the tag browse (spec 11.1, 11.12). */
 export function AddTagTypeDialog(): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [exclusive, setExclusive] = useState(false);
+
+  // Each open starts clean.
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setExclusive(false);
+    }
+  }, [open]);
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={name !== "" || exclusive}>
       <DialogTrigger asChild>
         <Button variant="outline" className="gap-2">
           <Plus className="size-4 shrink-0" aria-hidden="true" />
@@ -31,22 +43,33 @@ export function AddTagTypeDialog(): React.JSX.Element {
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
-        {/* Mounts with the content, so each open starts clean. */}
-        <AddTagTypeForm onClose={() => setOpen(false)} />
+        <AddTagTypeForm
+          name={name}
+          onNameChange={setName}
+          exclusive={exclusive}
+          onExclusiveChange={setExclusive}
+          onClose={() => setOpen(false)}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
 function AddTagTypeForm({
+  name,
+  onNameChange,
+  exclusive,
+  onExclusiveChange,
   onClose,
 }: {
+  name: string;
+  onNameChange: (name: string) => void;
+  exclusive: boolean;
+  onExclusiveChange: (exclusive: boolean) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [exclusive, setExclusive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -75,14 +98,14 @@ function AddTagTypeForm({
       <TagNameField
         id={`${id}-name`}
         value={name}
-        onChange={setName}
+        onChange={onNameChange}
         errorId={error === null ? undefined : `${id}-error`}
       />
       <div className="flex items-start gap-3">
         <Checkbox
           id={`${id}-exclusive`}
           checked={exclusive}
-          onCheckedChange={(checked) => setExclusive(checked === true)}
+          onCheckedChange={(checked) => onExclusiveChange(checked === true)}
           aria-describedby={`${id}-exclusive-hint`}
           className="mt-0.5"
         />
@@ -106,9 +129,11 @@ function AddTagTypeForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" loading={pending} disabled={name.trim() === ""}>
           Add tag type
         </Button>

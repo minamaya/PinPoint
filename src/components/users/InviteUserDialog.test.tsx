@@ -35,6 +35,8 @@ describe("InviteUserDialog", () => {
 
     // Cancel closes dialog (Radix unmounts DialogContent)
     await user.click(screen.getByRole("button", { name: /Cancel/i }));
+    // The typed fields are unsaved, so Cancel asks before discarding them.
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
 
     // Reopen — Radix remounts a fresh InviteUserForm
     await user.click(screen.getByRole("button", { name: "Open" }));
@@ -42,5 +44,22 @@ describe("InviteUserDialog", () => {
     expect(screen.getByLabelText(/First Name/i)).toHaveValue("");
     expect(screen.getByLabelText(/Last Name/i)).toHaveValue("");
     expect(screen.getByLabelText(/^Email/)).toHaveValue("");
+  });
+
+  it("asks before closing a typed form and closes an untouched one at once", async () => {
+    const user = userEvent.setup();
+    render(<Wrapper />);
+
+    await user.click(screen.getByRole("button", { name: /Cancel/i }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.type(screen.getByLabelText(/First Name/i), "Typed");
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByRole("alertdialog", { name: "Discard changes?" })
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByLabelText(/First Name/i)).toHaveValue("Typed");
   });
 });

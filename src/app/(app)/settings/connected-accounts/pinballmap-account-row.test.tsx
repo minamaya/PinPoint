@@ -115,10 +115,36 @@ describe("PinballMapAccountRow (pinballmap spec 8.4–8.5)", () => {
     await user.click(screen.getByRole("button", { name: "Link account" }));
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
 
     await user.click(screen.getByRole("button", { name: "Link Pinball Map" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Username or email")).toHaveValue("");
+  });
+
+  it("asks before Escape discards a typed login, and closes at once when untouched", async () => {
+    const user = userEvent.setup();
+    render(<PinballMapAccountRow link={{ status: "not_linked" }} canLink />);
+
+    await user.click(screen.getByRole("button", { name: "Link Pinball Map" }));
+    await user.type(screen.getByLabelText("Username or email"), "ssw");
+    await user.keyboard("{Escape}");
+    expect(screen.getByText("Discard changes?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByLabelText("Username or email")).toHaveValue("ssw");
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(
+      screen.queryByLabelText("Username or email")
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Link Pinball Map" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText("Discard changes?")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Username or email")
+    ).not.toBeInTheDocument();
   });
 
   it("confirms Unlink with the cannot-revoke caveat before calling the action", async () => {

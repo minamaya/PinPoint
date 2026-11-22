@@ -1,13 +1,14 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -28,8 +29,15 @@ import { createSettingsTagAction } from "~/app/(app)/c/settings-tags/actions";
 /** "New settings tag" on the Settings tags page (machine-settings §3.3). */
 export function NewSettingsTagDialog(): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+
+  // Each open starts clean.
+  useEffect(() => {
+    if (open) setName("");
+  }, [open]);
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={name !== ""}>
       <DialogTrigger asChild>
         <Button variant="outline" className="gap-2 max-md:h-11">
           <Plus className="size-4 shrink-0" aria-hidden="true" />
@@ -37,21 +45,27 @@ export function NewSettingsTagDialog(): React.JSX.Element {
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
-        {/* Mounts with the content, so each open starts clean. */}
-        <NewSettingsTagForm onClose={() => setOpen(false)} />
+        <NewSettingsTagForm
+          name={name}
+          onNameChange={setName}
+          onClose={() => setOpen(false)}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
 function NewSettingsTagForm({
+  name,
+  onNameChange,
   onClose,
 }: {
+  name: string;
+  onNameChange: (name: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const length = tagNameLength(normalizeTagName(name));
@@ -92,7 +106,7 @@ function NewSettingsTagForm({
           id={`${id}-name`}
           value={name}
           onChange={(event) => {
-            setName(event.target.value);
+            onNameChange(event.target.value);
             setError(null);
           }}
           required
@@ -123,14 +137,11 @@ function NewSettingsTagForm({
         ) : null}
       </div>
       <DialogFooter>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onClose}
-          className="max-md:h-11"
-        >
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline" className="max-md:h-11">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button
           type="submit"
           loading={pending}

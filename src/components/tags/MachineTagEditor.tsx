@@ -253,7 +253,8 @@ export function MachineTagEditor({
 
   return (
     <>
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      {/* Each tag applies as it is tapped, so there is never a draft to lose. */}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen} dirty={false}>
         <SheetTrigger asChild>
           {/* A full 44px touch target, pulled into the card header's line. */}
           <Button

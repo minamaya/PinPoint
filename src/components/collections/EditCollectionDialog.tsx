@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { CollectionFields } from "~/components/collections/CollectionFields";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -86,6 +87,12 @@ export function EditCollectionDialog({
     }
   }, [open, currentName, currentDescription, currentIds]);
 
+  const dirty =
+    name !== currentName ||
+    description !== currentDescription ||
+    selected.length !== currentIds.length ||
+    selected.some((id) => !currentIds.includes(id));
+
   function save(): void {
     setSaveError(null);
     startSave(async () => {
@@ -114,18 +121,13 @@ export function EditCollectionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
       <DialogTrigger asChild>
         <Button variant="outline" data-testid="collection-edit-trigger">
           Edit collection
         </Button>
       </DialogTrigger>
-      <DialogContent
-        className="sm:max-w-lg"
-        // A stray backdrop click shouldn't discard an in-progress edit — only
-        // Cancel / the X / Esc close it (unsaved-form dismissal guidance).
-        onInteractOutside={(e) => e.preventDefault()}
-      >
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit collection</DialogTitle>
           <DialogDescription>
@@ -226,13 +228,11 @@ export function EditCollectionDialog({
           )}
 
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button
               type="button"
               onClick={save}

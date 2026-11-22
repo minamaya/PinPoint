@@ -1,12 +1,13 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -41,9 +42,23 @@ type AddTagDialogProps =
 
 /** "Add tag" on the tag browse and on a hand-applied type's page (spec 11.3, 11.12). */
 export function AddTagDialog(props: AddTagDialogProps): React.JSX.Element {
+  const initialTypeId = props.type?.id ?? NO_TYPE;
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [typeId, setTypeId] = useState(initialTypeId);
+
+  // Each open starts clean.
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setTypeId(initialTypeId);
+    }
+  }, [open, initialTypeId]);
+
+  const dirty = name !== "" || typeId !== initialTypeId;
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
       <DialogTrigger asChild>
         <Button className="gap-2">
           <Plus className="size-4 shrink-0" aria-hidden="true" />
@@ -51,8 +66,14 @@ export function AddTagDialog(props: AddTagDialogProps): React.JSX.Element {
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
-        {/* Mounts with the content, so each open starts clean. */}
-        <AddTagForm {...props} onClose={() => setOpen(false)} />
+        <AddTagForm
+          {...props}
+          name={name}
+          onNameChange={setName}
+          typeId={typeId}
+          onTypeIdChange={setTypeId}
+          onClose={() => setOpen(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -61,12 +82,20 @@ export function AddTagDialog(props: AddTagDialogProps): React.JSX.Element {
 function AddTagForm({
   types,
   type,
+  name,
+  onNameChange,
+  typeId,
+  onTypeIdChange,
   onClose,
-}: AddTagDialogProps & { onClose: () => void }): React.JSX.Element {
+}: AddTagDialogProps & {
+  name: string;
+  onNameChange: (name: string) => void;
+  typeId: string;
+  onTypeIdChange: (typeId: string) => void;
+  onClose: () => void;
+}): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [typeId, setTypeId] = useState(type?.id ?? NO_TYPE);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -100,13 +129,13 @@ function AddTagForm({
       <TagNameField
         id={`${id}-name`}
         value={name}
-        onChange={setName}
+        onChange={onNameChange}
         errorId={error === null ? undefined : `${id}-error`}
       />
       {types ? (
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-type`}>Tag type</Label>
-          <Select value={typeId} onValueChange={setTypeId}>
+          <Select value={typeId} onValueChange={onTypeIdChange}>
             <SelectTrigger id={`${id}-type`} className="w-full">
               <SelectValue />
             </SelectTrigger>
@@ -131,9 +160,11 @@ function AddTagForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" loading={pending} disabled={name.trim() === ""}>
           Add tag
         </Button>

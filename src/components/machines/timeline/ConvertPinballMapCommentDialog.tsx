@@ -11,6 +11,7 @@ import { SeveritySelect } from "~/components/issues/fields/SeveritySelect";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -65,7 +66,11 @@ export function ConvertPinballMapCommentDialog({
   const severityId = `pbm-convert-severity-${String(conditionId)}`;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dirty={title !== suggestIssueTitle(comment) || severity !== ""}
+    >
       <DialogContent className="max-w-md">
         <form action={formAction} className="flex flex-col gap-4">
           <DialogHeader>
@@ -111,15 +116,11 @@ export function ConvertPinballMapCommentDialog({
             </p>
           ) : null}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                onOpenChange(false);
-              }}
-            >
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button
               type="submit"
               disabled={isPending || severity === "" || title.trim() === ""}

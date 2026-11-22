@@ -95,6 +95,8 @@ export function RowEditSheet({
   return (
     <Sheet
       open={open}
+      // Every edit saves as it is made, so there is never anything to discard.
+      dirty={false}
       onOpenChange={(next) => {
         if (!next) onClose?.();
         onOpenChange(next);
