@@ -770,13 +770,16 @@ describe("validateBotToken", () => {
     expect(await validateBotToken(fd)).toEqual({ ok: true });
   });
 
-  it("returns ok:true without a name when the 200 body is not JSON", async () => {
+  it("returns transient when the 200 body is not JSON", async () => {
     vi.mocked(getDiscordTokenForAdmin).mockResolvedValue(VALID_TOKEN);
     mockFetch(() => new Response("<html>", { status: 200 }));
 
     const fd = new FormData();
     fd.set("newToken", "");
-    expect(await validateBotToken(fd)).toEqual({ ok: true });
+    expect(await validateBotToken(fd)).toEqual({
+      ok: false,
+      reason: "transient",
+    });
     expect(reportError).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: "probeBotToken", bestEffort: true })
@@ -899,13 +902,16 @@ describe("validateServerId", () => {
     expect(await validateServerId(fd)).toEqual({ ok: true });
   });
 
-  it("returns ok:true without a guild name when the 200 body is not JSON", async () => {
+  it("returns transient when the 200 body is not JSON", async () => {
     mockFetch(() => new Response("<html>", { status: 200 }));
 
     const fd = new FormData();
     fd.set("guildId", "123456789012345678");
     fd.set("newToken", VALID_TOKEN);
-    expect(await validateServerId(fd)).toEqual({ ok: true });
+    expect(await validateServerId(fd)).toEqual({
+      ok: false,
+      reason: "transient",
+    });
     expect(reportError).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

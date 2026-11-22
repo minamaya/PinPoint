@@ -44,32 +44,35 @@ export type ValidateBotTokenResult =
     };
 
 /**
- * Read the display name from a 200 response. The HTTP status already answers
- * "is the token valid / is the bot in this server", so a body that is not JSON
- * or lacks the field never fails the probe: it yields no name and is reported
- * best-effort so it stays visible.
+ * Read the display name from a 200 response. A 200 only proves the token or
+ * server when Discord itself answered, so a body that is not JSON (a captive
+ * portal or proxy page) returns `null` and the probe reports `transient`. A
+ * JSON body without a usable name is still Discord's answer: it yields
+ * `undefined` (no name) and the probe stays ok. Both are reported best-effort.
  */
 async function readDisplayName(
   res: Response,
   field: "username" | "name",
   action: string
-): Promise<string | undefined> {
+): Promise<string | undefined | null> {
+  let body: unknown;
   try {
-    const body: unknown = await res.json();
-    const parsed = z.object({ [field]: z.string().min(1) }).safeParse(body);
-    if (parsed.success) return parsed.data[field];
-    reportError(parsed.error, {
-      action,
-      bestEffort: true,
-      problem: `Discord 200 body has no usable "${field}"`,
-    });
+    body = await res.json();
   } catch (error) {
     reportError(error, {
       action,
       bestEffort: true,
       problem: "Discord 200 body is not JSON",
     });
+    return null;
   }
+  const parsed = z.object({ [field]: z.string().min(1) }).safeParse(body);
+  if (parsed.success) return parsed.data[field];
+  reportError(parsed.error, {
+    action,
+    bestEffort: true,
+    problem: `Discord 200 body has no usable "${field}"`,
+  });
   return undefined;
 }
 
@@ -97,6 +100,7 @@ async function probeBotToken(token: string): Promise<ValidateBotTokenResult> {
         "username",
         "probeBotToken"
       );
+      if (botUsername === null) return { ok: false, reason: "transient" };
       return botUsername ? { ok: true, botUsername } : { ok: true };
     }
     if (res.status === 401) {
@@ -155,6 +159,7 @@ async function probeServerMembership(
         "name",
         "probeServerMembership"
       );
+      if (guildName === null) return { ok: false, reason: "transient" };
       return guildName ? { ok: true, guildName } : { ok: true };
     }
     if (res.status === 401) return { ok: false, reason: "invalid_token" };
