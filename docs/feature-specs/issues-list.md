@@ -98,6 +98,7 @@
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
 | 3.9, 3.10 | Line 2 drops the priority pill and the assignee's initials before the machine name truncates, and the name never disappears. | Issue row machine-name PR (follows this spec change). |
+| 4.3, 4.9, 7.1 | There are no Machine tag or Machine collection Secondary Filters and no `tag` or `collection` parameters; the Secondary Filters are Created, Updated, Frequency, Machine owner, Reporter, and Watching. | PP-wqit.15 |
 | 2.3, 2.4 | Issues has no page actions; Export sits in the desktop List Header on `/issues` and on every Issues tab, and phones offer no Export. | PP-jb9v.17 |
 
 ---

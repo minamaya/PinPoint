@@ -131,6 +131,7 @@
 
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
+| §3.12, §4.1 | The Primary Filters are Presence, Playability, Issue severity, and Owner; there are no Tag or Collection filters and no `tag` or `collection` parameters. | PP-wqit.15 |
 | §6.6–§6.8 | `/m` shows Pinball Map, a Print menu, and a filled Add Machine as separate buttons with no ⋯; nothing folds. | PP-jb9v.17 |
 
 ---

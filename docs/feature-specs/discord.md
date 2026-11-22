@@ -65,7 +65,8 @@ The card uses the credential-entry pattern: fields, a Save that validates and re
 | :-- | :-- | :-- |
 | §2.3 save validates and records | An enabled save is rejected on a failed probe rather than recording it | Always persist and write the outcome to status (PP-o355.51.5) |
 | §2.4 one Test connection | Two per-field Validate buttons; results held in client state, lost on reload | Collapse to Save-validates + a stored-config Test connection (PP-o355.51.5) |
-| §3 stored status | `bot_health_status` / `last_bot_check_at` are only reset to their default values; production never records a successful or failed check | Wire the write path; widen the enum (rejected vs unreachable) (PP-o355.51.5) |
+| §3 stored status | `bot_health_status` / `last_bot_check_at` are only reset to their default values; production never records a successful or failed check, and the Discord card neither loads nor shows a connection status | Wire the write path and the card's status display; widen the enum (rejected vs unreachable) (PP-o355.51.5) |
+| §2.2 on when validated | The integration is on whenever a server ID and a bot token are on file; no validation outcome is consulted | Gate on the stored validation outcome (PP-o355.51.5) |
 | §3.3 traffic updates status | `sendDm` 401s classified for the send result but never persisted to config health | On a 401, write Not working (PP-eps) |
 | §2.5 invite-link inline check | Validated on save (`schema.ts`: URL regex, max 512); no as-you-type check | Add the inline/as-you-type check (PP-o355.51.5) |
 
