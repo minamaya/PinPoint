@@ -96,6 +96,21 @@ def test_serves_tims_same_repo_pr_run_on_its_own_label(label_suffix):
     assert supervisor.refusal(run, _job([f"pinpoint-run-100{label_suffix}"])) is None
 
 
+@pytest.mark.parametrize(
+    "queued_by", ["timothyfroehlich", "github-merge-queue[bot]", "another-maintainer"]
+)
+def test_serves_merge_queue_run_whoever_queued_it(queued_by):
+    # ci.yml routes every merge-queue run while the lease is fresh, so refusing
+    # one here would cancel it and drop its PR from the queue.
+    run = _run(
+        event="merge_group",
+        branch="gh-readonly-queue/main/pr-2629-583ef9e",
+        actor=queued_by,
+    )
+    assert supervisor.candidate(run)
+    assert supervisor.refusal(run, _job(["pinpoint-run-100-l"])) is None
+
+
 def test_serves_merge_queue_run():
     run = _run(event="merge_group", branch="gh-readonly-queue/main/pr-2629-583ef9e")
     assert supervisor.refusal(run, _job(["pinpoint-run-100-l"])) is None
@@ -190,6 +205,12 @@ def test_ci_job_routes_by_lease_and_fails_over(job):
         "vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp" in runs_on
     )
     assert "vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at" in runs_on
+    # The PR branch must apply the supervisor's actor check, or the supervisor
+    # cancels a run ci.yml sent it.
+    assert "github.actor == 'timothyfroehlich'" in runs_on
+    assert "github.triggering_actor == 'timothyfroehlich'" in runs_on
+    # The lease is UTC; an offset event time would compare wrongly as a string.
+    assert "endsWith(github.event.merge_group.head_commit.timestamp, 'Z')" in runs_on
     assert (
         "github.event.pull_request.head.repo.full_name == github.repository" in runs_on
     )

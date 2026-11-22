@@ -160,9 +160,12 @@ def candidate(run, actor: str = ALLOWED_ACTOR) -> bool:
     """A run that may hold jobs for this machine: a merge-queue run or Tim's own PR run."""
     if (run.get("head_repository") or {}).get("full_name") != FULL:
         return False
-    if (run.get("actor") or {}).get("login") != actor:
-        return False
-    return is_queue_run(run) or run["event"] == "pull_request"
+    if is_queue_run(run):
+        return True
+    return (
+        run["event"] == "pull_request"
+        and (run.get("actor") or {}).get("login") == actor
+    )
 
 
 def wants_us(job) -> bool:
@@ -178,10 +181,14 @@ def refusal(run, job, actor: str = ALLOWED_ACTOR) -> str | None:
     head = (run.get("head_repository") or {}).get("full_name")
     if head != FULL:
         return f"head repo {head}"
-    for who in ("actor", "triggering_actor"):
-        login = (run.get(who) or {}).get("login")
-        if login != actor:
-            return f"{who} {login}"
+    # A merge-queue run carries whoever queued it (auto-merge, another
+    # maintainer); every PR in it was already approved to merge, so ci.yml routes
+    # it regardless and so does this. A PR run must be Tim's, as ci.yml checks.
+    if not is_queue_run(run):
+        for who in ("actor", "triggering_actor"):
+            login = (run.get(who) or {}).get("login")
+            if login != actor:
+                return f"{who} {login}"
     own = f"{LABEL_PREFIX}{run['id']}"
     if job["labels"] not in ([own], [own + HEAVY_SUFFIX]):
         return f"labels {job['labels']}"
@@ -248,22 +255,24 @@ def set_lease(value: str, var: str = LEASE_VAR) -> None:
     if stored == "0" and last_lease.get(var, ("",))[0] == "0":
         return
     try:
-        api(
-            "PATCH",
-            f"/repos/{FULL}/actions/variables/{var}",
-            {"name": var, "value": stored},
-        )
-        last_lease[var] = (stored, time.time())
-    except urllib.error.HTTPError as err:
-        if err.code == 404:
+        try:
+            api(
+                "PATCH",
+                f"/repos/{FULL}/actions/variables/{var}",
+                {"name": var, "value": stored},
+            )
+        except urllib.error.HTTPError as err:
+            if err.code != 404:
+                raise
             api(
                 "POST",
                 f"/repos/{FULL}/actions/variables",
                 {"name": var, "value": stored},
             )
-            last_lease[var] = (stored, time.time())
-        else:
-            log(f"{var} write: HTTP {err.code}")
+        last_lease[var] = (stored, time.time())
+    except (urllib.error.URLError, OSError) as err:
+        # Never fatal: an unwritten lease lapses on its own within 90 seconds.
+        log(f"{var} write failed: {err}")
 
 
 def clear_leases() -> None:
@@ -274,8 +283,8 @@ def clear_leases() -> None:
 def cancel(run_id: int) -> None:
     try:
         api("POST", f"/repos/{FULL}/actions/runs/{run_id}/cancel")
-    except urllib.error.HTTPError as err:
-        log(f"cancel {run_id}: HTTP {err.code}")
+    except (urllib.error.URLError, OSError) as err:
+        log(f"cancel {run_id}: {err}")
 
 
 def delete_runner(runner_id: int) -> None:
@@ -301,6 +310,14 @@ def idle_and_unneeded(vm) -> bool:
 
 def run_completed(run_id: int) -> bool:
     return api("GET", f"/repos/{FULL}/actions/runs/{run_id}")["status"] == "completed"
+
+
+def completed_or_unknown(run_id: int) -> bool:
+    """For shutdown: an unreachable API counts as done, so the wait cannot stall."""
+    try:
+        return run_completed(run_id)
+    except (urllib.error.URLError, OSError):
+        return True
 
 
 # --- VMs --------------------------------------------------------------------
@@ -521,25 +538,27 @@ def shutdown_now() -> None:
     deadline = time.time() + 75
     pending = set(runs)
     while pending and time.time() < deadline:
-        pending = {r for r in pending if not run_completed(r)}
+        pending = {r for r in pending if not completed_or_unknown(r)}
         if pending:
             time.sleep(3)
     reap(force=True)
+    # Shutdown must reach the end even with GitHub unreachable: each step below
+    # is best effort, and the watchdog workflow recovers anything left over.
     for run_id in pending:
         try:
             api("POST", f"/repos/{FULL}/actions/runs/{run_id}/force-cancel")
-        except urllib.error.HTTPError as err:
-            log(f"force-cancel {run_id}: HTTP {err.code}")
+        except (urllib.error.URLError, OSError) as err:
+            log(f"force-cancel {run_id}: {err}")
     for run_id in runs:
-        run = runs[run_id] or api("GET", f"/repos/{FULL}/actions/runs/{run_id}")
-        if is_queue_run(run):
-            log(f"cancelled merge-queue run {run_id}; its PR left the queue")
-            continue
         try:
+            run = runs[run_id] or api("GET", f"/repos/{FULL}/actions/runs/{run_id}")
+            if is_queue_run(run):
+                log(f"cancelled merge-queue run {run_id}; its PR left the queue")
+                continue
             api("POST", f"/repos/{FULL}/actions/runs/{run_id}/rerun-failed-jobs")
             log(f"re-ran {run_id} on GitHub-hosted runners")
-        except urllib.error.HTTPError as err:
-            log(f"rerun {run_id}: HTTP {err.code}")
+        except (urllib.error.URLError, OSError) as err:
+            log(f"rerun {run_id}: {err}")
 
 
 def on_term(*_):

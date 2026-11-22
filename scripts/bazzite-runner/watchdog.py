@@ -85,6 +85,20 @@ def api(method: str, path: str):
         return json.loads(raw) if raw else None
 
 
+def try_api(method: str, path: str) -> None:
+    try:
+        api(method, path)
+    except urllib.error.HTTPError as err:
+        print(f"{method} {path}: HTTP {err.code}")
+
+
+def completed(run_id: int) -> bool:
+    try:
+        return api("GET", f"/actions/runs/{run_id}")["status"] == "completed"
+    except urllib.error.HTTPError:
+        return True
+
+
 def main() -> int:
     now = datetime.now(timezone.utc)
     lease = os.environ.get("BAZZITE_LEASE", "0")
@@ -109,22 +123,20 @@ def main() -> int:
         print("nothing stranded")
         return 0
 
+    # One run's API error (a run that finished meanwhile answers 409) must not
+    # stop the others from being recovered.
     for run_id, run in runs.items():
         print(
             f"cancelling stranded run {run_id} ({run['event']} on {run['head_branch']})"
         )
-        api("POST", f"/actions/runs/{run_id}/cancel")
+        try_api("POST", f"/actions/runs/{run_id}/cancel")
     deadline = time.time() + 120
     pending = set(runs)
     while pending and time.time() < deadline:
         time.sleep(5)
-        pending = {
-            r
-            for r in pending
-            if api("GET", f"/actions/runs/{r}")["status"] != "completed"
-        }
+        pending = {r for r in pending if not completed(r)}
     for run_id in pending:
-        api("POST", f"/actions/runs/{run_id}/force-cancel")
+        try_api("POST", f"/actions/runs/{run_id}/force-cancel")
 
     failed = 0
     for run_id, run in runs.items():
