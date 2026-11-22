@@ -2,7 +2,7 @@
  * E2E Tests for Issue Machine Reassignment (PP-3hb)
  *
  * Verifies the "Move to another machine" action on the issue detail page —
- * the header's Move button from `md` up, the ⋯ "Issue actions" menu below
+ * the header's Move button from `md` up, the ⋯ "More" menu below
  * it. NN #11 — every clickable element gets clicked in an E2E test.
  */
 

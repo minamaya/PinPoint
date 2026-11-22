@@ -182,11 +182,10 @@
 | §4.2 | The header still shows a summary line under the title: machine count, operational, need service, and unplayable counts, and open issues. | PP-jb9v.18 |
 | §4.8 | A Collection's header has no breadcrumb. | PP-jb9v.18 |
 | §4.9 | A tag's breadcrumb always sits on its own line above the title, never inline before it. | PP-jb9v.18 |
-| §4.10 | The page actions sit in the title row, wrapping onto their own row when they do not fit beside the title, not at the right end of the tab row. | PP-jb9v.18 |
+| §4.10 | The page actions sit in the title row, not at the right end of the tab row. | PP-jb9v.18 |
 | §4.11 | The description always sits between the title and the tabs, never beside the title. | PP-jb9v.18 |
 | §4.12 | The description clamps to three lines at every width, and Show more is a separate control below the text rather than inline at the end of its last line. | PP-jb9v.18 |
 | §4.13 | The header's spacing does not tighten below 390px. | PP-jb9v.18 |
-| 4.14–4.18 | A Collection shows a Settings sheets link, Share (owner), and Edit collection as separate buttons; a tag shows a Settings sheets link, Edit machines, and a ⋯ of Rename, Move, Merge, and Delete; tags have no Share, Delete collection sits inside the Edit collection dialog, the Issues tab's Export sits in the List Header, and nothing folds. | PP-jb9v.17 |
 
 ---
 

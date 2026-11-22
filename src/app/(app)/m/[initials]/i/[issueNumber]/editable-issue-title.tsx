@@ -10,6 +10,10 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { ArrowLeftRight, Loader2, MoreHorizontal, Pencil } from "lucide-react";
+import {
+  PAGE_ACTIONS_MENU_LABEL,
+  pageActionClassName,
+} from "~/components/list-view/PageActions";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -17,6 +21,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { NameTooltip } from "~/components/list-view/NameTooltip";
+import { returnFocusTo } from "~/components/list-view/focus-return";
 import { Textarea } from "~/components/ui/textarea";
 import { toast } from "sonner";
 import {
@@ -145,7 +151,8 @@ export function EditableIssueTitle({
   useEffect(() => {
     if (isEditing || !restoreFocusRef.current) return;
     restoreFocusRef.current = false;
-    (isMobile ? menuTriggerRef.current : editButtonRef.current)?.focus();
+    // Marked as a return, so Edit title's tooltip stays shut (NameTooltip).
+    returnFocusTo(isMobile ? menuTriggerRef.current : editButtonRef.current);
   }, [isEditing, isMobile]);
 
   // Tag the current edit session whenever the action returns an error
@@ -389,21 +396,25 @@ export function EditableIssueTitle({
         <div className="min-w-0 flex-1">{eyebrow}</div>
         {hasActions ? (
           <>
-            {/* Mobile: both actions behind one ⋯ menu. Non-modal, so it
-                doesn't pull focus back into itself when Edit title moves
-                focus to the field. */}
+            {/* Mobile: both actions behind the page's ⋯ More menu, a
+                borderless 44px button (design-bible §26.2, §26.3). A
+                dropdown rather than the phone sheet other pages use, and
+                non-modal, so it doesn't pull focus back into itself when
+                Edit title moves focus to the field. */}
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <Button
+                <button
                   ref={menuTriggerRef}
-                  variant="ghost"
-                  size="icon"
-                  className="-my-2.5 -mr-2 size-11 shrink-0 text-muted-foreground hover:text-foreground md:hidden"
-                  aria-label="Issue actions"
+                  type="button"
+                  className={cn(
+                    pageActionClassName("icon"),
+                    "-my-2.5 -mr-2 md:hidden"
+                  )}
+                  aria-label={PAGE_ACTIONS_MENU_LABEL}
                   data-testid="issue-actions-menu-trigger"
                 >
-                  <MoreHorizontal className="size-5" aria-hidden="true" />
-                </Button>
+                  <MoreHorizontal className="size-[18px]" aria-hidden="true" />
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
@@ -429,7 +440,6 @@ export function EditableIssueTitle({
                       inputRef.current?.focus();
                     }}
                   >
-                    <Pencil className="size-4" aria-hidden="true" />
                     Edit title
                   </DropdownMenuItem>
                 ) : null}
@@ -442,7 +452,6 @@ export function EditableIssueTitle({
                     }}
                     data-testid="issue-actions-menu-reassign"
                   >
-                    <ArrowLeftRight className="size-4" aria-hidden="true" />
                     Move to another machine
                   </DropdownMenuItem>
                 ) : null}
@@ -457,7 +466,9 @@ export function EditableIssueTitle({
       ) : (
         <div className="flex items-start gap-1">
           {heading}
-          {/* Desktop: Edit title and a labeled Move button (spec §4.3, §4.5). */}
+          {/* Desktop: Edit title, a borderless icon button with a tooltip,
+              and a labeled outlined Move button beside the title they edit
+              (spec §4.3, §4.5; design-bible §26.1, §26.2). */}
           <div
             className={
               hasActions
@@ -466,31 +477,33 @@ export function EditableIssueTitle({
             }
           >
             {canEdit ? (
-              <Button
-                ref={editButtonRef}
-                variant="ghost"
-                size="icon"
-                className="size-9 text-muted-foreground hover:text-foreground"
-                onClick={() => setIsEditing(true)}
-                aria-label="Edit title"
-                data-testid="issue-edit-title"
-              >
-                <Pencil className="size-4" aria-hidden="true" />
-              </Button>
+              // No tooltip when focus comes back from the closed editor, and
+              // none joins the button's description (NameTooltip).
+              <NameTooltip label="Edit title">
+                <button
+                  ref={editButtonRef}
+                  type="button"
+                  className={pageActionClassName("icon")}
+                  onClick={() => setIsEditing(true)}
+                  aria-label="Edit title"
+                  data-testid="issue-edit-title"
+                >
+                  <Pencil className="size-4" aria-hidden="true" />
+                </button>
+              </NameTooltip>
             ) : null}
             {move ? (
-              <Button
+              <button
                 ref={moveButtonRef}
                 type="button"
-                variant="outline"
-                className="h-9 gap-2 px-3"
+                className={pageActionClassName("labeled")}
                 onClick={() => setMoveOpen(true)}
                 aria-label="Move to another machine"
                 data-testid="issue-move-button"
               >
                 <ArrowLeftRight className="size-4" aria-hidden="true" />
                 Move
-              </Button>
+              </button>
             ) : null}
           </div>
         </div>
