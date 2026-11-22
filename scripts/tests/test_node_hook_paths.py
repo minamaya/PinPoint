@@ -125,6 +125,19 @@ def test_all_expected_node_hooks_are_wired() -> None:
     assert not missing, f"expected node hook(s) not found in settings.json: {missing}"
 
 
+def test_pre_tool_use_guards_block_when_the_hook_itself_fails() -> None:
+    """A PreToolUse guard that cannot start, times out, or crashes must refuse
+    the tool call. Claude Code's default lets the call through, which is how a
+    broken guard goes silently inert."""
+    settings = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    handlers = [h for entry in settings["hooks"]["PreToolUse"] for h in entry["hooks"]]
+    assert handlers, "expected at least one PreToolUse guard"
+    failing_open = [h["command"] for h in handlers if h.get("onFailure") != "block"]
+    assert not failing_open, (
+        f"PreToolUse guards without onFailure=block: {failing_open}"
+    )
+
+
 @pytest.mark.parametrize("command", NODE_HOOK_COMMANDS, ids=lambda c: c.split("/")[-1])
 def test_node_hook_command_is_anchored_to_project_dir(command: str) -> None:
     """Every node hook command must resolve its script path via
