@@ -14,8 +14,11 @@
 // Those are properties of the server — see scripts/sql/verify-readonly-role.sql,
 // which is run against the target database itself.
 //
-// Every URL fixture points at `localhost:1` (connection refused instantly), so a
-// case that reaches the connect step fails fast rather than hanging — and the
+// Every URL fixture points at `localhost:1` with connect_timeout=1 (refused
+// instantly on macOS and CI; a host that drops packets to closed loopback ports,
+// as the Bazzite crabbox runner did until 2026-11-22, is ended by the one-second
+// timeout — PP-wdhf6),
+// so a case that reaches the connect step fails fast rather than hanging — and the
 // "production" fixture keeps the prod project ref in the USERNAME while pointing
 // the host at localhost, so `isPinPointProductionTarget` still fires but nothing
 // ever dials the real production endpoint (that would be a CORE-TEST-006
@@ -36,8 +39,9 @@ const VERIFY_SQL = "scripts/sql/verify-readonly-role.sql";
 // Production project ref in the username, host pinned to localhost:1 — reads as
 // production to isPinPointProductionTarget, connects to nothing reachable.
 const PROD_LIKE_URL =
-  "postgres://pinpoint_readonly.udhesuizjsgxfeotqybn:sup3rs3cret@localhost:1/postgres";
-const LOCAL_URL = "postgres://postgres:pw@localhost:1/postgres";
+  "postgres://pinpoint_readonly.udhesuizjsgxfeotqybn:sup3rs3cret@localhost:1/postgres?connect_timeout=1";
+const LOCAL_URL =
+  "postgres://postgres:pw@localhost:1/postgres?connect_timeout=1";
 
 interface RunResult {
   status: number;
@@ -49,7 +53,7 @@ function run(env: Record<string, string>, argv: string[] = []): RunResult {
   const result = spawnSync("node", [path.join(repoRoot, SCRIPT), ...argv], {
     encoding: "utf8",
     cwd: repoRoot,
-    // A blackholed host must not wedge the worker: localhost:1 refuses in
+    // A blackholed host must not wedge the worker: localhost:1 fails in
     // microseconds, but the timeout is the backstop if a fixture is ever wrong.
     timeout: 20_000,
     // Clean slate: an ambient POSTGRES_URL must not decide these outcomes.

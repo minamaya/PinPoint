@@ -53,7 +53,7 @@ See AGENTS.md §5 "Which tests to run" — canonical, don't duplicate here.
 
 PinPoint E2E tests run in parallel against a **shared database**.
 
-**YOU MUST PREVENT CROSSTALK.**
+Keep each test's data apart from every other worker's:
 
 1.  **Unique Data**: Never assume the DB is empty. Always create your own unique data.
 2.  **Unique Users**: Do not share `admin@test.com` across parallel tests if those tests modify global state (e.g., settings, notifications).
@@ -92,7 +92,7 @@ The three required PR E2E jobs each run a single project against their own datab
 
 **Always-disabled rules** (hard-coded, with reasons in the source): `aria-prohibited-attr` (Tiptap `contenteditable` editor), `nested-interactive` (Radix/shadcn accordion + collapsible triggers), and `scrollable-region-focusable` (the skip-to-main `tabindex="-1"` content container). `options.ignore` adds further rule ids to disable (deduped with the defaults) — reach for it only to suppress a framework-level false positive you have confirmed, never to hide a real app violation.
 
-**When to call it:** when you are already writing a smoke spec for a page-level or redesigned-UI surface, add a scan on its primary rendered state — after the content is visible (an opened modal/menu counts). Don't spin up a new spec just to host a scan; fold it into the journey you're already testing (see the pre-flight checklist above). It is currently used across the `e2e/smoke/` specs as the bare `assertNoA11yViolations(page)` — no caller passes `ignore`. To re-derive real usage rather than trust a frozen count, `rg -c 'assertNoA11yViolations\(page' e2e/smoke/` (at this writing: 26 calls across 14 smoke specs), and `rg 'assertNoA11yViolations\(page, \{' e2e/` to find any `ignore` overrides.
+**When to call it:** when you are already writing a smoke spec for a page-level or redesigned-UI surface, add a scan on its primary rendered state — after the content is visible (an opened modal/menu counts). Don't spin up a new spec just to host a scan; fold it into the journey you're already testing (see the pre-flight checklist above). It is currently used across the `e2e/smoke/` specs as the bare `assertNoA11yViolations(page)` — no caller passes `ignore`. To re-derive real usage rather than trust a frozen count, `rg -c 'assertNoA11yViolations\(page' e2e/smoke/`, and `rg 'assertNoA11yViolations\(page, \{' e2e/` to find any `ignore` overrides.
 
 ## References
 

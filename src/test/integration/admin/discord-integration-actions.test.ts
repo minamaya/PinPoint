@@ -746,7 +746,31 @@ describe("validateBotToken", () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("returns transient when a 200 response body is not JSON", async () => {
+  it("returns ok:true without a name when the 200 body has no username", async () => {
+    vi.mocked(getDiscordTokenForAdmin).mockResolvedValue(VALID_TOKEN);
+    mockFetch(() => new Response("{}", { status: 200 }));
+
+    const fd = new FormData();
+    fd.set("newToken", "");
+    expect(await validateBotToken(fd)).toEqual({ ok: true });
+    expect(reportError).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "probeBotToken", bestEffort: true })
+    );
+  });
+
+  it("returns ok:true without a name when the 200 username is not a string", async () => {
+    vi.mocked(getDiscordTokenForAdmin).mockResolvedValue(VALID_TOKEN);
+    mockFetch(
+      () => new Response(JSON.stringify({ username: 42 }), { status: 200 })
+    );
+
+    const fd = new FormData();
+    fd.set("newToken", "");
+    expect(await validateBotToken(fd)).toEqual({ ok: true });
+  });
+
+  it("returns transient when the 200 body is not JSON", async () => {
     vi.mocked(getDiscordTokenForAdmin).mockResolvedValue(VALID_TOKEN);
     mockFetch(() => new Response("<html>", { status: 200 }));
 
@@ -756,10 +780,38 @@ describe("validateBotToken", () => {
       ok: false,
       reason: "transient",
     });
+    expect(reportError).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "probeBotToken", bestEffort: true })
+    );
+  });
+
+  it("returns transient with the HTTP status when Discord returns a 403", async () => {
+    vi.mocked(getDiscordTokenForAdmin).mockResolvedValue(VALID_TOKEN);
+    mockFetch(() => new Response("{}", { status: 403 }));
+
+    const fd = new FormData();
+    fd.set("newToken", "");
+    expect(await validateBotToken(fd)).toEqual({
+      ok: false,
+      reason: "transient",
+      status: 403,
+    });
+  });
+
+  it("returns transient with the HTTP status when Discord returns a 404", async () => {
+    vi.mocked(getDiscordTokenForAdmin).mockResolvedValue(VALID_TOKEN);
+    mockFetch(() => new Response("{}", { status: 404 }));
+
+    const fd = new FormData();
+    fd.set("newToken", "");
+    expect(await validateBotToken(fd)).toEqual({
+      ok: false,
+      reason: "transient",
+      status: 404,
+    });
   });
 });
-
-// ── validateServerId ──────────────────────────────────────────────────────────
 
 describe("validateServerId", () => {
   it("returns ok:true with guildName when bot is in the server", async () => {
@@ -848,6 +900,25 @@ describe("validateServerId", () => {
     fd.set("guildId", "123456789012345678");
     fd.set("newToken", VALID_TOKEN);
     expect(await validateServerId(fd)).toEqual({ ok: true });
+  });
+
+  it("returns transient when the 200 body is not JSON", async () => {
+    mockFetch(() => new Response("<html>", { status: 200 }));
+
+    const fd = new FormData();
+    fd.set("guildId", "123456789012345678");
+    fd.set("newToken", VALID_TOKEN);
+    expect(await validateServerId(fd)).toEqual({
+      ok: false,
+      reason: "transient",
+    });
+    expect(reportError).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "probeServerMembership",
+        bestEffort: true,
+      })
+    );
   });
 
   it("returns transient with the HTTP status when Discord returns a 5xx", async () => {

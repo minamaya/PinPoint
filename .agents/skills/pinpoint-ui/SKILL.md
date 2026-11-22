@@ -135,7 +135,7 @@ A controlled native `<select value="X">` whose `value` does not match any `<opti
 
 This combines disastrously with localStorage-backed drafts: if the saved ID references a record that has since been deleted (or that belongs to a different tenant after a session change), restoration silently puts the form into a state where the dropdown shows — and submits — the alphabetically-first record. The Zod `uuid()` schema and any "does this id exist?" server checks both pass, because the submitted UUID _is_ a valid record. The user never sees an error, and an entity is created against the wrong target.
 
-**Mitigation** (apply when restoring an option-ID from localStorage or any other side channel): validate the restored ID against the live options list before writing it into state, and add a defense-in-depth effect that clears the selection whenever the current value is absent from the list. Regression coverage lives at `src/app/(app)/report/select-fallback.test.tsx` (JSDOM unit test pinning the HTML behavior) and `e2e/full/report-stale-machine.spec.ts` (seeds a stale draft, asserts an empty placeholder and a refusal to submit).
+**Mitigation** (apply when restoring an option-ID from localStorage or any other side channel): validate the restored ID against the live options list before writing it into state, and add a defense-in-depth effect that clears the selection whenever the current value is absent from the list. Regression coverage lives at `src/app/(app)/report/select-fallback.test.tsx` (JSDOM unit test pinning the HTML behavior) and `src/app/(app)/report/unified-report-form.test.tsx` (a stale draft machine id disables submit and clears the hidden input).
 
 **Better long term**: replace native `<select>` with the project's shadcn `Select` for any field whose options come from a list that can change between sessions — the command-palette pattern surfaces "no match" instead of silently picking the first option.
 
@@ -173,7 +173,7 @@ Native reset clears the form's DOM state; explicit `setState` clears React's vie
 
 **Edge cases**: preserve URL-derived defaults across reset (`?machine=MM` → reset to `defaultMachineId ?? ""`, not `""`); clear localStorage drafts in the same effect and make the save-draft effect short-circuit on success so it doesn't race the reset; for a child that owns its own selection state (like `OwnerSelect`), bump a `key` to remount it.
 
-**E2E coverage**: every CREATE form needs at least one assertion that, after a successful submit, every field reads back empty/placeholder. For forms that navigate away, submit → wait for redirect → navigate back → assert empty. See `e2e/full/form-resets.spec.ts`.
+**Test coverage**: every CREATE form needs at least one test that, after a successful submit, every field reads back empty/placeholder. Form-state lifecycle is bug class C, so its home is an RTL unit test beside the form (`pinpoint-testing` § Bug Classes): see `src/app/(app)/m/new/create-machine-form.test.tsx`, `src/app/(app)/report/unified-report-form.test.tsx`, and `src/components/users/InviteUserDialog.test.tsx`.
 
 ### Unsaved changes navigation guard (PP-kny4)
 

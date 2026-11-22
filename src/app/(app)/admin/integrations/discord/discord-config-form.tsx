@@ -132,7 +132,7 @@ export function DiscordConfigForm({
       const fd = new FormData();
       fd.set("newToken", tokenInput);
       const result = await validateBotToken(fd);
-      setTokenStatus(toValidationState(result));
+      setTokenStatus(toTokenValidationState(result));
     });
   }
 
@@ -143,7 +143,7 @@ export function DiscordConfigForm({
       fd.set("guildId", guildIdInput);
       fd.set("newToken", tokenInput);
       const result = await validateServerId(fd);
-      setServerStatus(toValidationState(result));
+      setServerStatus(toServerValidationState(result));
     });
   }
 
@@ -360,19 +360,36 @@ export function DiscordConfigForm({
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function toValidationState(
-  result: ValidateBotTokenResult | ValidateServerIdResult
+function toTokenValidationState(
+  result: ValidateBotTokenResult
 ): ValidationState {
   if (result.ok) {
-    if ("botUsername" in result) {
-      return {
-        kind: "valid",
-        message: `Token valid. Bot logs in as @${result.botUsername}.`,
-      };
-    }
+    return {
+      kind: "valid",
+      message: result.botUsername
+        ? `Token valid. Bot logs in as @${result.botUsername}.`
+        : "Token valid.",
+    };
+  }
+  return toInvalidState(result);
+}
+
+function toServerValidationState(
+  result: ValidateServerIdResult
+): ValidationState {
+  if (result.ok) {
     const where = result.guildName ? `“${result.guildName}”` : "this server";
     return { kind: "valid", message: `Bot has access to ${where}.` };
   }
+  return toInvalidState(result);
+}
+
+function toInvalidState(
+  result: Extract<
+    ValidateBotTokenResult | ValidateServerIdResult,
+    { ok: false }
+  >
+): ValidationState {
   let message: string;
   switch (result.reason) {
     case "invalid_token":
