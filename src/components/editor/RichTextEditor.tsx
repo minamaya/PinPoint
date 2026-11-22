@@ -17,7 +17,10 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Mention from "@tiptap/extension-mention";
 import Placeholder from "@tiptap/extension-placeholder";
-import tippy, { type Instance as TippyInstance } from "tippy.js";
+import {
+  openFloatingPanel,
+  type FloatingPanelHandle,
+} from "~/components/ui/floating-panel";
 import { searchMentionableUsers } from "~/app/(app)/mentions/actions";
 import { MentionList, type MentionListRef } from "./MentionList";
 import { EditorToolbar } from "./EditorToolbar";
@@ -126,7 +129,10 @@ export const RichTextEditor = forwardRef<
             items: ({ query }) => searchMentionableUsers(query),
             render: () => {
               let component: ReactRenderer<MentionListRef> | undefined;
-              let popup: TippyInstance[] | undefined;
+              let panel: FloatingPanelHandle | undefined;
+              // Tiptap hands over a fresh `clientRect` on every update; the
+              // panel reads whichever is current when it places itself.
+              let currentRect: (() => DOMRect | null) | undefined;
 
               return {
                 onStart: (props) => {
@@ -139,45 +145,45 @@ export const RichTextEditor = forwardRef<
                     return;
                   }
 
-                  const clientRect = props.clientRect as () => DOMRect;
-
-                  popup = tippy("body", {
-                    getReferenceClientRect: clientRect,
-                    appendTo: () => document.body,
-                    content: component.element,
-                    showOnCreate: true,
-                    interactive: true,
-                    trigger: "manual",
-                    placement: "bottom-start",
+                  currentRect = props.clientRect;
+                  // The shared floating panel owns placement and the open and
+                  // close motion (CORE-UI-007).
+                  panel = openFloatingPanel({
+                    element: component.element,
+                    getAnchorRect: () => currentRect?.() ?? null,
+                    contextElement: props.editor.view.dom,
                   });
                 },
 
                 onUpdate(props) {
                   component?.updateProps(props);
 
-                  if (!props.clientRect || !popup?.[0]) {
+                  if (!props.clientRect || !component) {
                     return;
                   }
 
-                  const clientRect = props.clientRect as () => DOMRect;
-
-                  popup[0].setProps({
-                    getReferenceClientRect: clientRect,
-                  });
+                  currentRect = props.clientRect;
+                  panel?.reposition();
                 },
 
+                // Escape needs no handling here: the suggestion plugin calls
+                // `onExit` itself when it sees the key.
                 onKeyDown(props) {
-                  if (props.event.key === "Escape") {
-                    popup?.[0]?.hide();
-                    return true;
-                  }
-
                   return component?.ref?.onKeyDown(props) ?? false;
                 },
 
                 onExit() {
-                  popup?.[0]?.destroy();
-                  component?.destroy();
+                  const closing = component;
+                  const closingPanel = panel;
+                  component = undefined;
+                  panel = undefined;
+                  currentRect = undefined;
+                  // Keep the React tree alive until the fade-out finishes.
+                  if (closingPanel) {
+                    closingPanel.close(() => closing?.destroy());
+                  } else {
+                    closing?.destroy();
+                  }
                 },
               };
             },
