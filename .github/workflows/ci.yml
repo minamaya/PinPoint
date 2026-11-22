@@ -76,7 +76,12 @@ jobs:
   # still ran the full E2E suite).
   changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     outputs:
       code: ${{ steps.set-code.outputs.code }}
       deps: ${{ steps.base.outputs.force == 'true' && 'true' || steps.deps-filter.outputs.deps }}
@@ -197,7 +202,12 @@ jobs:
   # type-checked, linted and unit-tested.
   static:
     name: Static checks, unit tests, build
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Harden Runner
@@ -268,7 +278,12 @@ jobs:
   # wait and setup).
   linters:
     name: Fast Linters
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # ratchet:step-security/harden-runner@v2.22.3
@@ -378,7 +393,12 @@ jobs:
   # PGlite integration tests, plus `pnpm audit` when the lockfile changed.
   test-integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     needs: changes
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true'
     steps:
@@ -498,7 +518,12 @@ jobs:
   # ==============================================================================
   test-e2e-smoke:
     name: E2E Smoke Tests (Chromium, Mobile Chrome)
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     if: >-
       ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
       && (needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true') }}
@@ -562,7 +587,12 @@ jobs:
 
   test-e2e-full-chromium:
     name: E2E Full Tests (Chromium), Supabase integration
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     if: >-
       ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
       && (needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true') }}
@@ -659,7 +689,12 @@ jobs:
     # job is skipped on every PR, where a matrix expression in the name would
     # show unexpanded.
     name: E2E Comprehensive Tests (Post-Merge)
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     # Explicit code/deps guard mirrors the two PR E2E siblings. It is the
     # only thing keeping this job off docs-only main pushes: like them it
     # needs only `changes`, so no skipped upstream job cascades a skip. (PP-x0ke.)
@@ -864,7 +899,12 @@ jobs:
       - test-e2e-smoke
       - test-e2e-full-chromium
       - test-e2e-comprehensive
-    runs-on: ubuntu-latest
+    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
+    runs-on: >-
+      ${{ vars.SELF_HOSTED == 'on'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # ratchet:step-security/harden-runner@v2.22.3
