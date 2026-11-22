@@ -9,6 +9,11 @@
 - **Summary Widgets Side by Side** — The summary widgets above a list now sit in one row at every width and drop off the right when they don't fit, instead of collapsing into a stack you had to expand
 - **Search in the Phone Header** — On a phone, search now lives in the list's sticky header between the views button and Filters, and the pager sits directly below the list instead of floating above the tab bar. On a very narrow screen the search field becomes a magnifier button
 - **Pill View Tabs and More Filters** — A list's view tabs are now pills with the one you're on filled in, the filter overflow is named More filters, and its badge counts only the filters you've changed from the page's defaults. A filter that's set now reads "Status: Open"
+- **Menus and Dialogs Animate Again** — Menus, dialogs, popovers, tooltips, sheets, and hover cards fade or slide open and closed again instead of snapping in and out. They still follow your device's reduced-motion setting
+
+### Improvements
+
+- The password strength meter keeps the same ratings but words its suggestions differently — a very common password now reads "This is a commonly used password." and the advice is to "Add more words that are less common."
 
 ### Bug Fixes
 
@@ -16,6 +21,7 @@
 - Saving a brand-new settings set without naming it said it worked and then threw the set away. It now tells you a set name is required, marks the name field, and saves as soon as you give it one — and leaving the page warns you first
 - The "(edited)" marker on a machine timeline comment was too faint to read against the card behind it; it now matches the rest of the line
 - Controls whose spoken label didn't start with the words printed on them — the user menu among them — now read their visible text first, so voice control and screen readers match what you see
+- Typing @ to mention someone in a comment on a phone no longer leaves a stray copy of the suggestion list in the top-left corner of the page
 
 ---
 
