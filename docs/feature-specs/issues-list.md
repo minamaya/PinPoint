@@ -95,7 +95,9 @@
 
 ## Known divergences (code vs spec)
 
-_None — the current implementation matches this spec._
+| Requirement | Divergence | Resolution |
+| :-- | :-- | :-- |
+| 4.3, 4.9, 7.1 | There are no Machine tag or Machine collection Secondary Filters and no `tag` or `collection` parameters; the Secondary Filters are Created, Updated, Frequency, Machine owner, Reporter, and Watching. | PP-wqit.15 |
 
 ---
 
