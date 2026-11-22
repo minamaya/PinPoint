@@ -1,0 +1,29 @@
+[Unit]
+Description=Ephemeral KVM GitHub runners for minamaya/PinPoint (PP-4k0)
+Requires=ghrunner-egress.service
+After=ghrunner-egress.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=ghrunner
+Group=ghrunner
+EnvironmentFile=-/etc/ghrunner/app/env
+LoadCredential=token:/etc/ghrunner/token
+ExecStart=/usr/bin/python3 -u /etc/ghrunner/app/supervisor.py
+StateDirectory=ghrunner
+KillMode=mixed
+TimeoutStopSec=180
+# Not enabled at boot: `ci-runner on|off` starts and stops it.
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+ProtectHome=tmpfs
+BindReadOnlyPaths=/var/home/linuxbrew:/home/linuxbrew
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CPUQuota=800%
+MemoryMax=40G
+Nice=10
