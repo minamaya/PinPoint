@@ -178,6 +178,7 @@
 
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
+| §12.1–§12.6 | Neither the Machines list nor the Issues list offers a Tag or a Collection filter. | PP-wqit.15 |
 | §4.2 | The header still shows a summary line under the title: machine count, operational, need service, and unplayable counts, and open issues. | PP-jb9v.18 |
 | §4.8 | A Collection's header has no breadcrumb. | PP-jb9v.18 |
 | §4.9 | A tag's breadcrumb always sits on its own line above the title, never inline before it. | PP-jb9v.18 |

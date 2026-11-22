@@ -127,7 +127,7 @@
 | Requirement | Current implementation gap |
 | :-- | :-- |
 | §13.4 | The print-queue count shows on the Print menu button in the Machines page header, not inside a ⋯ More menu (PP-jb9v.17). |
-| §3.1, §3.2, §3.6 | The Apron card tab shows the machine's main description read-only and points to the Manage tab; editing it in place is not built yet. |
+| §3.1, §3.2, §3.6 | The Apron card tab shows the machine's main description read-only and points to the Manage tab; editing it in place is not built yet (PP-nunup). |
 | §4.2 | Automatic apron-size fill from a Pinball Map match is intentionally deferred. Editors choose a size manually for now; unmatched machines still have no default. |
 
 ## Changelog
