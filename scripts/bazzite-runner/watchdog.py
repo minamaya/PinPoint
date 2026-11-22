@@ -88,15 +88,19 @@ def api(method: str, path: str):
 def try_api(method: str, path: str) -> None:
     try:
         api(method, path)
-    except urllib.error.HTTPError as err:
-        print(f"{method} {path}: HTTP {err.code}")
+    except (urllib.error.URLError, OSError) as err:  # HTTPError is a URLError
+        print(f"{method} {path}: {err}")
 
 
 def completed(run_id: int) -> bool:
+    """A run that is gone (404) counts as completed; any other error leaves it
+    pending, so a live run is still force-cancelled rather than skipped."""
     try:
         return api("GET", f"/actions/runs/{run_id}")["status"] == "completed"
-    except urllib.error.HTTPError:
-        return True
+    except urllib.error.HTTPError as err:
+        return err.code == 404
+    except (urllib.error.URLError, OSError):
+        return False
 
 
 def main() -> int:
@@ -150,8 +154,8 @@ def main() -> int:
         try:
             api("POST", f"/actions/runs/{run_id}/rerun-failed-jobs")
             print(f"re-ran {run_id} on GitHub-hosted runners")
-        except urllib.error.HTTPError as err:
-            print(f"::error::re-run of {run_id} failed: HTTP {err.code}")
+        except (urllib.error.URLError, OSError) as err:
+            print(f"::error::re-run of {run_id} failed: {err}")
             failed = 1
     return failed
 

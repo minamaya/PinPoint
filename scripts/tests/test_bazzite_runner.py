@@ -236,3 +236,32 @@ def test_watchdog_skips_while_bazzite_is_off_and_runs_hosted():
     job = yaml.safe_load(WATCHDOG_WORKFLOW.read_text())["jobs"]["watchdog"]
     assert "vars.BAZZITE_LEASE != '0'" in job["if"]
     assert job["runs-on"] == "ubuntu-latest"
+
+
+def _raise(exc):
+    def fail(*_args, **_kwargs):
+        raise exc
+
+    return fail
+
+
+@pytest.mark.parametrize(
+    ("exc", "done"),
+    [
+        (watchdog.urllib.error.HTTPError("u", 404, "gone", None, None), True),
+        (watchdog.urllib.error.HTTPError("u", 502, "bad gateway", None, None), False),
+        (watchdog.urllib.error.HTTPError("u", 429, "rate limited", None, None), False),
+        (watchdog.urllib.error.URLError("network down"), False),
+        (TimeoutError("timed out"), False),
+    ],
+)
+def test_watchdog_treats_only_a_missing_run_as_completed(monkeypatch, exc, done):
+    monkeypatch.setattr(watchdog, "api", _raise(exc))
+    assert watchdog.completed(1) is done
+
+
+def test_watchdog_api_errors_do_not_escape(monkeypatch):
+    monkeypatch.setattr(
+        watchdog, "api", _raise(watchdog.urllib.error.URLError("reset"))
+    )
+    watchdog.try_api("POST", "/actions/runs/1/cancel")
