@@ -268,7 +268,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
           name: `Expand ${PREFIX} Delete target settings set`,
         })
         .click();
-      await expect(page.getByText("Software settings")).toBeVisible();
+      await expect(
+        page.getByText("Software settings", { exact: true })
+      ).toBeVisible();
       const rubbersHeading = page.getByRole("paragraph").filter({
         hasText: /^Rubbers$/,
       });
@@ -297,7 +299,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
             name: `Expand ${PREFIX} Delete target settings set`,
           })
           .click();
-        await expect(page.getByText("Software settings")).toBeVisible({
+        await expect(
+          page.getByText("Software settings", { exact: true })
+        ).toBeVisible({
           timeout: 8_000,
         });
         await expect(
@@ -328,7 +332,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
           name: `Expand ${PREFIX} Reorder target settings set`,
         })
         .click();
-      await expect(page.getByText("Software settings")).toBeVisible();
+      await expect(
+        page.getByText("Software settings", { exact: true })
+      ).toBeVisible();
       expect(await sectionOrder()).toEqual([
         "the Software settings section",
         "the Rubbers section",
@@ -352,7 +358,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
             name: `Expand ${PREFIX} Reorder target settings set`,
           })
           .click();
-        await expect(page.getByText("Software settings")).toBeVisible({
+        await expect(
+          page.getByText("Software settings", { exact: true })
+        ).toBeVisible({
           timeout: 8_000,
         });
         expect(await sectionOrder()).toEqual([
