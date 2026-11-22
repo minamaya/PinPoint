@@ -25,7 +25,10 @@ test.describe("Legacy resource-id redirects", () => {
     const issueLocation = issueRes.headers()["location"] ?? "";
     expect(issueLocation).toMatch(new RegExp(`/m/HD/i/${issue.num}$`));
 
-    const issueTarget = await request.get(issueLocation, { headers });
+    const issueTarget = await request.get(issueLocation, {
+      headers,
+      maxRedirects: 0,
+    });
     expect(issueTarget.status()).toBe(200);
     expect(await issueTarget.text()).toContain(issue.title);
 
@@ -38,7 +41,10 @@ test.describe("Legacy resource-id redirects", () => {
     const machineLocation = machineRes.headers()["location"] ?? "";
     expect(machineLocation).toMatch(new RegExp(`/m/${machine.initials}$`));
 
-    const machineTarget = await request.get(machineLocation, { headers });
+    const machineTarget = await request.get(machineLocation, {
+      headers,
+      maxRedirects: 0,
+    });
     expect(machineTarget.status()).toBe(200);
     expect(await machineTarget.text()).toContain(machine.name);
   });
