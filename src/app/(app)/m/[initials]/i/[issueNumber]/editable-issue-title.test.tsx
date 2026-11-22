@@ -209,7 +209,13 @@ describe("EditableIssueTitle", () => {
     expect(input).toHaveAccessibleDescription(/Enter saves\. Escape cancels\./);
 
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("button", { name: "Edit title" })).toHaveFocus();
+    const returned = screen.getByRole("button", { name: "Edit title" });
+    expect(returned).toHaveFocus();
+    // Focus coming back from the closed editor opens no tooltip, and the
+    // tooltip never becomes the button's description (design-bible §26.2).
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(returned).not.toHaveAttribute("aria-describedby");
   });
 
   it("edits in a wrapping field that keeps the title on one logical line", async () => {

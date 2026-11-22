@@ -14,13 +14,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { NameTooltip } from "./NameTooltip";
 
 /** One entry in an item's ⋯ menu: text only (design-bible §26.3). */
 export type ItemMenuEntry = {
@@ -233,58 +228,56 @@ export function ItemActionsMenu({
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <DropdownMenu modal={modal}>
-        <Tooltip>
-          <DropdownMenuTrigger asChild>
-            <TooltipTrigger asChild>
-              <button
-                ref={triggerRef}
-                type="button"
-                aria-label={label}
-                aria-describedby={describedByIds}
-                data-testid={testId}
-                className={cn(triggerClass, triggerClassName)}
-              >
-                <MoreHorizontal
-                  aria-hidden="true"
-                  className="size-[18px] md:size-4"
-                />
-              </button>
-            </TooltipTrigger>
-          </DropdownMenuTrigger>
-          <TooltipContent className="max-md:hidden">{label}</TooltipContent>
-        </Tooltip>
-        {description !== undefined ? (
-          <span id={descriptionId} hidden>
-            {description}
-          </span>
-        ) : null}
-        <DropdownMenuContent
-          align={align}
-          onCloseAutoFocus={(event) => {
-            if (!keepFocusRef.current) return;
-            keepFocusRef.current = false;
-            event.preventDefault();
-          }}
-        >
-          {ordered.map((section, index) => (
-            <React.Fragment
-              key={entriesOf(section)
-                .map((e) => e.key)
-                .join("|")}
-            >
-              {index > 0 ? <DropdownMenuSeparator /> : null}
-              {isTitled(section) ? (
-                <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
-              ) : null}
-              {entriesOf(section).map((entry) => (
-                <MenuEntry key={entry.key} entry={entry} onChoose={onChoose} />
-              ))}
-            </React.Fragment>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </TooltipProvider>
+    <DropdownMenu modal={modal}>
+      {/* The tooltip wraps the trigger, so the button's description stays
+            exactly its own and focus coming back on close opens no tooltip
+            (NameTooltip). */}
+      <NameTooltip label={label} className={triggerClassName}>
+        <DropdownMenuTrigger asChild>
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label={label}
+            aria-describedby={describedByIds}
+            data-testid={testId}
+            className={triggerClass}
+          >
+            <MoreHorizontal
+              aria-hidden="true"
+              className="size-[18px] md:size-4"
+            />
+          </button>
+        </DropdownMenuTrigger>
+      </NameTooltip>
+      {description !== undefined ? (
+        <span id={descriptionId} hidden>
+          {description}
+        </span>
+      ) : null}
+      <DropdownMenuContent
+        align={align}
+        onCloseAutoFocus={(event) => {
+          if (!keepFocusRef.current) return;
+          keepFocusRef.current = false;
+          event.preventDefault();
+        }}
+      >
+        {ordered.map((section, index) => (
+          <React.Fragment
+            key={entriesOf(section)
+              .map((e) => e.key)
+              .join("|")}
+          >
+            {index > 0 ? <DropdownMenuSeparator /> : null}
+            {isTitled(section) ? (
+              <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
+            ) : null}
+            {entriesOf(section).map((entry) => (
+              <MenuEntry key={entry.key} entry={entry} onChoose={onChoose} />
+            ))}
+          </React.Fragment>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

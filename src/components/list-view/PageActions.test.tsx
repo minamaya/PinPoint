@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Download, MapPin, Plus, Printer, Share2 } from "lucide-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -167,6 +167,32 @@ describe("PageActions (list-views §3.7–§3.10, §8.11, §8.12)", () => {
     const menu = await screen.findByRole("menu");
     expect(menuLabels(menu)).toEqual(["Export to CSV"]);
     expect(more).toHaveAttribute("data-state", "open");
+  });
+
+  it("never joins the tooltip to a button's description, and opens none when ⋯ hands focus back", async () => {
+    mockPhone(false);
+    stubLayout(200);
+    renderMachines();
+    const user = userEvent.setup();
+    const map = screen.getByRole("link", { name: "Pinball Map" });
+    await user.hover(map);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Pinball Map");
+    expect(map).not.toHaveAttribute("aria-describedby");
+    // jsdom sends no pointer moves after leaving, so close it by key.
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    );
+
+    const more = screen.getByRole("button", { name: "More" });
+    more.focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(more).toHaveFocus());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(more).not.toHaveAttribute("aria-describedby");
   });
 
   it("shows no tooltip for a labeled button", async () => {

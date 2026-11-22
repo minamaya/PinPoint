@@ -50,7 +50,12 @@ async function sectionMenuDescriptions(page: Page): Promise<string[]> {
     buttons.map((button) =>
       (button.getAttribute("aria-describedby") ?? "")
         .split(" ")
-        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .map((id) => document.getElementById(id))
+        // A tooltip is never part of the description (NameTooltip, with its
+        // unit tests); skip one anyway, so where the pointer rests can't
+        // change what this reads.
+        .filter((element) => element?.getAttribute("role") !== "tooltip")
+        .map((element) => element?.textContent ?? "")
         .join(" ")
         .trim()
     )

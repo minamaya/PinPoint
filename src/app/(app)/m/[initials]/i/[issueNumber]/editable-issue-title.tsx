@@ -21,12 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
+import { NameTooltip } from "~/components/list-view/NameTooltip";
 import { Textarea } from "~/components/ui/textarea";
 import { toast } from "sonner";
 import {
@@ -480,23 +475,20 @@ export function EditableIssueTitle({
             }
           >
             {canEdit ? (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      ref={editButtonRef}
-                      type="button"
-                      className={pageActionClassName("icon")}
-                      onClick={() => setIsEditing(true)}
-                      aria-label="Edit title"
-                      data-testid="issue-edit-title"
-                    >
-                      <Pencil className="size-4" aria-hidden="true" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit title</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              // No tooltip when focus comes back from the closed editor, and
+              // none joins the button's description (NameTooltip).
+              <NameTooltip label="Edit title">
+                <button
+                  ref={editButtonRef}
+                  type="button"
+                  className={pageActionClassName("icon")}
+                  onClick={() => setIsEditing(true)}
+                  aria-label="Edit title"
+                  data-testid="issue-edit-title"
+                >
+                  <Pencil className="size-4" aria-hidden="true" />
+                </button>
+              </NameTooltip>
             ) : null}
             {move ? (
               <button
