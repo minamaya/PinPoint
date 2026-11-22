@@ -76,11 +76,13 @@ jobs:
   # still ran the full E2E suite).
   changes:
     name: Detect Changes
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     outputs:
       code: ${{ steps.set-code.outputs.code }}
@@ -202,11 +204,13 @@ jobs:
   # type-checked, linted and unit-tested.
   static:
     name: Static checks, unit tests, build
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
@@ -278,11 +282,13 @@ jobs:
   # wait and setup).
   linters:
     name: Fast Linters
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     steps:
       - name: Harden Runner
@@ -393,11 +399,13 @@ jobs:
   # PGlite integration tests, plus `pnpm audit` when the lockfile changed.
   test-integration:
     name: Integration Tests
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     needs: changes
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true'
@@ -518,11 +526,13 @@ jobs:
   # ==============================================================================
   test-e2e-smoke:
     name: E2E Smoke Tests (Chromium, Mobile Chrome)
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     if: >-
       ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
@@ -587,11 +597,13 @@ jobs:
 
   test-e2e-full-chromium:
     name: E2E Full Tests (Chromium), Supabase integration
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     if: >-
       ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
@@ -689,11 +701,13 @@ jobs:
     # job is skipped on every PR, where a matrix expression in the name would
     # show unexpanded.
     name: E2E Comprehensive Tests (Post-Merge)
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     # Explicit code/deps guard mirrors the two PR E2E siblings. It is the
     # only thing keeping this job off docs-only main pushes: like them it
@@ -899,11 +913,13 @@ jobs:
       - test-e2e-smoke
       - test-e2e-full-chromium
       - test-e2e-comprehensive
-    # PP-4k0 experiment (probe branch only): Tim's same-repo PRs run on Bazzite.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     steps:
       - name: Harden Runner

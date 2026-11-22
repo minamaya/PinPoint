@@ -17,12 +17,26 @@ jobs:
     # The runner VM registers with this run's own label. The supervisor on
     # Bazzite cancels any other job that asks for a self-hosted runner.
     runs-on: >-
-      ${{ vars.SELF_HOSTED == 'on'
+      ${{ github.run_attempt == 1
+      && vars.BAZZITE_LEASE > (github.event.merge_group.head_commit.timestamp || github.event.pull_request.updated_at || '9')
+      && (github.event_name == 'merge_group'
+      || (vars.BAZZITE_PRS == 'on'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.event.pull_request.user.login == 'timothyfroehlich'))
       && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
+      - name: Expression semantics for a lease timestamp
+        env:
+          GT: ${{ '2026-11-22T22:30:00Z' > '2026-11-22T22:29:59Z' }}
+          LT: ${{ '2026-11-22T22:29:59Z' > '2026-11-22T22:30:00Z' }}
+          EMPTY: ${{ '' > '2026-11-22T22:29:59Z' }}
+          PR_UPDATED: ${{ github.event.pull_request.updated_at }}
+          HEAD_TS: ${{ github.event.pull_request.head.repo.pushed_at }}
+        run: |
+          echo "gt=$GT lt=$LT empty=$EMPTY"
+          echo "pr.updated_at=$PR_UPDATED head.repo.pushed_at=$HEAD_TS now=$(date -u +%FT%TZ)"
+
       - name: Describe the runner
         run: |
           echo "runner: ${RUNNER_NAME} (${RUNNER_ENVIRONMENT})"
