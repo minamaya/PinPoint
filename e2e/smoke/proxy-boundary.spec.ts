@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { seededMachines } from "../support/constants.js";
 
 test("the request proxy canonicalizes machine links", async ({ request }) => {
   const response = await request.get("/m/afm/i/12?from=qr", {
@@ -63,4 +64,29 @@ test("anonymous protected routes redirect while public routes stay open", async 
 
   const publicResponse = await request.get("/login", { headers });
   expect(publicResponse.status()).toBe(200);
+});
+
+test("anonymous page-level machine guards redirect", async ({ request }) => {
+  const headers = { "x-skip-autologin": "true" };
+
+  // /m/* is public in middleware, so /m/new enforces auth inside NewMachinePage.
+  const newMachineResponse = await request.get("/m/new", {
+    headers,
+    maxRedirects: 0,
+  });
+  expect(newMachineResponse.status()).toBe(307);
+  expect(newMachineResponse.headers()["location"]).toMatch(
+    /\/login\?next=%2Fm%2Fnew$/
+  );
+
+  // MachineEditPage sends anonymous viewers back to the public machine page.
+  const { initials } = seededMachines.medievalMadness;
+  const editResponse = await request.get(`/m/${initials}/edit`, {
+    headers,
+    maxRedirects: 0,
+  });
+  expect(editResponse.status()).toBe(307);
+  expect(editResponse.headers()["location"]).toMatch(
+    new RegExp(`/m/${initials}$`)
+  );
 });

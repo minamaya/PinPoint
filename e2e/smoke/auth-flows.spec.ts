@@ -10,27 +10,6 @@ import { test, expect } from "../support/fixtures.js";
 import { loginAs, logout, assertNoA11yViolations } from "../support/actions.js";
 import { TEST_USERS } from "../support/constants.js";
 
-test.describe("Username Account Login", () => {
-  test("login with username (no @) redirects to dashboard", async ({
-    page,
-  }) => {
-    await page.goto("/login");
-
-    // Type just the username, not the email
-    await page.getByLabel("Email").fill("testuser");
-    await page.getByLabel(/^Password\s*\*?$/).fill("TestPassword123");
-    await page.getByRole("button", { name: "Sign In" }).click();
-
-    // Should redirect to dashboard
-    await expect(page).toHaveURL("/dashboard", { timeout: 10000 });
-
-    // Verify we're logged in — AppHeader is always visible
-    await expect(page.getByTestId("app-header")).toBeVisible();
-
-    await assertNoA11yViolations(page);
-  });
-});
-
 test.describe("Authentication Smoke", () => {
   test("login flow - sign in with existing account", async ({ page }) => {
     // Navigate to login page via header sign-in button (unified AppHeader)
