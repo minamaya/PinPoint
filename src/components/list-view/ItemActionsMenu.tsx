@@ -218,11 +218,13 @@ export function ItemActionsMenu({
   // The ⋯ button, kept here as well as in the caller's ref, so closing the
   // menu can mark the focus it hands back (focus-return).
   const ownTriggerRef = React.useRef<HTMLButtonElement | null>(null);
-  // The caller's ref as of this render, read by a callback ref of stable
-  // identity, so an inline callback ref is not detached and reattached on
-  // every render.
+  // The caller's ref as of the last commit, read by a callback ref of
+  // stable identity, so an inline callback ref is not detached and
+  // reattached on every render. Updated in an effect, never during render.
   const callerRef = React.useRef(triggerRef);
-  callerRef.current = triggerRef;
+  React.useLayoutEffect(() => {
+    callerRef.current = triggerRef;
+  }, [triggerRef]);
   const setTrigger = React.useCallback((node: HTMLButtonElement | null) => {
     ownTriggerRef.current = node;
     const ref = callerRef.current;
