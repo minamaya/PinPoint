@@ -30,6 +30,7 @@ jobs:
           free -g
           df -h /
           docker version --format 'docker {{.Server.Version}}'
+          ip -4 -brief addr show scope global
 
       - name: Public internet works
         run: |
@@ -41,7 +42,7 @@ jobs:
         run: |
           open=0
           for target in 192.168.68.94:22 192.168.68.94:54321 192.168.68.1:80 \
-                        100.87.228.116:22 100.100.100.100:53 10.0.2.2:22 172.16.0.1:80; do
+                        100.87.228.116:22 100.100.100.100:53 10.88.0.1:22 172.16.0.1:80; do
             if timeout 3 bash -c "echo > /dev/tcp/${target%:*}/${target#*:}" 2>/dev/null; then
               echo "::error::reached ${target}"
               open=1
