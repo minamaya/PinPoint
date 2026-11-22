@@ -39,6 +39,7 @@ import { getTestPrefix } from "../support/test-isolation.js";
 import {
   clickPageAction,
   expectNoPageAction,
+  pageActionsTrigger,
 } from "../support/page-actions.js";
 
 /** A machine-editor tag row's accessible name reads "<name>, <count> machines". */
@@ -76,7 +77,12 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Tags" })
       ).toBeVisible();
-      await page.getByRole("button", { name: "Add tag type" }).click();
+      // Add tag type is ⋯'s only entry, so it shows as its own button while
+      // there is room (list-views §3.7).
+      await clickPageAction(page, {
+        button: "Add tag type",
+        entry: "Add tag type…",
+      });
       const typeDialog = page.getByRole("dialog", { name: "Add tag type" });
       await expect(typeDialog).toBeVisible();
       await assertNoA11yViolations(page);
@@ -95,7 +101,7 @@ test.describe("Hand-applied tags", () => {
       await expect(page.getByText("One per machine").first()).toBeVisible();
 
       // --- Tag type page: Add tag ------------------------------------------
-      await page.getByRole("button", { name: "Add tag" }).click();
+      await clickPageAction(page, "Add tag");
       const tagDialog = page.getByRole("dialog", {
         name: `Add tag to ${typeName}`,
       });
@@ -111,7 +117,7 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: tagName })
       ).toBeVisible();
-      await clickPageAction(page, "Edit machines");
+      await clickPageAction(page, "Edit machines…");
       const machinesDialog = page.getByRole("dialog", {
         name: `Machines in ${tagName}`,
       });
@@ -146,8 +152,7 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: typeName })
       ).toBeVisible();
-      await page.getByRole("button", { name: "Tag type actions" }).click();
-      await page.getByRole("menuitem", { name: "Delete tag type…" }).click();
+      await clickPageAction(page, "Delete tag type");
       const confirm = page.getByRole("alertdialog", {
         name: `Delete ${typeName}?`,
       });
@@ -175,12 +180,11 @@ test.describe("Hand-applied tags", () => {
     test("sees the tag browse without Add tag type", async ({ page }) => {
       await page.goto("/c/tags");
       await expect(page.getByRole("link", { name: "Location" })).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Add tag type" })
-      ).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Add tag" })).toHaveCount(
-        0
-      );
+      await expectNoPageAction(page, {
+        button: "Add tag type",
+        entry: "Add tag type…",
+      });
+      await expectNoPageAction(page, "Add tag");
     });
   });
 
@@ -193,13 +197,14 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Front room" })
       ).toBeVisible();
-      // No editing in ⋯ (4.17); Share and Print stay (4.14).
+      // No editing in ⋯ (4.17); Share and Print settings sheets stay
+      // (4.14, 4.16).
       for (const editing of [
-        "Edit machines",
+        "Edit machines…",
         "Rename…",
         "Move to another tag type…",
         "Merge into another tag…",
-        "Delete tag…",
+        "Delete tag",
       ]) {
         await expectNoPageAction(page, editing);
       }
@@ -208,12 +213,9 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Location" })
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Add tag" })).toHaveCount(
-        0
-      );
-      await expect(
-        page.getByRole("button", { name: "Tag type actions" })
-      ).toHaveCount(0);
+      // No Add tag and no ⋯ of tag type editing (11.12).
+      await expectNoPageAction(page, "Add tag");
+      await expect(pageActionsTrigger(page)).toHaveCount(0);
     });
   });
 });
@@ -456,9 +458,9 @@ test.describe("Tag type changes", () => {
       if (!machine) throw new Error("Test machine was not created");
       const typePath = `/c/tags/${testTagSlug(typeName)}`;
       const badge = page.getByText("One per machine", { exact: true });
+      // The tag type's ⋯ More menu (design-bible §26.3).
       const openMenuItem = async (name: string): Promise<void> => {
-        await page.getByRole("button", { name: "Tag type actions" }).click();
-        await page.getByRole("menuitem", { name }).click();
+        await clickPageAction(page, name);
       };
       const makeDialog = page.getByRole("alertdialog", {
         name: `Make ${typeName} one per machine?`,

@@ -178,6 +178,7 @@
 
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
+| §12.1–§12.6 | Neither the Machines list nor the Issues list offers a Tag or a Collection filter. | PP-wqit.15 |
 | 4.8 | The owner and Editors see the Collections crumb when they open a Collection through its View Link. | Tim decides whether they should (PP-jb9v.18). |
 | 4.12 | "… Show more" sits at the bottom-right of the clamped box rather than at the end of the last shown line, and the description's color comes from the rich-text styles. | PP-jb9v.18 |
 

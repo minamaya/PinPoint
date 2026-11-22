@@ -18,10 +18,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect } from "../support/fixtures.js";
 import { assertNoA11yViolations, openListSearch } from "../support/actions.js";
-import {
-  choosePageMenuEntry,
-  clickPageAction,
-} from "../support/page-actions.js";
+import { clickPageAction } from "../support/page-actions.js";
 
 // The print page opens the print dialog on load; a test has no use for it.
 test.beforeEach(async ({ page }) => {
@@ -152,13 +149,9 @@ test.describe("Print settings sheets", () => {
     page,
   }) => {
     await page.goto("/c/tags/location/front-room");
-    // Print → Settings sheets, or Print settings sheets in ⋯ once Print
-    // folds (collections-and-tags 4.16, 4.18).
-    await choosePageMenuEntry(page, {
-      action: "Print",
-      entry: "Settings sheets",
-      foldedEntry: "Print settings sheets",
-    });
+    // Print settings sheets is a ⋯ entry, or its own button when it is ⋯'s
+    // only entry (collections-and-tags 4.16; list-views §3.7).
+    await clickPageAction(page, "Print settings sheets");
     await expect(page).toHaveURL(/\/m\/settings-sheets/);
     const run = page.getByRole("region", { name: "In this print run" });
     // Front room's seeded machines: Attack from Mars and others On the Floor,

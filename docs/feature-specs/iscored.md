@@ -63,7 +63,8 @@ Removed 2026-09-16. The Info tab card's "View all on iScored" link replaces it: 
 ## Known divergences (code vs spec)
 
 | Spec | Code today | Resolution |
-| :--- | :--------- | :--------- |
+| :-- | :-- | :-- |
+| 3.1 score filtering on the batch endpoint | The batch request already sends `?max=10`, which `getAllScores` does not support and ignores, so no filtering happens | PP-5lcgw |
 
 ---
 

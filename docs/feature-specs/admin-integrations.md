@@ -55,6 +55,7 @@
 | Spec | Code today | Resolution |
 | :-- | :-- | :-- |
 | §2.3 unsaved-edit warning on browser Back | The combined page warns on document unload and same-app link navigation; same-app browser Back remains unguarded because App Router exposes no cancellable Back-navigation hook | Accepted platform limitation; revisit when a Baseline Widely available navigation-interception API can cover Back without synthetic history |
+| §3.1 Discord connection status | The Discord card shows no connection status: the page does not load the stored status and the form has no status display | Credential-entry card (PP-o355.51.5) |
 
 ---
 

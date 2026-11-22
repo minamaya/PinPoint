@@ -184,6 +184,7 @@ Replacing the tracked location is a rare, near-never operation — PinPoint trac
 | :-- | :-- | :-- |
 | 2.7 catalog corrections | Manufacturer and year are copied when a machine is matched and never refreshed | PP-o355.46 |
 | 9.4 update-listing invitation | The Info tab shows the Pinball Map link with no invitation line | PP-2h1b |
+| 2.3 confirmation on a changed or cleared match | Changing or clearing a match resets the lineup setting to Off with no confirmation; the machine edit form's only dialog is the overwrite-with-catalog-data one | PP-h7umt |
 
 ---
 

@@ -75,13 +75,14 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
 
       await sharedLink.click();
       await expect(ed).toHaveURL(/\/c\/[0-9a-f-]{36}/);
-      // Editor gets Edit collection in ⋯ but NOT Share (owner-only, 4.15).
-      await expectPageAction(ed, "Edit collection");
+      // Editor gets Edit collection in ⋯ but NOT Share (owner-only, 4.15)
+      // and NOT Delete collection (owner-only, 4.17).
+      await expectPageAction(ed, "Edit collection…");
       await expectNoPageAction(ed, "Share");
+      await expectNoPageAction(ed, "Delete collection");
 
-      // Editor adds a machine and saves; no Delete control is present.
-      await clickPageAction(ed, "Edit collection");
-      await expect(ed.getByTestId("collection-delete-trigger")).toHaveCount(0);
+      // Editor adds a machine and saves.
+      await clickPageAction(ed, "Edit collection…");
       await ed.getByTestId("collection-machines-multiselect").click();
       // The populated Overview also has the Machine View search. The picker
       // input is portaled after it, so target the open picker's search.

@@ -129,7 +129,9 @@
 
 ## Known divergences (code vs spec)
 
-_None — the current implementation matches this spec._
+| Requirement | Divergence | Resolution |
+| :-- | :-- | :-- |
+| §3.12, §4.1 | The Primary Filters are Presence, Playability, Issue severity, and Owner; there are no Tag or Collection filters and no `tag` or `collection` parameters. | PP-wqit.15 |
 
 ---
 

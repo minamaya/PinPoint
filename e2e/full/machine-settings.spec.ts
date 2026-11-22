@@ -19,7 +19,7 @@
  * that CREATES a set seeds its own machine (see the editor-journey block).
  */
 
-import { test, expect, type Page } from "../support/fixtures.js";
+import { test, expect, type Locator, type Page } from "../support/fixtures.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 import { seededMachines, TEST_USERS } from "../support/constants.js";
 import {
@@ -30,17 +30,53 @@ import {
   seedSettingsSet,
 } from "../support/supabase-admin.js";
 import { getTestPrefix } from "../support/test-isolation.js";
+import { clickPageAction } from "../support/page-actions.js";
 
 const machine = seededMachines.addamsFamily.initials;
 const PREFIX = "E2E PP-43q3";
 
 /**
- * Open a section's kebab menu and click one of its items.
+ * Every section's ⋯ "Section actions" button, in section order. Each says
+ * which section it belongs to in its accessible description ("the Rubbers
+ * section"), which Playwright's role queries cannot filter on.
+ */
+function sectionMenuButtons(page: Page): Locator {
+  return page.getByRole("button", { name: "Section actions", exact: true });
+}
+
+/** The accessible descriptions of the section ⋯ buttons, in section order. */
+async function sectionMenuDescriptions(page: Page): Promise<string[]> {
+  return sectionMenuButtons(page).evaluateAll((buttons) =>
+    buttons.map((button) =>
+      (button.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ")
+        .trim()
+    )
+  );
+}
+
+/** One section's ⋯ button, found by its accessible description. */
+async function sectionMenuButton(
+  page: Page,
+  sectionLabel: string
+): Promise<Locator> {
+  const description = `the ${sectionLabel} section`;
+  const index = (await sectionMenuDescriptions(page)).indexOf(description);
+  if (index < 0) throw new Error(`No ⋯ menu for ${description}`);
+  const button = sectionMenuButtons(page).nth(index);
+  await expect(button).toHaveAccessibleDescription(description);
+  return button;
+}
+
+/**
+ * Open a section's ⋯ menu and click one of its items.
  *
  * Context: on a machine with no machine-wide guidance yet, the two "Before you
  * change anything" / "How to change settings" blocks render as tall always-open
  * editors that push the settings sets far down the page. At the default 720px
- * test viewport a section's kebab could sit at the very bottom edge, and the
+ * test viewport a section's ⋯ menu could sit at the very bottom edge, and the
  * Radix menu — a fixed-position portal — then opened below the fold where its
  * items reported "outside of the viewport" and a plain click could never reach
  * them (a fixed element can't be scrolled into view; the last section can't be
@@ -55,12 +91,11 @@ async function activateSectionMenuItem(
   sectionLabel: string,
   itemName: RegExp
 ): Promise<void> {
-  await page
-    .getByRole("button", {
-      name: `More options for the ${sectionLabel} section`,
-    })
-    .click();
+  await (await sectionMenuButton(page, sectionLabel)).click();
   await page.getByRole("menuitem", { name: itemName }).click();
+  // The menu now fades out (tw-animate-css, PP-p2ts.7). While it unmounts,
+  // Radix keeps the rest of the page aria-hidden, so role queries find nothing.
+  await expect(page.getByRole("menu")).toHaveCount(0);
 }
 
 test.describe("Machine Settings (PP-43q3)", () => {
@@ -79,7 +114,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
     test.use({
       storageState: STORAGE_STATE.admin,
       // Tall viewport so the always-open machine-wide guidance editors can't
-      // push a set's controls or a section's kebab menu below the fold, where a
+      // push a set's controls or a section's ⋯ menu below the fold, where a
       // fixed-position Radix menu item can't be scrolled into view for a click
       // (PP-43q3 review casework).
       viewport: { width: 1280, height: 1800 },
@@ -169,7 +204,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
     test.use({
       storageState: STORAGE_STATE.admin,
       // Tall viewport so the always-open machine-wide guidance editors can't
-      // push a set's controls or a section's kebab menu below the fold, where a
+      // push a set's controls or a section's ⋯ menu below the fold, where a
       // fixed-position Radix menu item can't be scrolled into view for a click
       // (PP-43q3 review casework).
       viewport: { width: 1280, height: 1800 },
@@ -200,8 +235,8 @@ test.describe("Machine Settings (PP-43q3)", () => {
     });
 
     // The two named sections used by both tests: a software section (heading
-    // "Software settings", kebab "…the Software settings section") and a "Rubbers"
-    // preset note (heading "Rubbers", kebab "…the Rubbers section").
+    // "Software settings", ⋯ described "the Software settings section") and a
+    // "Rubbers" preset note (heading "Rubbers", ⋯ "the Rubbers section").
     const softwareSection = {
       id: "e2e-software",
       kind: "software",
@@ -216,7 +251,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
       body: null,
     };
 
-    test("delete a section via the kebab survives a reload", async ({
+    test("delete a section via its ⋯ menu survives a reload", async ({
       page,
     }) => {
       test.slow();
@@ -233,13 +268,15 @@ test.describe("Machine Settings (PP-43q3)", () => {
           name: `Expand ${PREFIX} Delete target settings set`,
         })
         .click();
-      await expect(page.getByText("Software settings")).toBeVisible();
+      await expect(
+        page.getByText("Software settings", { exact: true })
+      ).toBeVisible();
       const rubbersHeading = page.getByRole("paragraph").filter({
         hasText: /^Rubbers$/,
       });
       await expect(rubbersHeading).toBeVisible();
 
-      // Open the Rubbers section kebab and delete it (AlertDialog confirm).
+      // Open the Rubbers section's ⋯ menu and delete it (AlertDialog confirm).
       await activateSectionMenuItem(page, "Rubbers", /delete section/i);
       // The confirm dialog names the section.
       const dialog = page.getByRole("alertdialog");
@@ -262,7 +299,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
             name: `Expand ${PREFIX} Delete target settings set`,
           })
           .click();
-        await expect(page.getByText("Software settings")).toBeVisible({
+        await expect(
+          page.getByText("Software settings", { exact: true })
+        ).toBeVisible({
           timeout: 8_000,
         });
         await expect(
@@ -271,7 +310,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
       }).toPass({ timeout: 45_000 });
     });
 
-    test("reorder a section (kebab Move down) survives a reload", async ({
+    test("reorder a section (⋯ Move down) survives a reload", async ({
       page,
     }) => {
       test.slow();
@@ -281,17 +320,10 @@ test.describe("Machine Settings (PP-43q3)", () => {
         rubbersSection,
       ]);
 
-      // The kebab aria-labels encode each section's identity; their DOM order is
-      // the section order. Read them top-to-bottom.
-      const sectionOrder = async (): Promise<string[]> => {
-        const labels = await page
-          // "the …" excludes the set-level kebab ("…for this set").
-          .getByRole("button", { name: /^More options for the / })
-          .evaluateAll((els) =>
-            els.map((el) => el.getAttribute("aria-label") ?? "")
-          );
-        return labels;
-      };
+      // Each section's ⋯ button names its section in its description; their
+      // DOM order is the section order. Read them top-to-bottom.
+      const sectionOrder = (): Promise<string[]> =>
+        sectionMenuDescriptions(page);
 
       await page.goto(`/m/${machineInitials}/settings`);
       // Sets render collapsed by default (PP-tn6t) — expand the seeded set.
@@ -300,10 +332,12 @@ test.describe("Machine Settings (PP-43q3)", () => {
           name: `Expand ${PREFIX} Reorder target settings set`,
         })
         .click();
-      await expect(page.getByText("Software settings")).toBeVisible();
+      await expect(
+        page.getByText("Software settings", { exact: true })
+      ).toBeVisible();
       expect(await sectionOrder()).toEqual([
-        "More options for the Software settings section",
-        "More options for the Rubbers section",
+        "the Software settings section",
+        "the Rubbers section",
       ]);
 
       // Move the first section (software) down — persists immediately.
@@ -311,8 +345,8 @@ test.describe("Machine Settings (PP-43q3)", () => {
 
       // Order flipped locally.
       expect(await sectionOrder()).toEqual([
-        "More options for the Rubbers section",
-        "More options for the Software settings section",
+        "the Rubbers section",
+        "the Software settings section",
       ]);
 
       // And the new order survives a reload (persisted to the DB).
@@ -324,12 +358,14 @@ test.describe("Machine Settings (PP-43q3)", () => {
             name: `Expand ${PREFIX} Reorder target settings set`,
           })
           .click();
-        await expect(page.getByText("Software settings")).toBeVisible({
+        await expect(
+          page.getByText("Software settings", { exact: true })
+        ).toBeVisible({
           timeout: 8_000,
         });
         expect(await sectionOrder()).toEqual([
-          "More options for the Rubbers section",
-          "More options for the Software settings section",
+          "the Rubbers section",
+          "the Software settings section",
         ]);
       }).toPass({ timeout: 45_000 });
     });
@@ -379,9 +415,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
 
       // Create the tag from the set's picker; it applies to the set at once.
       await page.goto(`/m/${machineInitials}/settings`);
-      await page
-        .getByRole("button", { name: "More options for this set" })
-        .click();
+      await page.getByRole("button", { name: "Set actions" }).click();
       await page.getByRole("menuitem", { name: "Edit tags…" }).click();
       const picker = page.getByRole("dialog", { name: "Tags" });
       await picker.getByLabel("Find or create a tag").fill(tagName);
@@ -420,11 +454,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
         page.getByRole("link", { name: machineName, exact: true })
       ).toBeVisible();
 
-      // Rename keeps the page; the heading takes the new name.
-      await page
-        .getByRole("button", { name: "More options for this tag" })
-        .click();
-      await page.getByRole("menuitem", { name: "Rename…" }).click();
+      // Rename keeps the page; the heading takes the new name. Both are in
+      // the page's ⋯ More menu (design-bible §26).
+      await clickPageAction(page, "Rename…");
       const renameDialog = page.getByRole("dialog", { name: "Rename tag" });
       await renameDialog.getByLabel("Name").fill(renamedTag);
       await renameDialog.getByRole("button", { name: "Rename" }).click();
@@ -433,10 +465,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
       ).toBeVisible();
 
       // Delete returns to the Settings tags page, where the tag is gone.
-      await page
-        .getByRole("button", { name: "More options for this tag" })
-        .click();
-      await page.getByRole("menuitem", { name: "Delete tag…" }).click();
+      await clickPageAction(page, "Delete tag");
       await page
         .getByRole("alertdialog")
         .getByRole("button", { name: "Delete tag" })
