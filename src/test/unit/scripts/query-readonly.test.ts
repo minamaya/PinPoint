@@ -15,8 +15,9 @@
 // which is run against the target database itself.
 //
 // Every URL fixture points at `localhost:1` with connect_timeout=1 (refused
-// instantly on macOS and CI; on the Bazzite crabbox runner the firewall drops
-// closed loopback ports, so the one-second timeout ends the attempt — PP-wdhf6),
+// instantly on macOS and CI; a host that drops packets to closed loopback ports,
+// as the Bazzite crabbox runner did until 2026-11-22, is ended by the one-second
+// timeout — PP-wdhf6),
 // so a case that reaches the connect step fails fast rather than hanging — and the
 // "production" fixture keeps the prod project ref in the USERNAME while pointing
 // the host at localhost, so `isPinPointProductionTarget` still fires but nothing

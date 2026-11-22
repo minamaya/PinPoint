@@ -12,9 +12,10 @@
 // The "passes the guard" cases point at localhost:1 with connect_timeout=1 —
 // so the assertion is "it got far enough to try to connect", with no live
 // database required. Where the socket is refused (macOS, CI) that is
-// ECONNREFUSED instantly; the Bazzite crabbox runner's firewall DROPS packets
-// to closed loopback ports instead, so the connection attempt only ends when
-// connect_timeout fires (PP-wdhf6). Either outcome proves the guard let it by.
+// ECONNREFUSED instantly. A host firewall rule can instead drop packets to
+// closed loopback ports (the Bazzite crabbox runner did until 2026-11-22), and
+// then the attempt only ends when connect_timeout fires (PP-wdhf6). Either
+// outcome proves the guard let it by.
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -38,10 +39,16 @@ const PREVIEW_POOLER_URL =
   "postgres://postgres.abcdefghijklmnopqrst:pw@aws-0-us-east-2.pooler.supabase.com:6543/postgres";
 const PREVIEW_API_URL = "https://abcdefghijklmnopqrst.supabase.co";
 // Deliberately port 1: local, so it passes the guard, and nothing listens there.
-// connect_timeout=1 bounds the attempt to one second on hosts whose firewall
-// drops closed-port SYNs rather than refusing them (see header).
+// connect_timeout=1 bounds the attempt to one second on hosts that drop
+// closed-port packets rather than refusing them (see header).
 const LOCAL_URL =
   "postgres://postgres:pw@localhost:1/postgres?connect_timeout=1";
+// Cap for runs whose assertion is only "the guard did not fire". The guard
+// decides in milliseconds, but these targets then dial a real preview-branch
+// host or a closed loopback port, and how long that takes depends on the host's
+// network (DNS, firewall), not on the code under test (PP-wdhf6). The cap ends
+// the run instead of letting it reach Vitest's 5s test timeout.
+const GUARD_ONLY_TIMEOUT_MS = 2_000;
 // What a connection attempt to LOCAL_URL reports, refused or dropped.
 const CONNECT_FAILURE = /ECONNREFUSED|CONNECT_TIMEOUT/;
 const LOCAL_API_URL = "http://localhost:54321";
@@ -274,10 +281,15 @@ describe("seed scripts — remote-capable seeds refuse production only", () => {
     });
 
     it(`${script} allows a preview-branch URL (preview pipeline must keep working)`, () => {
-      const { stderr } = runScript(script, {
-        POSTGRES_URL: PREVIEW_POOLER_URL,
-        DISCORD_BOT_TOKEN: "fake-token-for-test",
-      });
+      const { stderr } = runScript(
+        script,
+        {
+          POSTGRES_URL: PREVIEW_POOLER_URL,
+          DISCORD_BOT_TOKEN: "fake-token-for-test",
+        },
+        [],
+        GUARD_ONLY_TIMEOUT_MS
+      );
       expect(stderr).not.toContain("PinPoint PRODUCTION");
     });
 
@@ -317,9 +329,12 @@ describe("reset-preview-db.mjs — destructive, so guarded unconditionally", () 
   });
 
   it("allows an ordinary preview branch", () => {
-    const { stderr } = runScript(script, {
-      POSTGRES_URL: PREVIEW_POOLER_URL,
-    });
+    const { stderr } = runScript(
+      script,
+      { POSTGRES_URL: PREVIEW_POOLER_URL },
+      [],
+      GUARD_ONLY_TIMEOUT_MS
+    );
     expect(stderr).not.toContain("PinPoint PRODUCTION");
     expect(stderr).not.toContain("references the production project");
   });
@@ -356,17 +371,22 @@ describe("seed-users.mjs — guards BOTH write endpoints", () => {
   });
 
   it("allows a preview branch on both endpoints (preview pipeline)", () => {
-    const { stderr } = runScript("supabase/seed-users.mjs", {
-      ...baseEnv,
-      NEXT_PUBLIC_SUPABASE_URL: PREVIEW_API_URL,
-      POSTGRES_URL: PREVIEW_POOLER_URL,
-    });
+    const { stderr } = runScript(
+      "supabase/seed-users.mjs",
+      {
+        ...baseEnv,
+        NEXT_PUBLIC_SUPABASE_URL: PREVIEW_API_URL,
+        POSTGRES_URL: PREVIEW_POOLER_URL,
+      },
+      [],
+      GUARD_ONLY_TIMEOUT_MS
+    );
     expect(stderr).not.toContain("PinPoint PRODUCTION");
   });
 
   it("allows a fully local target", () => {
-    // The Admin API call goes over HTTP to LOCAL_API_URL, which a firewall that
-    // drops closed loopback ports (the Bazzite crabbox runner, PP-wdhf6) leaves
+    // The Admin API call goes over HTTP to LOCAL_API_URL, which a host that
+    // drops closed loopback ports (the Bazzite runner did, PP-wdhf6) leaves
     // hanging instead of refusing. The banner proves both guards passed; the
     // timeout then ends the run rather than waiting on the network.
     const { stdout, stderr } = runScript(
@@ -377,7 +397,7 @@ describe("seed-users.mjs — guards BOTH write endpoints", () => {
         POSTGRES_URL: LOCAL_URL,
       },
       [],
-      2_000
+      GUARD_ONLY_TIMEOUT_MS
     );
     expect(stderr).not.toContain("PinPoint PRODUCTION");
     expect(stdout).toContain("Seeding test users and data");
