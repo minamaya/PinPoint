@@ -649,4 +649,154 @@ describe("Insider Connected intent (PGlite)", () => {
       expect(await storedIcIntent(machineId)).toBe("on");
     });
   });
+
+  describe("getMachineForLayout Insider Connected join", () => {
+    it("joins pinballmapCatalog.icEligible onto machine.pinballmapTitle and drives Out of sync after recording Off intent", async () => {
+      const db = await getTestDb();
+      const { getMachineForLayout } =
+        await import("~/app/(app)/m/[initials]/_data");
+      const { getPinballMapState } = await import("~/lib/pinballmap/state");
+      const { getSameTitleMachines } =
+        await import("~/lib/pinballmap/same-title");
+      const { derivePbmListingView } =
+        await import("~/lib/pinballmap/listing-state");
+      const { deriveInsiderConnectedView, withInsiderConnected } =
+        await import("~/lib/pinballmap/insider-connected");
+      const { setInsiderConnectedIntentAction } =
+        await import("~/app/(app)/m/pinballmap-actions");
+
+      const tech = await createUser("member");
+      await mockAuthAs(tech.id);
+
+      const INELIGIBLE_TITLE_ID = 7002;
+      await db.insert(pinballmapState).values({
+        id: "singleton",
+        locationId: 26454,
+        snapshotJson: snapshotOf([
+          { id: LMX_ID, machineId: TITLE_ID, icEnabled: true },
+          { id: LMX_ID + 1, machineId: INELIGIBLE_TITLE_ID, icEnabled: null },
+        ]),
+        lastSyncStatus: "ok",
+        lastSyncedAt: new Date("2026-09-26T00:00:00Z"),
+      });
+      await db.insert(pinballmapCatalog).values([
+        {
+          pinballmapMachineId: TITLE_ID,
+          name: "Godzilla (Premium)",
+          icEligible: true,
+        },
+        {
+          pinballmapMachineId: INELIGIBLE_TITLE_ID,
+          name: "Medieval Madness",
+          icEligible: false,
+        },
+      ]);
+      const [eligible] = await db
+        .insert(machines)
+        .values([
+          {
+            name: "Godzilla GZE",
+            initials: "GZE",
+            ownerId: tech.id,
+            pinballmapMachineId: TITLE_ID,
+            pinballmapIntent: "on",
+            pinballmapIcIntent: null,
+          },
+          {
+            name: "Medieval Madness GZI",
+            initials: "GZI",
+            ownerId: tech.id,
+            pinballmapMachineId: INELIGIBLE_TITLE_ID,
+            pinballmapIntent: "on",
+            pinballmapIcIntent: null,
+          },
+          {
+            name: "Custom GZU",
+            initials: "GZU",
+            ownerId: tech.id,
+            pinballmapMachineId: null,
+            pinballmapExcluded: false,
+            pinballmapIntent: "off",
+          },
+        ])
+        .returning({ id: machines.id });
+      if (!eligible) throw new Error("expected eligible machine");
+
+      const state = await getPinballMapState();
+      if (!state) throw new Error("expected state");
+
+      async function deriveFor(initials: string, titleId: number) {
+        const loaded = (await getMachineForLayout(initials)).machine;
+        if (!loaded) throw new Error(`expected machine ${initials}`);
+        const siblings = await getSameTitleMachines(titleId);
+        const base = derivePbmListingView({
+          machineId: loaded.id,
+          pinballmapMachineId: loaded.pinballmapMachineId,
+          pinballmapExcluded: loaded.pinballmapExcluded,
+          intent: loaded.pinballmapIntent,
+          presenceStatus: loaded.presenceStatus,
+          configured: true,
+          snapshot: state?.snapshotJson ?? null,
+          siblings,
+        });
+        const ic = deriveInsiderConnectedView({
+          listing: base,
+          pinballmapMachineId: loaded.pinballmapMachineId,
+          icEligible: loaded.pinballmapTitle?.icEligible ?? false,
+          intent: loaded.pinballmapIcIntent,
+          siblingIntents: siblings.map((s) => s.icIntent),
+          snapshot: state?.snapshotJson ?? null,
+        });
+        return {
+          loaded,
+          ic,
+          listing: withInsiderConnected(base, ic),
+        };
+      }
+
+      const initial = await deriveFor("GZE", TITLE_ID);
+      expect(initial.loaded.pinballmapTitle?.icEligible).toBe(true);
+      expect(initial.ic).toMatchObject({
+        intent: null,
+        pinballMap: "on",
+        differs: false,
+      });
+      expect(initial.listing.outOfSync).toBe(false);
+
+      const offResult = await setInsiderConnectedIntentAction(
+        undefined,
+        form(eligible.id, { icIntent: "off" })
+      );
+      expect(offResult).toEqual({ ok: true, value: { icIntent: "off" } });
+
+      const afterOff = await deriveFor("GZE", TITLE_ID);
+      expect(afterOff.ic).toMatchObject({
+        intent: "off",
+        pinballMap: "on",
+        differs: true,
+      });
+      expect(afterOff.listing.outOfSync).toBe(true);
+
+      const clearResult = await setInsiderConnectedIntentAction(
+        undefined,
+        form(eligible.id, { icIntent: "no_sync" })
+      );
+      expect(clearResult).toEqual({ ok: true, value: { icIntent: null } });
+
+      const afterClear = await deriveFor("GZE", TITLE_ID);
+      expect(afterClear.ic).toMatchObject({
+        intent: null,
+        pinballMap: "on",
+        differs: false,
+      });
+      expect(afterClear.listing.outOfSync).toBe(false);
+
+      const ineligible = await deriveFor("GZI", INELIGIBLE_TITLE_ID);
+      expect(ineligible.loaded.pinballmapTitle?.icEligible).toBe(false);
+      expect(ineligible.ic).toBeNull();
+
+      const loadedUnlinked = (await getMachineForLayout("GZU")).machine;
+      expect(loadedUnlinked?.pinballmapTitle).toBeNull();
+    });
+  });
 });
