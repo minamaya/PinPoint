@@ -42,11 +42,6 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // Inside a sheet, so it is not above the tab bar.
   "components/issues/AddCommentForm.tsx":
     "Sticky inside the comment sheet, which sits over the tab bar.",
-  // PP-4wtr (Option D) moves the hub's buttons into the page flow and
-  // removes the thumb zone. That PR deletes this entry; until then the hub's
-  // thumb zone is the one pinned bar.
-  "app/(app)/m/[initials]/hub/machine-scan-hub.tsx":
-    "The scan hub's thumb zone, until PP-4wtr lands (delete this entry then).",
   // Modal panels that slide up over the page when opened and close again,
   // like dialogs. They are not a persistent bar above the tab bar.
   "components/ui/drawer.tsx": "Modal bottom drawer, open on demand.",

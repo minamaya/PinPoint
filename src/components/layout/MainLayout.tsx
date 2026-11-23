@@ -153,7 +153,7 @@ export async function MainLayout({
           {/* Extra bottom padding on mobile so content isn't hidden behind the
               fixed tab bar. A List View's phone pager ends the page, so there
               it is exactly the tab bar's height (list-views §7.8). */}
-          <div className="@container px-4 sm:px-8 lg:px-10 pb-[calc(88px+env(safe-area-inset-bottom))] [&:has([data-machine-scan-hub])]:pb-0 max-md:[&:has([data-list-phone-pager])]:pb-[calc(57px+env(safe-area-inset-bottom))] md:pb-0">
+          <div className="@container px-4 sm:px-8 lg:px-10 pb-[calc(88px+env(safe-area-inset-bottom))] max-md:[&:has([data-list-phone-pager])]:pb-[calc(57px+env(safe-area-inset-bottom))] md:pb-0">
             {children}
           </div>
         </main>

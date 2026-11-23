@@ -1,13 +1,15 @@
 import type React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronRight, CircleAlert, Trophy } from "lucide-react";
+import { CircleAlert, Info, Trophy } from "lucide-react";
 import type {
   MachineArtwork,
   MachineForLayout,
   MachinePinTips,
 } from "~/app/(app)/m/[initials]/_data";
 import { PinTipCard } from "~/app/(app)/m/[initials]/pin-tip-card";
+import { AskPinBrainButton } from "~/components/machines/AskPinBrainButton";
+import { buttonVariants } from "~/components/ui/button";
 import { formatCalendarDay, formatCompactAge } from "~/lib/dates";
 import type { IscoredScore } from "~/lib/iscored/types";
 import {
@@ -66,48 +68,36 @@ const FALLBACK_ARTWORK_RATIO = 444 / 640;
 function scoresCardHeight(rows: number): number {
   return rows === 0 ? 118 : 54 + 40 * rows;
 }
-function IdentityLink({
-  href,
+/** The identity block (spec §3.1). Not a link: Game details opens the Info tab (§4.5). */
+function Identity({
   name,
   metadata,
   onArtwork,
 }: {
-  href: string;
   name: string;
   metadata: string;
   onArtwork: boolean;
 }): React.JSX.Element {
   return (
-    <Link
-      href={href}
-      className="flex min-h-16 items-center gap-2 rounded-lg text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-    >
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-[26px] leading-tight font-extrabold tracking-tight sm:text-3xl">
-          {name}
-        </h1>
-        <p
-          className={`truncate text-xs sm:text-sm ${onArtwork ? "text-foreground/85" : "text-muted-foreground"}`}
-        >
-          {metadata}
-        </p>
-      </div>{" "}
-      <span
-        className={`flex shrink-0 flex-col items-center text-[10px] font-semibold ${onArtwork ? "text-foreground/85" : "text-muted-foreground"}`}
+    <div className="flex min-h-16 flex-col justify-center text-foreground">
+      <h1 className="truncate text-[26px] leading-tight font-extrabold tracking-tight sm:text-3xl">
+        {name}
+      </h1>
+      <p
+        className={`truncate text-xs sm:text-sm ${onArtwork ? "text-foreground/85" : "text-muted-foreground"}`}
       >
-        <ChevronRight className="size-5" aria-hidden="true" />
-        Details
-      </span>
-    </Link>
+        {metadata}
+      </p>
+    </div>
   );
 }
 
 /**
  * The artwork band (spec §3.6–§3.7, §5.4). Its height is whatever leaves the
- * top 60px of the card after Top scores visible above the pinned action bar
- * on first load: the free height, minus the Top scores card
- * (`--scores-h`), 173px (the 89px action bar, two 12px gaps, and the 60px
- * peek), and on `md` the 16px top padding the band does not bleed into.
+ * top 60px of the Top scores card visible above the tab bar on first load,
+ * with both button rows between them (§3.7): the free height, minus the Top
+ * scores card (`--scores-h`) and 204px (two 12px gaps, the 68px and 44px
+ * button rows with 8px between them, and the 60px peek), and on `md` the 16px top padding the band does not bleed into.
  * Capped at the image's own height at full width, and never below 180px —
  * the page scrolls instead. When the band is shorter than the image, the
  * image shrinks to fit (`object-contain`) and a blurred copy fills the sides.
@@ -137,7 +127,7 @@ function ArtworkBand({
     <figure
       data-testid="hub-artwork-band"
       style={style}
-      className="relative m-0 -mx-4 -mt-4 h-[clamp(180px,calc(100dvh-112px-env(safe-area-inset-bottom)-var(--scores-h)-173px),calc(min(100vw,422px)*var(--art-ratio)))] shrink-0 overflow-hidden bg-card md:mx-0 md:mt-0 md:h-[clamp(180px,calc(100dvh-64px-16px-var(--scores-h)-173px),calc(390px*var(--art-ratio)))] md:rounded-xl"
+      className="relative m-0 -mx-4 -mt-4 h-[clamp(180px,calc(100dvh-112px-env(safe-area-inset-bottom)-var(--scores-h)-204px),calc(min(100vw,422px)*var(--art-ratio)))] shrink-0 overflow-hidden bg-card md:mx-0 md:mt-0 md:h-[clamp(180px,calc(100dvh-64px-16px-var(--scores-h)-204px),calc(390px*var(--art-ratio)))] md:rounded-xl"
     >
       <Image
         src={artwork.url}
@@ -206,30 +196,60 @@ export function MachineScanHub({
   const scoreRows = machine.iscoredGameId ? Math.min(scores.length, 3) : 0;
 
   return (
-    <div
-      data-machine-scan-hub
-      className="mx-auto flex min-h-[calc(100dvh-56px)] w-full max-w-[390px] flex-col gap-3 pt-4 pb-[calc(56px+env(safe-area-inset-bottom))] md:min-h-[calc(100dvh-64px)] md:pb-0"
-    >
+    <div className="mx-auto flex w-full max-w-[390px] flex-col gap-3 pt-4">
       {machine.artwork != null ? (
         <ArtworkBand
           artwork={machine.artwork}
           scoresHeight={scoresCardHeight(scoreRows)}
         >
-          <IdentityLink
-            href={infoHref}
+          <Identity
             name={machine.name}
             metadata={metadata.join(" · ")}
             onArtwork
           />
         </ArtworkBand>
       ) : (
-        <IdentityLink
-          href={infoHref}
+        <Identity
           name={machine.name}
           metadata={metadata.join(" · ")}
           onArtwork={false}
         />
       )}
+
+      {/* Action buttons (spec §3.4), in the page flow: nothing on the hub is
+          pinned (§5.5, design bible §3). */}
+      <nav aria-label="Machine actions" className="flex flex-col gap-2">
+        <div className="flex gap-2.5">
+          {scoreHref ? (
+            <a
+              href={scoreHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-[68px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl bg-primary text-center text-base font-bold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <Trophy className="size-6" aria-hidden="true" />
+              Post a score
+            </a>
+          ) : null}
+          <Link
+            href={reportHref}
+            className="flex h-[68px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl bg-warning text-center text-base font-bold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <CircleAlert className="size-6" aria-hidden="true" />
+            Report a problem
+          </Link>
+        </div>
+        <div className="flex gap-2.5">
+          <Link
+            href={infoHref}
+            className={`${buttonVariants({ variant: "outline" })} h-11 min-w-0 flex-1`}
+          >
+            <Info aria-hidden="true" />
+            Game details
+          </Link>
+          <AskPinBrainButton className="h-11 min-w-0 flex-1" />
+        </div>
+      </nav>
 
       <section className={cardClass} aria-labelledby="hub-scores-heading">
         <div className="flex min-h-6 items-center justify-between gap-2">
@@ -337,39 +357,6 @@ export function MachineScanHub({
           </ol>
         )}
       </section>
-
-      {/* The thumb zone (spec §1, §5.5): pinned above the tab bar while the hub
-          scrolls, full-bleed on phones. Content scrolling under it fades out
-          at its top edge (§5.6). The hub's bottom padding equals the tab bar's
-          height, so at the end of the page the bar's resting place and its
-          pinned place coincide. */}
-      <div
-        className="sticky bottom-[calc(56px+env(safe-area-inset-bottom))] z-10 -mx-4 mt-auto flex gap-2.5 border-t border-border bg-background/95 px-4 py-2.5 md:bottom-0 md:mx-0 md:px-0"
-        aria-label="Machine actions"
-      >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-full h-14 bg-linear-to-b from-transparent to-background/95"
-        />
-        {scoreHref ? (
-          <a
-            href={scoreHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-[68px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl bg-primary text-center text-base font-bold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <Trophy className="size-6" aria-hidden="true" />
-            Post a score
-          </a>
-        ) : null}
-        <Link
-          href={reportHref}
-          className="flex h-[68px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl bg-warning text-center text-base font-bold text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <CircleAlert className="size-6" aria-hidden="true" />
-          Report a problem
-        </Link>
-      </div>
     </div>
   );
 }

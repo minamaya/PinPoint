@@ -28,8 +28,7 @@
 ## Known divergences
 
 | Requirement | Divergence | Resolution |
-| :-- | :-- | :-- |
-| §2.1–§2.4, §3.1 | No Ask PinBrain button exists on the hub or the Info tab. | PP-4wtr |
+| :---------- | :--------- | :--------- |
 
 ## Changelog
 
