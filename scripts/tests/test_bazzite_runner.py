@@ -136,6 +136,45 @@ def test_refuses_everything_else(run, labels):
     assert supervisor.refusal(run, _job(labels)) is not None
 
 
+def test_jit_config_is_owner_only(monkeypatch, tmp_path):
+    # PP-m39ur: the seed inputs carry a runner registration; another local user
+    # must not be able to read them while a VM is pending.
+    monkeypatch.setattr(supervisor, "JOBS", tmp_path / "jobs")
+    monkeypatch.setattr(
+        supervisor,
+        "api",
+        lambda *_a, **_k: {"runner": {"id": 7}, "encoded_jit_config": "SECRET"},
+    )
+    seen = {}
+
+    def fake_run(cmd, **_kwargs):
+        if cmd[0] == supervisor.XORRISO:
+            job_dir = Path(cmd[cmd.index("-o") + 1]).parent
+            seen["dir"] = job_dir.stat().st_mode & 0o777
+            seen["user-data"] = (job_dir / "user-data").stat().st_mode & 0o777
+            seen["text"] = (job_dir / "user-data").read_text()
+
+    monkeypatch.setattr(supervisor.subprocess, "run", fake_run)
+    monkeypatch.setattr(supervisor.subprocess, "Popen", lambda *_a, **_k: None)
+    monkeypatch.setattr(supervisor, "vms", {})
+    monkeypatch.setattr(supervisor, "admitted", {})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    old = supervisor.os.umask(0o022)  # systemd's default, the case the fix covers
+    try:
+        supervisor.spawn(_run(), _job(["pinpoint-run-100"]))
+    finally:
+        supervisor.os.umask(old)
+    assert seen == {"dir": 0o700, "user-data": 0o600, "text": seen["text"]}
+    assert "SECRET" in seen["text"]
+    assert not (supervisor.JOBS / "1" / "user-data").exists()
+
+
+def test_service_unit_keeps_its_state_owner_only():
+    unit = (RUNNER_DIR / "gh-runner.service").read_text().splitlines()
+    assert "StateDirectoryMode=0700" in unit
+    assert "UMask=0077" in unit
+
+
 # --- A VM that dies mid-job (PP-gakbw) --------------------------------------
 
 
