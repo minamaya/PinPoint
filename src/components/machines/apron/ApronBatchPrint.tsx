@@ -251,7 +251,7 @@ export function ApronBatchPrint({
       : `Download ${count(files.length, "PDF", "PDFs")}`;
 
   return (
-    <div className="flex flex-col gap-5 pb-24 md:pb-0">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
         <Link
           href="/m"
@@ -261,6 +261,23 @@ export function ApronBatchPrint({
           Machines
         </Link>
         <PageHeader title="Print apron cards" />
+      </div>
+
+      {/* Phone: the run's totals sit in the page flow under the title (design
+          bible §3: nothing is pinned above the tab bar). */}
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5 md:hidden">
+        <span className="flex flex-col">
+          <span className="font-semibold">
+            {count(chosen.length, "card", "cards")}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            {count(files.length, "PDF", "PDFs")} ·{" "}
+            {count(totalSheets, "sheet", "sheets")}
+          </span>
+        </span>
+        <Button asChild className="ml-auto">
+          <a href="#print-run">Print run</a>
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-start gap-6">
@@ -585,22 +602,6 @@ export function ApronBatchPrint({
             </div>
           ) : null}
         </aside>
-      </div>
-
-      {/* Phone: the run's totals stay in view above the tab bar. */}
-      <div className="fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 border-t border-border bg-card px-4 py-2.5 md:hidden">
-        <span className="flex flex-col">
-          <span className="font-semibold">
-            {count(chosen.length, "card", "cards")}
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {count(files.length, "PDF", "PDFs")} ·{" "}
-            {count(totalSheets, "sheet", "sheets")}
-          </span>
-        </span>
-        <Button asChild className="ml-auto">
-          <a href="#print-run">Print run</a>
-        </Button>
       </div>
 
       <div

@@ -130,7 +130,7 @@ These values are fixed. Do not deviate.
 
 **If you add a new page:** it MUST include the content bottom padding or content will be hidden behind the tab bar on mobile.
 
-**Nothing full-width is pinned above the bottom tab bar on phones.** Page actions and pagers live in the page flow and scroll with it; the tab bar is the only fixed chrome at the bottom of the screen.
+**Nothing full-width is pinned above the bottom tab bar on phones.** Page actions and pagers live in the page flow and scroll with it; the tab bar is the only fixed chrome at the bottom of the screen. `src/test/unit/no-pinned-phone-bars.test.ts` fails on any new `fixed`/`sticky` + `bottom-*` class string outside its allowlist; add to the allowlist only with a reason.
 
 ## 4. Responsive Strategy
 
