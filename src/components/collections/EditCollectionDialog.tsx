@@ -7,13 +7,14 @@ import { Button } from "~/components/ui/button";
 import { CollectionFields } from "~/components/collections/CollectionFields";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
 import { updateCollectionAction } from "~/app/(app)/c/collections/actions";
-import type { ProseMirrorDoc } from "~/lib/tiptap/types";
+import { docIsEmpty, type ProseMirrorDoc } from "~/lib/tiptap/types";
 
 interface Props {
   /** The dialog opens from Edit collection in ⋯ (collections-and-tags 4.17). */
@@ -26,6 +27,15 @@ interface Props {
   currentIds: string[];
   /** Where focus goes when the dialog closes (useReturnFocus). */
   onCloseAutoFocus?: ((event: Event) => void) | undefined;
+}
+
+/** Typing a character and deleting it leaves an equal (or empty) doc. */
+function sameDescription(
+  a: ProseMirrorDoc | null,
+  b: ProseMirrorDoc | null
+): boolean {
+  if (docIsEmpty(a) && docIsEmpty(b)) return true;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
@@ -64,6 +74,12 @@ export function EditCollectionDialog({
     }
   }, [open, currentName, currentDescription, currentIds]);
 
+  const dirty =
+    name !== currentName ||
+    !sameDescription(description, currentDescription) ||
+    selected.length !== currentIds.length ||
+    selected.some((id) => !currentIds.includes(id));
+
   function save(): void {
     setSaveError(null);
     startSave(async () => {
@@ -82,13 +98,10 @@ export function EditCollectionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
       <DialogContent
         className="sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
-        // A stray backdrop click shouldn't discard an in-progress edit — only
-        // Cancel / the X / Esc close it (unsaved-form dismissal guidance).
-        onInteractOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>Edit collection</DialogTitle>
@@ -116,13 +129,11 @@ export function EditCollectionDialog({
         )}
 
         <div className="flex flex-row items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
           <Button
             type="button"
             onClick={save}

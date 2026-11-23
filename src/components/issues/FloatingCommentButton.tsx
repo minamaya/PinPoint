@@ -12,6 +12,11 @@ import {
   SheetTrigger,
 } from "~/components/ui/sheet";
 import { AddCommentForm } from "~/components/issues/AddCommentForm";
+import {
+  commentDraftKey,
+  draftHasContent,
+  useCommentDraft,
+} from "~/components/issues/comment-draft";
 import { useActiveIssueSection } from "~/components/issues/IssueSectionTabs";
 
 interface FloatingCommentButtonProps {
@@ -24,8 +29,8 @@ interface FloatingCommentButtonProps {
  * Mobile-only floating Comment button (spec issue-detail §8.3). Sits above the
  * bottom tab bar on the Issue tab only — the tab that shows Activity — and
  * opens the comment composer in a sheet, which closes once the comment posts.
- * Dismissing the sheet keeps what was typed: the composer's draft is restored
- * the next time it opens (and survives a reload).
+ * Dismissing the sheet with a comment typed asks before discarding it
+ * (design-bible §17); a reload or a lost connection still keeps the draft.
  *
  * - Renders inside `IssueSections`, which says which tab is showing
  * - Hidden from `md:` up, where the comment box sits inline in Activity
@@ -42,6 +47,13 @@ export function FloatingCommentButton({
 }: FloatingCommentButtonProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
   const section = useActiveIssueSection();
+  // The same draft the composer writes, read here so the sheet knows whether
+  // dismissing it would lose a comment. Discard empties it.
+  const draft = useCommentDraft(
+    commentDraftKey(userId, issueId),
+    "floating-comment-sheet"
+  );
+  const dirty = draftHasContent(draft.snapshot.draft);
   // The comment just posted, to bring into view once the sheet closes.
   const postedIdRef = useRef<string | null>(null);
 
@@ -58,7 +70,12 @@ export function FloatingCommentButton({
       className="fixed right-4 bottom-[calc(56px+env(safe-area-inset-bottom)+var(--floating-action-gap))] z-30 md:hidden"
       data-floating-action
     >
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet
+        open={open}
+        onOpenChange={setOpen}
+        dirty={dirty}
+        onDiscard={draft.clear}
+      >
         <SheetTrigger asChild>
           <button
             type="button"

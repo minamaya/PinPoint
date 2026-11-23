@@ -97,7 +97,8 @@ export function SettingsTagPicker({
         </PopoverContent>
       </Popover>
 
-      <Sheet open={open && isMobile} onOpenChange={onOpenChange}>
+      {/* Each tag applies as it is tapped, so there is never a draft to lose. */}
+      <Sheet open={open && isMobile} onOpenChange={onOpenChange} dirty={false}>
         <SheetContent
           side="bottom"
           aria-describedby={undefined}

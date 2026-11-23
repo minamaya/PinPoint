@@ -4,12 +4,44 @@ import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { XIcon } from "lucide-react";
 
+import {
+  GuardedModal,
+  UnguardedModal,
+  useIgnoreOutsideInteraction,
+  type ModalDismissalProps,
+} from "~/components/ui/modal-dismissal";
 import { cn } from "~/lib/utils";
 
+/**
+ * Pass `dirty` on any Dialog that holds user input: outside clicks are ignored
+ * and unsaved changes are confirmed before the dialog closes (CORE-UI-009).
+ */
 function Dialog({
+  dirty,
+  onDiscard,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Root>): React.JSX.Element {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+}: React.ComponentProps<typeof DialogPrimitive.Root> &
+  ModalDismissalProps): React.JSX.Element {
+  if (dirty === undefined) {
+    return (
+      <UnguardedModal>
+        <DialogPrimitive.Root data-slot="dialog" {...props} />
+      </UnguardedModal>
+    );
+  }
+  return (
+    <GuardedModal
+      dirty={dirty}
+      onDiscard={onDiscard}
+      open={props.open}
+      defaultOpen={props.defaultOpen}
+      onOpenChange={props.onOpenChange}
+    >
+      {(root) => (
+        <DialogPrimitive.Root data-slot="dialog" {...props} {...root} />
+      )}
+    </GuardedModal>
+  );
 }
 
 function DialogTrigger({
@@ -50,10 +82,12 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }): React.JSX.Element {
+  const handleInteractOutside = useIgnoreOutsideInteraction(onInteractOutside);
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -65,6 +99,9 @@ function DialogContent({
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
           className
         )}
+        {...(handleInteractOutside
+          ? { onInteractOutside: handleInteractOutside }
+          : {})}
         {...props}
       >
         {children}

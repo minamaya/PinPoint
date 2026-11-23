@@ -55,82 +55,7 @@ test.describe("User Invitation & Signup Flow", () => {
     }
   });
 
-  test("should complete the full invite-signup flow", async ({
-    page,
-  }, testInfo) => {
-    test.slow(); // Triple the timeout
-    const testId = Math.random().toString(36).substring(7);
-    const userEmail = `full-invite-${testId}@example.com`;
-    testEmails.add(userEmail);
-
-    console.log(`[test] Starting flow for ${userEmail}`);
-
-    // 1. Navigate to machine creation page and invite user via OwnerSelect
-
-    console.log("[test] Navigating to /m/new");
-    await page.goto("/m/new");
-    console.log("[test] Navigated to /m/new");
-
-    await page.getByRole("button", { name: /Invite New/i }).click();
-    console.log("[test] Clicked Invite New button");
-
-    await page.getByLabel(/First Name/i).fill("Full");
-    await page.getByLabel(/Last Name/i).fill("Flow");
-    await page.getByRole("textbox", { name: "Email" }).fill(userEmail);
-
-    // Ensure "Send invitation email" is checked
-    const inviteCheckbox = page.getByRole("checkbox", {
-      name: /Send invitation email/i,
-    });
-    await inviteCheckbox.check();
-
-    await page
-      .getByRole("button", { name: /Invite User/i, includeHidden: false })
-      .click();
-    await expect(page.getByRole("dialog")).not.toBeVisible();
-
-    console.log("[test] Invitation sent");
-
-    // 2. Admin logs out (to clear session for signup)
-    await logout(page, testInfo);
-
-    console.log("[test] Admin logged out");
-
-    // 3. Get signup link from Mailpit (getSignupLink polls for up to 30 s)
-    const signupLink = await getSignupLink(userEmail);
-    console.log(`[test] Got signup link: ${signupLink}`);
-    expect(signupLink).toContain("/signup");
-    expect(signupLink).toContain(encodeURIComponent(userEmail));
-
-    // 4. Follow signup link
-    await page.goto(signupLink);
-
-    // Verify signup form is pre-filled
-    await expect(page.getByLabel(/Email/i)).toHaveValue(userEmail);
-    await expect(page.getByLabel(/First Name/i)).toHaveValue("Full");
-    await expect(page.getByLabel(/Last Name/i)).toHaveValue("Flow");
-
-    // 5. Complete signup
-    await page.getByLabel(/^Password\s*\*?$/).fill("TestPassword123!");
-    await page.getByLabel(/Confirm Password/i).fill("TestPassword123!");
-    await page.getByLabel(/terms of service/i).check();
-    await page.getByRole("button", { name: /Create Account/i }).click();
-
-    // 6. Verify redirect to dashboard
-    await expect(page).toHaveURL("/dashboard", { timeout: 15000 });
-    await expect(
-      page.getByRole("heading", { name: /Quick Stats/i })
-    ).toBeVisible();
-
-    // Verify user profile in menu (unified AppHeader — same testid on all viewports)
-    const userMenu = page.getByTestId("user-menu-button");
-    await expect(userMenu).toBeVisible();
-    await userMenu.click();
-    await expect(page.getByText("Full Flow")).toBeVisible();
-    // Email is no longer displayed in user menu (removed in PR #871)
-  });
-
-  test("should transfer machine ownership when invited user signs up", async ({
+  test("should complete invite-signup and transfer machine ownership", async ({
     page,
   }, testInfo) => {
     test.slow(); // Triple the timeout - complex multi-step flow
@@ -194,7 +119,14 @@ test.describe("User Invitation & Signup Flow", () => {
     await logout(page, testInfo);
 
     const signupLink = await getSignupLink(userEmail);
+    expect(signupLink).toContain("/signup");
+    expect(signupLink).toContain(encodeURIComponent(userEmail));
     await page.goto(signupLink);
+
+    // Verify signup form is pre-filled from invitation record
+    await expect(page.getByLabel(/Email/i)).toHaveValue(userEmail);
+    await expect(page.getByLabel(/First Name/i)).toHaveValue("Owner");
+    await expect(page.getByLabel(/Last Name/i)).toHaveValue(lastName);
 
     await page.getByLabel(/^Password\s*\*?$/).fill("TestPassword123!");
     await page.getByLabel(/Confirm Password/i).fill("TestPassword123!");
@@ -202,6 +134,15 @@ test.describe("User Invitation & Signup Flow", () => {
     await page.getByRole("button", { name: /Create Account/i }).click();
 
     await expect(page).toHaveURL("/dashboard", { timeout: 15000 });
+    await expect(
+      page.getByRole("heading", { name: /Quick Stats/i })
+    ).toBeVisible();
+
+    // Verify user profile in menu (unified AppHeader — same testid on all viewports)
+    const userMenu = page.getByTestId("user-menu-button");
+    await expect(userMenu).toBeVisible();
+    await userMenu.click();
+    await expect(page.getByText(`Owner ${lastName}`)).toBeVisible();
 
     // 4. Verify machine ownership transferred
     await page.goto("/m/HD");

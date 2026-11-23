@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
 import {
   invitedUsers,
   userProfiles,
@@ -428,6 +429,7 @@ describe("Admin User Management Integration", () => {
 
       const result = await removeInvitedUser(invited.id);
       expect(result.ok).toBe(true);
+      expect(revalidatePath).toHaveBeenCalledWith("/admin/users");
 
       const dbUser = await (
         await getTestDb()

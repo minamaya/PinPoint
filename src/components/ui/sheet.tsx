@@ -4,13 +4,43 @@ import * as React from "react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 import { XIcon } from "lucide-react";
 
+import {
+  GuardedModal,
+  UnguardedModal,
+  useIgnoreOutsideInteraction,
+  type ModalDismissalProps,
+} from "~/components/ui/modal-dismissal";
 import { useVisualViewportInset } from "~/hooks/use-visual-viewport-inset";
 import { cn } from "~/lib/utils";
 
+/**
+ * Pass `dirty` on any Sheet that holds user input: outside clicks are ignored
+ * and unsaved changes are confirmed before the sheet closes (CORE-UI-009).
+ */
 function Sheet({
+  dirty,
+  onDiscard,
   ...props
-}: React.ComponentProps<typeof SheetPrimitive.Root>): React.JSX.Element {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+}: React.ComponentProps<typeof SheetPrimitive.Root> &
+  ModalDismissalProps): React.JSX.Element {
+  if (dirty === undefined) {
+    return (
+      <UnguardedModal>
+        <SheetPrimitive.Root data-slot="sheet" {...props} />
+      </UnguardedModal>
+    );
+  }
+  return (
+    <GuardedModal
+      dirty={dirty}
+      onDiscard={onDiscard}
+      open={props.open}
+      defaultOpen={props.defaultOpen}
+      onOpenChange={props.onOpenChange}
+    >
+      {(root) => <SheetPrimitive.Root data-slot="sheet" {...props} {...root} />}
+    </GuardedModal>
+  );
 }
 
 function SheetTrigger({
@@ -53,6 +83,7 @@ function SheetContent({
   children,
   side = "right",
   style,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
@@ -62,6 +93,7 @@ function SheetContent({
   // A bottom sheet rides above the on-screen keyboard, which on iOS covers
   // the layout viewport rather than shrinking it.
   const keyboard = useVisualViewportInset();
+  const handleInteractOutside = useIgnoreOutsideInteraction(onInteractOutside);
   const keyboardStyle: React.CSSProperties | undefined =
     side === "bottom" && keyboard.visibleHeight !== null
       ? {
@@ -87,6 +119,9 @@ function SheetContent({
           className
         )}
         style={keyboardStyle ? { ...style, ...keyboardStyle } : style}
+        {...(handleInteractOutside
+          ? { onInteractOutside: handleInteractOutside }
+          : {})}
         {...props}
       >
         {children}

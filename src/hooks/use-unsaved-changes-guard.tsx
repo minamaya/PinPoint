@@ -2,16 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
+import { DiscardChangesDialog } from "~/components/ui/discard-changes-dialog";
 
 export interface UnsavedChangesGuardOptions {
   /** Whether the form currently has unsaved edits. */
@@ -225,41 +216,28 @@ export function useUnsavedChangesGuard({
       : (discardLabel ?? defaultDiscardLabel);
 
   const dialog = (
-    <AlertDialog
+    <DiscardChangesDialog
       open={isOpen}
-      onOpenChange={(open) => {
-        if (!open) cancelDiscard();
-      }}
-    >
-      <AlertDialogContent
-        onCloseAutoFocus={(event) => {
-          if (navigationConfirmed.current) {
-            navigationConfirmed.current = false;
-            lastInterceptedLink.current = null;
-            return;
-          }
-          const link = lastInterceptedLink.current;
+      onKeepEditing={cancelDiscard}
+      onDiscard={confirmDiscard}
+      title={resolvedTitle}
+      description={resolvedDescription}
+      discardLabel={resolvedDiscardLabel}
+      keepEditingLabel={stayLabel}
+      onCloseAutoFocus={(event) => {
+        if (navigationConfirmed.current) {
+          navigationConfirmed.current = false;
           lastInterceptedLink.current = null;
-          if (link && document.contains(link)) {
-            event.preventDefault();
-            link.focus();
-          }
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>{resolvedTitle}</AlertDialogTitle>
-          <AlertDialogDescription>{resolvedDescription}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={cancelDiscard}>
-            {stayLabel}
-          </AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={confirmDiscard}>
-            {resolvedDiscardLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          return;
+        }
+        const link = lastInterceptedLink.current;
+        lastInterceptedLink.current = null;
+        if (link && document.contains(link)) {
+          event.preventDefault();
+          link.focus();
+        }
+      }}
+    />
   );
 
   return {

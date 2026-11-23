@@ -1,11 +1,12 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -52,16 +53,33 @@ export function AddTagDialog({
   onOpenChange,
   onCloseAutoFocus,
 }: AddTagDialogProps): React.JSX.Element {
+  const initialTypeId = type?.id ?? NO_TYPE;
+  const [name, setName] = useState("");
+  const [typeId, setTypeId] = useState(initialTypeId);
+
+  // Each open starts clean.
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setTypeId(initialTypeId);
+    }
+  }, [open, initialTypeId]);
+
+  const dirty = name !== "" || typeId !== initialTypeId;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={dirty}>
       <DialogContent
         className="sm:max-w-sm"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        {/* Mounts with the content, so each open starts clean. */}
         <AddTagForm
           types={types}
           type={type}
+          name={name}
+          onNameChange={setName}
+          typeId={typeId}
+          onTypeIdChange={setTypeId}
           onClose={() => onOpenChange(false)}
         />
       </DialogContent>
@@ -72,16 +90,22 @@ export function AddTagDialog({
 function AddTagForm({
   types,
   type,
+  name,
+  onNameChange,
+  typeId,
+  onTypeIdChange,
   onClose,
 }: {
   types: TagTypeOption[] | undefined;
   type: TagTypeOption | undefined;
+  name: string;
+  onNameChange: (name: string) => void;
+  typeId: string;
+  onTypeIdChange: (typeId: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [typeId, setTypeId] = useState(type?.id ?? NO_TYPE);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -115,13 +139,13 @@ function AddTagForm({
       <TagNameField
         id={`${id}-name`}
         value={name}
-        onChange={setName}
+        onChange={onNameChange}
         errorId={error === null ? undefined : `${id}-error`}
       />
       {types ? (
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-type`}>Tag type</Label>
-          <Select value={typeId} onValueChange={setTypeId}>
+          <Select value={typeId} onValueChange={onTypeIdChange}>
             <SelectTrigger id={`${id}-type`} className="w-full">
               <SelectValue />
             </SelectTrigger>
@@ -146,9 +170,11 @@ function AddTagForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" loading={pending} disabled={name.trim() === ""}>
           Add tag
         </Button>
