@@ -1,16 +1,17 @@
 /**
- * RTL Unit Tests: OwnerSelect — H-class UI state assertions
+ * RTL Unit Tests: OwnerSelect
  *
  * Covers:
  * 1. Guests hidden by default, revealed via "Show guests and invited users" checkbox
  * 2. Typed search bypasses the guest filter
  * 3. Invited users also hidden by default, revealed via checkbox
+ * 4. Selected trigger label and (GUEST) badge rendering
+ * 5. CommandItem selection (hidden ownerId + onValueChange) and inline
+ *    InviteUserDialog onSuccess auto-selection (controlled & fallback state)
  *
- * These tests were downgraded from e2e/full/machine-owner-picker.spec.ts (tests
- * at lines 40, 67) per the 2026-05 audit row #28 (KEEP-reduced, H-class to RTL).
- *
- * The class-F promote-dialog tests (lines 113, 162 of the E2E spec) remain in
- * e2e/full/machine-owner-picker.spec.ts as they require a real server round-trip.
+ * Full-stack promote-on-create and inline-invite server action journeys stay in
+ * `e2e/full/machine-owner-picker.spec.ts` and `e2e/full/machine-with-invite.spec.ts`,
+ * with promote-dialog state coverage in `src/app/(app)/m/new/create-machine-form.test.tsx`.
  */
 
 import React, { useState } from "react";
