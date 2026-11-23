@@ -384,6 +384,9 @@ def free_slot() -> int:
     return next(i for i in range(MAX_VMS) if i not in used)
 
 
+# The runner writes to the second serial port (runner.log). ttyS0 is the kernel
+# console, and the serial login prompt that starts there late in boot cuts off
+# every process writing to it: the runner then exits and the VM powers off.
 def user_data(jit: str, ports: tuple[int, int] = EPHEMERAL, reserved: str = "") -> str:
     low, high = ports
     bootcmd = f'  - [sysctl, -w, "net.ipv4.ip_local_port_range={low} {high}"]\n'
@@ -396,7 +399,7 @@ bootcmd:
     permissions: "0600"
     content: {jit}
 runcmd:
-  - [bash, -c, "chown runner:runner /home/runner/jit; cd /home/runner/actions-runner && sudo -u runner ./run.sh --jitconfig $(cat /home/runner/jit) > /dev/ttyS0 2>&1; poweroff"]
+  - [bash, -c, "chown runner:runner /home/runner/jit; cd /home/runner/actions-runner && sudo -u runner ./run.sh --jitconfig $(cat /home/runner/jit) < /dev/null > /dev/ttyS1 2>&1; poweroff"]
 """
 
 
@@ -491,6 +494,8 @@ def spawn(run, job) -> None:
                 "none",
                 "-serial",
                 f"file:{d / 'serial.log'}",
+                "-serial",
+                f"file:{d / 'runner.log'}",
                 "-no-reboot",
             ],
             stdout=subprocess.DEVNULL,
@@ -566,7 +571,12 @@ def keep_serial_log(vm) -> None:
         if not VM_LOGS.is_dir():
             VM_LOGS.mkdir()
             VM_LOGS.chmod(0o2750)  # the umask is 077; froeht's group reads these
-        text = SECRET_LIKE.sub(b"[redacted]", (vm["dir"] / "serial.log").read_bytes())
+        text = b""
+        for part in ("runner.log", "serial.log"):
+            path = vm["dir"] / part
+            if path.exists():
+                text += f"===== {part}\n".encode() + path.read_bytes() + b"\n"
+        text = SECRET_LIKE.sub(b"[redacted]", text)
         dest = VM_LOGS / f"{vm['name']}.log"
         fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
         with os.fdopen(fd, "wb") as f:

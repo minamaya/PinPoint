@@ -244,7 +244,7 @@ def test_vm_that_exits_with_its_job_still_assigned_is_recorded(monkeypatch, tmp_
     supervisor.reap()
     assert supervisor.vms == {}
     assert supervisor.dead["bazzite-100-7-a"]["run_id"] == 100
-    assert (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text() == "runner console"
+    assert "runner console" in (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text()
 
 
 def test_saved_console_is_readable_by_froeht_and_carries_no_token(
@@ -259,7 +259,8 @@ def test_saved_console_is_readable_by_froeht_and_carries_no_token(
     finally:
         supervisor.os.umask(old)
     saved = supervisor.VM_LOGS / "bazzite-100-7-a.log"
-    assert saved.read_text() == "before [redacted] after"
+    assert "before [redacted] after" in saved.read_text()
+    assert "A" * 120 not in saved.read_text()
     assert saved.stat().st_mode & 0o777 == 0o640
     assert supervisor.VM_LOGS.stat().st_mode & 0o7777 == 0o2750
 
@@ -440,6 +441,21 @@ def test_user_data_sets_the_guest_port_range_before_the_runner_starts():
         ["sysctl", "-w", "net.ipv4.ip_local_reserved_ports=40000,41641"],
     ]
     assert doc["write_files"][0]["content"] == "JIT"
+
+
+def test_runner_writes_to_the_second_serial_port():
+    # The login prompt that starts on ttyS0 late in boot cuts off writers there.
+    runcmd = yaml.safe_load(supervisor.user_data("JIT"))["runcmd"][0][2]
+    assert "> /dev/ttyS1 2>&1" in runcmd
+    assert "ttyS0" not in runcmd
+
+
+def test_saved_console_holds_the_runner_output_first(monkeypatch, tmp_path):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    (supervisor.vms[7]["dir"] / "runner.log").write_text("Listening for Jobs")
+    supervisor.reap()
+    saved = (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text()
+    assert saved.index("Listening for Jobs") < saved.index("runner console")
 
 
 def test_free_slot_takes_the_lowest_unused(monkeypatch):
