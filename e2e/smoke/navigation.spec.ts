@@ -34,7 +34,9 @@ test.describe("Navigation (member)", () => {
     } else {
       await appHeader.getByRole("link", { name: "Issues" }).click();
       await expect(page).toHaveURL(/\/issues/);
-      await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Issues", exact: true })
+      ).toBeVisible();
     }
 
     const userMenu = page.getByTestId("user-menu-button");

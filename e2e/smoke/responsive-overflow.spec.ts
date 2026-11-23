@@ -227,12 +227,14 @@ test.describe("Responsive: no horizontal overflow", () => {
     test.describe("collection pages", () => {
       const collectionBase = "/c/tags/location/front-room";
 
-      test(`${collectionBase}/timeline`, async ({ page }) => {
-        await page.goto(`${collectionBase}/timeline`);
-        await page.waitForLoadState("load");
-        await assertNoHorizontalOverflow(page);
-        await assertNoA11yViolations(page);
-      });
+      for (const suffix of ["/issues", "/timeline"]) {
+        test(`${collectionBase}${suffix}`, async ({ page }) => {
+          await page.goto(`${collectionBase}${suffix}`);
+          await page.waitForLoadState("load");
+          await assertNoHorizontalOverflow(page);
+          await assertNoA11yViolations(page);
+        });
+      }
 
       // Loaded state: the group's Issues tab with a wide set of active
       // filters renders the full chip row — the surface where the chip overflow
