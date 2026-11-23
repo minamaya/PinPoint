@@ -141,11 +141,11 @@ const DEFAULT_PROPS = {
 
 /** Render the form inside the shared provider (required — the form reads it). */
 function wrapped(
-  props: typeof DEFAULT_PROPS = DEFAULT_PROPS
+  overrides: Partial<React.ComponentProps<typeof UnifiedReportForm>> = {}
 ): React.JSX.Element {
   return (
     <ReportDraftProvider machines={MACHINE_OPTIONS} assignees={[]}>
-      <UnifiedReportForm {...props} />
+      <UnifiedReportForm {...DEFAULT_PROPS} {...overrides} />
     </ReportDraftProvider>
   );
 }
@@ -194,6 +194,7 @@ describe("UnifiedReportForm ↔ shared draft store (PP-idrb)", () => {
 
   afterEach(() => {
     localStorage.clear();
+    window.history.replaceState(null, "", "/");
     vi.clearAllMocks();
   });
 
@@ -447,6 +448,49 @@ describe("UnifiedReportForm ↔ shared draft store (PP-idrb)", () => {
 
       // URL no longer carries ?machine=
       expect(window.location.search).not.toContain("machine=");
+    });
+  });
+
+  describe("inline Log in link and authentication visibility", () => {
+    it("updates the inline Log in link ?next= target when a machine is selected", async () => {
+      const user = userEvent.setup();
+      render(wrapped());
+
+      const loginLink = screen.getByRole("link", { name: "Log in" });
+      expect(loginLink).toHaveAttribute(
+        "href",
+        "/login?next=%2Freport%2Fdetailed"
+      );
+
+      const machineId = MACHINES[0]?.id ?? "";
+      await user.click(
+        screen.getByRole("combobox", { name: "Select Machine" })
+      );
+      await user.click(screen.getByTestId(`machine-option-${machineId}`));
+
+      expect(loginLink).toHaveAttribute(
+        "href",
+        "/login?next=%2Freport%2Fdetailed%3Fmachine%3DAF"
+      );
+      expect(window.location.search).toBe("?machine=AF");
+    });
+
+    it("includes source in the Log in link and hides reporter fields when authenticated", () => {
+      const machineId = MACHINES[0]?.id ?? "";
+      const { unmount } = render(
+        wrapped({ defaultMachineId: machineId, source: "apron" })
+      );
+      expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute(
+        "href",
+        "/login?next=%2Freport%2Fdetailed%3Fmachine%3DAF%26source%3Dapron"
+      );
+      unmount();
+
+      render(wrapped({ userAuthenticated: true, accessLevel: "member" }));
+      expect(screen.queryByLabelText("First Name")).toBeNull();
+      expect(screen.queryByLabelText("Last Name")).toBeNull();
+      expect(screen.queryByLabelText("Email Address")).toBeNull();
+      expect(screen.queryByRole("link", { name: "Log in" })).toBeNull();
     });
   });
 });

@@ -1,116 +1,123 @@
 import { test, expect } from "../support/fixtures.js";
 import { loginAs } from "../support/actions.js";
-import { TEST_USERS, seededMachines } from "../support/constants.js";
+import { cleanupTestEntities } from "../support/cleanup.js";
+import { STORAGE_STATE } from "../support/auth-state.js";
+import { seededMachines } from "../support/constants.js";
 import {
   createTestUser,
   deleteTestUser,
   updateUserRole,
 } from "../support/supabase-admin.js";
-import { getTestEmail, getTestIssueTitle } from "../support/test-isolation.js";
+import { getTestEmail } from "../support/test-isolation.js";
 
 const afm = seededMachines.attackFromMars;
+const MODE_PREFIX = "E2E Report Mode";
 
 test.describe("report mode handoffs", () => {
-  test.beforeEach(async ({ page }, testInfo) => {
-    await loginAs(page, testInfo, {
-      email: TEST_USERS.member.email,
-      password: TEST_USERS.member.password,
+  test("legacy Multiple URL redirects to its named route", async ({
+    request,
+  }) => {
+    const response = await request.get("/report/quick", {
+      headers: { "x-skip-autologin": "true" },
+      maxRedirects: 0,
     });
+    expect(response.status()).toBe(307);
+    const location = new URL(
+      response.headers()["location"] ?? "",
+      "http://localhost"
+    );
+    expect(location.pathname).toBe("/report/multiple");
   });
 
-  test("Quick report creates one issue from the short form", async ({
-    page,
-  }) => {
-    const title = getTestIssueTitle("Quick report issue");
-    await page.goto(`/report?machine=${afm.initials}`);
-    await expect(
-      page.getByRole("combobox", { name: "Machine" }).first()
-    ).toContainText(afm.initials);
-    await page.getByRole("textbox", { name: "Problem" }).fill(title);
-    await page.getByRole("button", { name: "Report issue" }).click();
+  test.describe("member report flows", () => {
+    test.use({ storageState: STORAGE_STATE.member });
 
-    await expect(page).toHaveURL(new RegExp(`/m/${afm.initials}/i/\\d+$`));
-    await expect(
-      page.getByRole("heading", { level: 1, name: title })
-    ).toBeVisible();
-  });
+    test.afterEach(async () => {
+      await cleanupTestEntities({
+        issueTitlePrefix: MODE_PREFIX,
+      });
+    });
 
-  test("Quick draft carries machine, problem, and frequency through Detailed and Multiple", async ({
-    page,
-  }) => {
-    await page.goto("/report");
-    await page.getByRole("combobox", { name: "Machine" }).first().click();
-    await page.getByTestId(`machine-option-${afm.id}`).click();
-    await page
-      .getByRole("textbox", { name: "Problem" })
-      .fill("Handoff test problem");
-    await page.getByText("Frequent", { exact: true }).click();
-    await expect(page.getByRole("radio", { name: "Frequent" })).toBeChecked();
+    test("Quick report creates one issue from the short form", async ({
+      page,
+    }) => {
+      const title = `${MODE_PREFIX} Quick ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      await page.goto(`/report?machine=${afm.initials}`);
+      await expect(
+        page.getByRole("combobox", { name: "Machine" }).first()
+      ).toContainText(afm.initials);
+      await page.getByRole("textbox", { name: "Problem" }).fill(title);
+      await page.getByRole("button", { name: "Report issue" }).click();
 
-    await page.getByRole("link", { name: "Add details" }).click();
-    await expect(page).toHaveURL(
-      new RegExp(`/report/detailed\\?machine=${afm.initials}$`)
-    );
-    await expect(
-      page.getByRole("combobox", { name: "Select Machine" })
-    ).toContainText(afm.initials);
-    await expect(page.getByLabel("Issue Title *")).toHaveValue(
-      "Handoff test problem"
-    );
-    await expect(page.getByTestId("issue-frequency-select")).toContainText(
-      "Frequent"
-    );
+      await expect(page).toHaveURL(new RegExp(`/m/${afm.initials}/i/\\d+`));
+      await expect(
+        page.getByRole("heading", { level: 1, name: title })
+      ).toBeVisible();
+    });
 
-    await page.getByRole("link", { name: "Report multiple issues" }).click();
-    await expect(page).toHaveURL(/\/report\/multiple$/);
-    const firstRow = page.getByTestId("quick-row").first();
-    await expect(
-      firstRow.getByRole("textbox", { name: /Problem/ })
-    ).toHaveValue("Handoff test problem");
-    await expect(
-      firstRow.getByRole("combobox", { name: "Machine" })
-    ).toContainText(afm.initials);
+    test("draft carries machine, problem, frequency, and extra rows across Quick, Detailed, and Multiple", async ({
+      page,
+    }) => {
+      await page.goto("/report");
+      await page.getByRole("combobox", { name: "Machine" }).first().click();
+      await page.getByTestId(`machine-option-${afm.id}`).click();
+      await page
+        .getByRole("textbox", { name: "Problem" })
+        .fill("Handoff test problem");
+      await page.getByText("Frequent", { exact: true }).click();
+      await expect(page.getByRole("radio", { name: "Frequent" })).toBeChecked();
 
-    await page.getByRole("link", { name: "Detailed report" }).click();
-    await expect(page.getByLabel("Issue Title *")).toHaveValue(
-      "Handoff test problem"
-    );
-  });
+      await page.getByRole("link", { name: "Add details" }).click();
+      await expect
+        .poll(() => {
+          const url = new URL(page.url());
+          return `${url.pathname}${url.search}`;
+        })
+        .toBe(`/report/detailed?machine=${afm.initials}`);
+      await expect(
+        page.getByRole("combobox", { name: "Select Machine" })
+      ).toContainText(afm.initials);
+      await expect(page.getByLabel("Issue Title *")).toHaveValue(
+        "Handoff test problem"
+      );
+      await expect(page.getByTestId("issue-frequency-select")).toContainText(
+        "Frequent"
+      );
 
-  test("Multiple retains extra rows when returning to Detailed", async ({
-    page,
-  }) => {
-    await page.goto("/report/multiple");
-    const firstRow = page.getByTestId("quick-row").first();
-    await firstRow.getByRole("combobox", { name: "Machine" }).click();
-    await page.getByTestId(`machine-option-${afm.id}`).click();
-    await firstRow
-      .getByRole("textbox", { name: /Problem/ })
-      .fill("First draft");
+      await page.getByRole("link", { name: "Report multiple issues" }).click();
+      await expect
+        .poll(() => new URL(page.url()).pathname)
+        .toBe("/report/multiple");
+      const firstRow = page.getByTestId("quick-row").first();
+      await expect(
+        firstRow.getByRole("textbox", { name: /Problem/ })
+      ).toHaveValue("Handoff test problem");
+      await expect(
+        firstRow.getByRole("combobox", { name: "Machine" })
+      ).toContainText(afm.initials);
 
-    await page.getByRole("button", { name: /add issue/i }).click();
-    const secondRow = page.getByTestId("quick-row").nth(1);
-    await secondRow
-      .getByRole("textbox", { name: /Problem/ })
-      .fill("Second draft");
-
-    await page.getByRole("link", { name: "Detailed report" }).click();
-    await expect(page).toHaveURL(/\/report\/detailed$/);
-    await expect(page.getByLabel("Issue Title *")).toHaveValue("First draft");
-
-    await page.getByRole("link", { name: "Report multiple issues" }).click();
-    await expect(
-      page
-        .getByTestId("quick-row")
-        .nth(1)
+      await page.getByRole("button", { name: /add issue/i }).click();
+      const secondRow = page.getByTestId("quick-row").nth(1);
+      await secondRow
         .getByRole("textbox", { name: /Problem/ })
-    ).toHaveValue("Second draft");
-  });
+        .fill("Second draft");
 
-  test("legacy Multiple URL redirects to its named route", async ({ page }) => {
-    await page.goto("/report/quick");
-    await expect(page).toHaveURL(/\/report\/multiple$/);
-    await expect(page.getByTestId("quick-report-grid")).toBeVisible();
+      await page.getByRole("link", { name: "Detailed report" }).click();
+      await expect
+        .poll(() => new URL(page.url()).pathname)
+        .toBe("/report/detailed");
+      await expect(page.getByLabel("Issue Title *")).toHaveValue(
+        "Handoff test problem"
+      );
+
+      await page.getByRole("link", { name: "Report multiple issues" }).click();
+      await expect(
+        page
+          .getByTestId("quick-row")
+          .nth(1)
+          .getByRole("textbox", { name: /Problem/ })
+      ).toHaveValue("Second draft");
+    });
   });
 });
 
@@ -153,21 +160,24 @@ test.describe("default report form preferences", () => {
     await expect(saveStatus).toHaveText("Saved");
 
     await page.goto("/dashboard");
+    const mobileReportLink = page
+      .getByTestId("bottom-tab-bar")
+      .getByRole("link", { name: /report/i, includeHidden: true });
+    await expect(mobileReportLink).toHaveAttribute("href", "/report/multiple");
+    await expect(page.getByTestId("nav-report-issue")).toHaveAttribute(
+      "href",
+      "/report"
+    );
+
     if (testInfo.project.name.includes("Mobile")) {
-      const report = page
-        .getByTestId("bottom-tab-bar")
-        .getByRole("link", { name: /report/i });
-      await expect(report).toHaveAttribute("href", "/report/multiple");
-      await report.click();
-      await expect(page).toHaveURL(/\/report\/multiple$/);
+      await mobileReportLink.click();
+      await expect
+        .poll(() => new URL(page.url()).pathname)
+        .toBe("/report/multiple");
       await expect(page.getByTestId("quick-report-grid")).toBeVisible();
     } else {
-      await expect(page.getByTestId("nav-report-issue")).toHaveAttribute(
-        "href",
-        "/report"
-      );
       await page.getByTestId("nav-report-issue").click();
-      await expect(page).toHaveURL(/\/report$/);
+      await expect.poll(() => new URL(page.url()).pathname).toBe("/report");
       await expect(
         page.getByRole("textbox", { name: "Problem" })
       ).toBeVisible();
