@@ -7,7 +7,7 @@
  * person AFTER the content is stored and assert the loaders' output.
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import {
@@ -29,10 +29,15 @@ vi.mock("~/server/db", async () => {
   return { db: await getTestDb() };
 });
 
+vi.mock("~/lib/supabase/server", () => import("~/test/helpers/mock-auth"));
+
+import { signInAs, signOut } from "~/test/helpers/mock-auth";
+
 const { loadMentionNames } = await import("~/lib/tiptap/mention-names");
 const { getIssueForDetail } =
   await import("~/app/(app)/m/[initials]/i/[issueNumber]/_data");
 const { getMachineForLayout } = await import("~/app/(app)/m/[initials]/_data");
+const { searchMentionableUsers } = await import("~/app/(app)/mentions/actions");
 
 /** A one-paragraph doc: `text` followed by a mention carrying `label`. */
 function mentionDoc(text: string, id: string, label: string): ProseMirrorDoc {
@@ -183,5 +188,57 @@ describe("@mention labels resolve to current names", () => {
     expect(docToPlainText(machine?.settingsInstructions)).toBe(
       "Set by @Anastasia Lee"
     );
+  });
+
+  describe("searchMentionableUsers", () => {
+    beforeEach(() => {
+      signOut();
+    });
+
+    it("returns [] when unauthenticated without exposing profiles", async () => {
+      await insertPerson("Ana", "Lee");
+      signOut();
+
+      const results = await searchMentionableUsers("Ana");
+
+      expect(results).toEqual([]);
+    });
+
+    it("returns up to 10 alphabetically ordered profiles for an empty or whitespace query", async () => {
+      const firstId = await insertPerson("Aaron", "Zero");
+      for (let i = 1; i <= 11; i++) {
+        await insertPerson("Member", String(i).padStart(2, "0"));
+      }
+      signInAs(firstId);
+
+      const results = await searchMentionableUsers("   ");
+
+      expect(results).toHaveLength(10);
+      expect(results[0]).toEqual({
+        id: firstId,
+        name: "Aaron Zero",
+        avatarUrl: null,
+      });
+      const names = results.map((u) => u.name);
+      expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    });
+
+    it("matches firstName, lastName, or full name case-insensitively without leaking email or role", async () => {
+      const callerId = await insertPerson("Caller", "One");
+      const targetId = await insertPerson("Ada", "Lovelace");
+      await insertPerson("Grace", "Hopper");
+      signInAs(callerId);
+
+      const byLastName = await searchMentionableUsers("  love ");
+
+      expect(byLastName).toEqual([
+        { id: targetId, name: "Ada Lovelace", avatarUrl: null },
+      ]);
+      expect(Object.keys(byLastName[0] ?? {})).toEqual([
+        "id",
+        "name",
+        "avatarUrl",
+      ]);
+    });
   });
 });

@@ -320,6 +320,9 @@ describe("Issue detail Activity (spec §7–§8)", () => {
       );
 
       expect(screen.queryByText("Log in to comment")).not.toBeInTheDocument();
+      const composer = screen.getByTestId("issue-comment-form");
+      expect(composer).toBeInTheDocument();
+      expect(composer).toHaveClass("hidden", "md:block");
       expect(screen.getByTestId("mock-add-comment-form")).toBeInTheDocument();
     }
   );
