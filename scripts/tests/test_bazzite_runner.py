@@ -247,6 +247,28 @@ def test_vm_that_exits_with_its_job_still_assigned_is_recorded(monkeypatch, tmp_
     assert (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text() == "runner console"
 
 
+def test_saved_console_is_readable_by_froeht_and_carries_no_token(
+    monkeypatch, tmp_path
+):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    token = "A" * 200
+    (supervisor.vms[7]["dir"] / "serial.log").write_text(f"before {token} after")
+    old = supervisor.os.umask(0o077)  # the unit's UMask=
+    try:
+        supervisor.reap()
+    finally:
+        supervisor.os.umask(old)
+    saved = supervisor.VM_LOGS / "bazzite-100-7-a.log"
+    assert saved.read_text() == "before [redacted] after"
+    assert saved.stat().st_mode & 0o777 == 0o640
+    assert supervisor.VM_LOGS.stat().st_mode & 0o7777 == 0o2750
+
+
+def test_service_can_write_the_log_directory():
+    unit = (RUNNER_DIR / "gh-runner.service").read_text().splitlines()
+    assert "ReadWritePaths=/var/log/ghrunner" in unit
+
+
 def test_vm_that_finished_its_job_is_not_recorded(monkeypatch, tmp_path):
     _dead_vm(tmp_path, monkeypatch, delete_ok=True)
     supervisor.vms[7]["started"] -= 600  # a normal-length job
