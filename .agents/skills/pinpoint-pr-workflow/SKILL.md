@@ -183,11 +183,13 @@ A UI-path edit with no rendered effect on a PR he has not yet signed off still w
 
 ## Phase 4: Merge — Tim's decision
 
-**Tim decides whether to merge.** GitHub's ruleset `6326455` enforces the gates natively: required checks `CI Gate`, `Claude Review`, and `UI Approval`, every conversation resolved, and merging through the merge queue. Green checks alone never authorize a merge; Tim's explicit request does.
+**Tim decides whether to merge.** GitHub's ruleset `6326455` enforces the gates natively: required checks `CI Gate`, `Claude Review`, and `UI Approval`, every conversation resolved, and merging through the merge queue. Green checks alone never authorize a merge; Tim's explicit request does, except for spec PRs (4.1).
 
 ### 4.1 Report ready by default; merge on explicit request
 
 **Without an explicit merge request**, report the PR as ready: its URL and the output of `gh pr checks <PR> --required`. Add prose only for what the checks cannot say (why a finding was declined, what to watch on deploy).
+
+**Spec PRs merge without asking.** When every changed file is under `docs/feature-specs/` or `.agents/skills/pinpoint-design-bible/`, Tim has already approved the requirement edits (or the canvas they come from) before the PR opened, so the merge itself is mechanical. Once the required checks pass and every thread is resolved, the owning agent runs `gh pr merge <PR> --squash`, watches the queue (4.1 below), and reports the merge in one line. A PR that also touches anything else is not a spec PR: report it ready.
 
 **When Tim directly asks to merge** an unambiguous PR (for example, “merge it” with one PR in play), the owning agent in any harness runs it; he need not repeat the decision in a shell. If the target is ambiguous, clarify it first.
 
