@@ -61,6 +61,8 @@ describe("ConfirmLineupButton", () => {
   beforeEach(() => {
     vi.mocked(checkConfirmLineupAction).mockReset();
     vi.mocked(confirmPinballmapLineupAction).mockReset();
+    vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.error).mockReset();
   });
 
   it("keeps Confirm disabled until the lineup check returns", async () => {
@@ -165,6 +167,44 @@ describe("ConfirmLineupButton", () => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
         "Pinball Map authentication failed."
       )
+    );
+  });
+
+  it("closes the dialog and shows a success toast when confirming anyway succeeds", async () => {
+    vi.mocked(checkConfirmLineupAction).mockResolvedValue(
+      checked({
+        entries: [{ key: "c", name: "Star Shooter", kind: "not_linked" }],
+      })
+    );
+    vi.mocked(confirmPinballmapLineupAction).mockResolvedValue({
+      ok: true,
+      value: {},
+    });
+
+    const dialog = await openDialog();
+    const entriesList = within(dialog).getByTestId(
+      "pbm-confirm-lineup-entries"
+    );
+    const entry = within(entriesList).getByRole("listitem");
+    expect(entry).toHaveTextContent("Star Shooter");
+    expect(entry).toHaveTextContent("Not linked");
+
+    const confirm = within(dialog).getByRole("button", {
+      name: "Confirm anyway",
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await userEvent.click(confirm);
+
+    await waitFor(() => {
+      expect(confirmPinballmapLineupAction).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("pbm-confirm-lineup-dialog")
+      ).not.toBeInTheDocument();
+    });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      "Lineup confirmed on Pinball Map"
     );
   });
 });

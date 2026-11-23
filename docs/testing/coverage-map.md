@@ -102,17 +102,17 @@ a blank Full-E2E cell is often correct by design) is in the
 
 ## PinballMap integration
 
-| Feature surface                | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                       |
-| ------------------------------ | :--: | :---------: | :---: | :------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Machine ↔ PBM linking          |  ✓   |      ✓      |       |          | `lib/pinballmap/linking.test.ts`, `pinballmap-linking.test.ts` (member-account linking is the Connected-accounts row, not this one)                        |
-| Listing control / intent       |  ✓   |      ✓      |       |          | `components/machines/PinballmapListingControl.test.tsx`, `pinballmap-intent.test.ts`                                                                       |
-| Insider Connected              |  ✓   |      ✓      |       |    ✓     | `lib/pinballmap/insider-connected.test.ts`, `pinballmap-insider-connected.test.ts`, `e2e/full/machine-pinballmap-insider-connected.spec.ts`                |
-| Lineup comparison & confirm    |  ✓   |      ✓      |       |    ✓     | `lib/pinballmap/lineup-comparison.test.ts`, `pinballmap-state.test.ts`, `e2e/full/pinballmap-lineup.spec.ts`                                               |
-| Abandoned listings             |  ✓   |      ✓      |       |    ✓     | `components/machines/PinballmapAbandonedEntries.test.tsx`, `pinballmap-abandoned-listings.test.ts`, `e2e/full/machine-pinballmap-abandoned-notice.spec.ts` |
-| Comment import / conversion    |  ✓   |      ✓      |       |    ✓     | `lib/pinballmap/comment-conversion.test.ts`, `pinballmap-comment-import.test.ts`, `e2e/full/machine-pinballmap-comment-convert.spec.ts`                    |
-| Region alerts                  |  ✓   |      ✓      |       |          | `lib/pinballmap/region-alert-message.test.ts`, `pinballmap-region-alerts.test.ts`                                                                          |
-| Outbound write / sync throttle |  ✓   |      ✓      |       |          | `lib/pinballmap/api-token.test.ts`, `pinballmap-outbound-write.test.ts`, `supabase/pinballmap-sync-throttle.test.ts`                                       |
-| User credentials (Vault RPC)   |  ✓   |      ✓      |       |          | `settings/connected-accounts/pinballmap-account-row.test.tsx`, `supabase/pinballmap-credentials-rpc.test.ts`                                               |
+| Feature surface                | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                    |
+| ------------------------------ | :--: | :---------: | :---: | :------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Machine ↔ PBM linking          |  ✓   |      ✓      |       |          | `lib/pinballmap/linking.test.ts`, `pinballmap-linking.test.ts` (member-account linking is the Connected-accounts row, not this one)                                     |
+| Listing control / intent       |  ✓   |      ✓      |       |          | `components/machines/PinballmapListingControl.test.tsx`, `pinballmap-intent.test.ts`                                                                                    |
+| Insider Connected              |  ✓   |      ✓      |       |          | `lib/pinballmap/insider-connected.test.ts`, `app/(app)/m/[initials]/(tabs)/edit/page.test.tsx`, `pinballmap-insider-connected.test.ts`                                  |
+| Lineup comparison & confirm    |  ✓   |      ✓      |       |    ✓     | `components/pinballmap/LineupHeader.test.tsx`, `components/pinballmap/LineupSections.test.tsx`, `pinballmap-lineup-data.test.ts`, `e2e/full/pinballmap-lineup.spec.ts`  |
+| Abandoned listings             |  ✓   |      ✓      |       |    ✓     | `components/machines/PinballmapAbandonedEntries.test.tsx`, `pinballmap-abandoned-listings.test.ts`, `e2e/full/machine-pinballmap-abandoned-notice.spec.ts`              |
+| Comment import / conversion    |  ✓   |      ✓      |       |    ✓     | `components/machines/timeline/MachineTimelinePinballMapCommentRow.test.tsx`, `pinballmap-comment-import.test.ts`, `e2e/full/machine-pinballmap-comment-convert.spec.ts` |
+| Region alerts                  |  ✓   |      ✓      |       |          | `lib/pinballmap/region-alert-message.test.ts`, `pinballmap-region-alerts.test.ts`                                                                                       |
+| Outbound write / sync throttle |  ✓   |      ✓      |       |          | `lib/pinballmap/api-token.test.ts`, `pinballmap-outbound-write.test.ts`, `supabase/pinballmap-sync-throttle.test.ts`                                                    |
+| User credentials (Vault RPC)   |  ✓   |      ✓      |       |          | `settings/connected-accounts/pinballmap-account-row.test.tsx`, `supabase/pinballmap-credentials-rpc.test.ts`                                                            |
 
 ## Notifications
 

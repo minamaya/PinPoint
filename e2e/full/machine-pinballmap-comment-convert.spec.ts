@@ -52,11 +52,7 @@ test.describe("Pinball Map comment conversion (PP-o355.4)", () => {
 
       await page.goto(`/m/${first.initials}/timeline`);
       const row = page.locator('[data-event-kind="pinballmap_comment"]');
-      await expect(row).toContainText("e2e_pbm_user");
       await expect(row).toContainText(`also on ${second.initials}`);
-      await expect(
-        row.getByRole("link", { name: "via Pinball Map" })
-      ).toHaveAttribute("href", /by_location_id=26454/);
 
       await row.getByRole("button", { name: "Convert to issue" }).click();
       const dialog = page.getByRole("dialog", { name: "Convert to issue" });

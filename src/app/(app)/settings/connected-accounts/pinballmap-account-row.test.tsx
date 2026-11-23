@@ -173,4 +173,60 @@ describe("PinballMapAccountRow (pinballmap spec 8.4–8.5)", () => {
       expect(actions.unlink).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("closes the Link dialog when linking succeeds and passes submitted credentials", async () => {
+    const user = userEvent.setup();
+    actions.link.mockResolvedValue({
+      ok: true,
+      value: { username: "e2e-user" },
+    });
+    render(<PinballMapAccountRow link={{ status: "not_linked" }} canLink />);
+
+    await user.click(screen.getByRole("button", { name: "Link Pinball Map" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Username or email"), "e2e-user");
+    await user.type(screen.getByLabelText("Password"), "secret-pw");
+    await user.click(screen.getByRole("button", { name: "Link account" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(actions.link).toHaveBeenCalledTimes(1);
+    const submitted = actions.link.mock.calls[0]?.[1];
+    expect(submitted).toBeInstanceOf(FormData);
+    if (submitted instanceof FormData) {
+      expect(submitted.get("login")).toBe("e2e-user");
+      expect(submitted.get("password")).toBe("secret-pw");
+    }
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the Unlink dialog open and shows an alert when unlinking fails", async () => {
+    const user = userEvent.setup();
+    actions.unlink.mockResolvedValue({
+      ok: false,
+      code: "SERVER",
+      message: "Could not unlink. Try again.",
+    });
+    render(
+      <PinballMapAccountRow
+        link={{ status: "linked", username: "ssw" }}
+        canLink
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Unlink" }));
+    const dialog = screen.getByRole("alertdialog");
+    const confirm = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent === "Unlink"
+    );
+    if (!confirm) throw new Error("no confirm button");
+    await user.click(confirm);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not unlink. Try again."
+    );
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
 });
