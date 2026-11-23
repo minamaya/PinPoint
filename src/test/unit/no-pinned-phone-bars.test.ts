@@ -1,18 +1,23 @@
 /**
  * Guard for the no-pinned-bar rule (design-bible §3): on phones nothing
  * full-width is pinned above the bottom tab bar, so page actions, totals, and
- * pagers live in the page flow. A static scan of `src/` for a class string
- * that is both `fixed`/`sticky` and anchored with a `bottom-*` class, which is
- * how every pinned bar is written. Files that legitimately do this are listed
- * below with the reason; a new one fails the test until someone decides it
- * belongs there.
+ * pagers live in the page flow. A static scan of `src/` for a class that is
+ * `fixed`/`sticky` with a `bottom-*` class beside it, which is how every
+ * pinned bar is written. Files that legitimately do this are listed below
+ * with the reason; a new one fails the test until someone decides it belongs
+ * there.
  *
- * A variant-prefixed class (`md:sticky`) is not flagged: the rule is about
- * phones.
+ * What counts: a `fixed` or `sticky` token (also behind `max-md:`-style
+ * variants, which apply on phones) and a `bottom-*` token in the same string
+ * or in string literals within {@link NEAR} characters of it, so
+ * `cn("fixed inset-x-0", "bottom-14")` is caught. Comments are ignored. `.ts`
+ * helpers are scanned too. A `md:`/`lg:` variant (`md:sticky`) is not flagged:
+ * the rule is about phones.
  *
- * Limits: it reads one string literal at a time, so classes split across
- * several `cn()` arguments are not seen, and it does not read components in
- * `src/components/ui` (dialog and sheet primitives anchor themselves by design).
+ * Limits: it reads text, not the component tree. A class built from parts
+ * far apart, or from a non-literal, is not seen. `src/components/ui` is
+ * scanned like everything else, so a shared primitive that pins to the bottom
+ * has to be named in ALLOWED.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -48,23 +53,53 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
-    return entry.name.endsWith(".tsx") && !entry.name.endsWith(".test.tsx")
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)
       ? [path]
       : [];
   });
 }
 
-/** Every quoted or template string in `text` that pins itself to the bottom. */
+/** A Tailwind bottom inset (`bottom-0`, `bottom-[calc(…)]`, `bottom-full`), not a placement name like `bottom-start`. */
+const BOTTOM_INSET = /^bottom-(?:\d|px$|\[|\(|auto$|full$)/;
+
+/** How far apart, in characters, two literals can be and still be one class list. */
+const NEAR = 160;
+
+/** Comments blanked out (same length), so an apostrophe in one cannot confuse quote matching. */
+function withoutComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length))
+    .replace(
+      /(^|[\s;,{(])\/\/[^\n]*/g,
+      (m, lead: string) => lead + " ".repeat(m.length - lead.length)
+    );
+}
+
+/** A class token without a phone-wide `max-*:` variant, which still applies on phones. */
+function phoneToken(token: string): string {
+  return token.replace(/^(?:max-[a-z]+:)+/, "");
+}
+
+/** The class lists in `text` that pin something to the bottom of the screen. */
 function pinnedBottomStrings(text: string): string[] {
-  const found: string[] = [];
-  for (const match of text.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)) {
-    const literal = match[1] ?? match[2] ?? match[3] ?? "";
-    const tokens = literal.split(/\s+/);
-    const pinned = tokens.some((t) => t === "fixed" || t === "sticky");
-    const bottom = tokens.some((t) => t.startsWith("bottom-"));
-    if (pinned && bottom) found.push(literal);
-  }
-  return found;
+  const literals = [
+    ...withoutComments(text).matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g),
+  ].map((match) => ({
+    index: match.index,
+    tokens: (match[1] ?? match[2] ?? match[3] ?? "")
+      .split(/\s+/)
+      .map(phoneToken),
+  }));
+  return literals
+    .filter((lit) => lit.tokens.some((t) => t === "fixed" || t === "sticky"))
+    .filter((lit) =>
+      literals.some(
+        (other) =>
+          Math.abs(other.index - lit.index) <= NEAR &&
+          other.tokens.some((t) => BOTTOM_INSET.test(t))
+      )
+    )
+    .map((lit) => lit.tokens.join(" "));
 }
 
 const offenders = sourceFiles(SRC)
@@ -72,9 +107,7 @@ const offenders = sourceFiles(SRC)
     path: relative(SRC, path).split(sep).join("/"),
     text: readFileSync(path, "utf8"),
   }))
-  .filter(
-    (file) => file.path !== SELF && !file.path.startsWith("components/ui/")
-  )
+  .filter((file) => file.path !== SELF)
   .filter((file) => pinnedBottomStrings(file.text).length > 0)
   .map((file) => file.path);
 
@@ -92,6 +125,27 @@ describe("no pinned phone bars (design-bible §3)", () => {
       pinnedBottomStrings(
         `<div className="flex items-center justify-end gap-3 pt-4" />`
       )
+    ).toHaveLength(0);
+    // Classes split across cn() arguments, and a phone-only variant.
+    expect(
+      pinnedBottomStrings(`cn("fixed inset-x-0", "bottom-14")`)
+    ).toHaveLength(1);
+    expect(
+      pinnedBottomStrings(`<div className="fixed max-md:bottom-0" />`)
+    ).toHaveLength(1);
+    // A comment apostrophe cannot hide a real match, nor can a comment match.
+    expect(
+      pinnedBottomStrings(
+        `// don't pin\n<div className="sticky bottom-0" />\n// "fixed bottom-0"`
+      )
+    ).toHaveLength(1);
+    // A placement name is not an inset.
+    expect(
+      pinnedBottomStrings(`{ placement: "bottom-start", strategy: "fixed" }`)
+    ).toHaveLength(0);
+    // From md: up is not the phone rule.
+    expect(
+      pinnedBottomStrings(`<div className="md:sticky md:bottom-0" />`)
     ).toHaveLength(0);
     // The app header pins to the top, which is allowed.
     expect(
