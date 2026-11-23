@@ -15,6 +15,18 @@ import { getOpdbRecords } from "~/lib/opdb/records";
 import { opdbGroupId, pinTipsPageUrl } from "~/lib/pintips/parse";
 import { pickWeightedTipIndex } from "~/lib/pintips/pick";
 import { getPinTipsForGroup } from "~/lib/pintips/records";
+import {
+  getMachineSettingsSets,
+  type SettingsSetsViewer,
+} from "~/lib/machines/settings-queries";
+import type { SettingsSetData } from "~/lib/machines/settings-types";
+import { getTagsForMachine } from "~/lib/tags/tags";
+import type { MachineTag } from "~/lib/tags/types";
+import {
+  getMachineTimeline,
+  type GetMachineTimelineArgs,
+  type MachineTimelineRow,
+} from "~/lib/timeline/machine-events";
 import { loadMentionNames } from "~/lib/tiptap/mention-names";
 import { applyMentionNames } from "~/lib/tiptap/types";
 import type { PinTipForCard } from "~/lib/pintips/types";
@@ -234,9 +246,10 @@ export const getMachinePinTips = cache(
 );
 
 /**
- * The machine's design and art credits (spec apron-cards 10.1): from the
- * stored OPDB record of its Pinball Map catalog title, or, for an uncataloged
- * machine, from its hand-entered designers and artists. Never contacts OPDB.
+ * The machine's design, art, and code credits (spec apron-cards 10.1): from
+ * the stored OPDB record of its Pinball Map catalog title, or, for an
+ * uncataloged machine, from its hand-entered designers, artists, and
+ * programmers. Never contacts OPDB.
  *
  * A separate lookup rather than part of `getMachineForLayout`: only the Info
  * tab and the apron card read credits, and an alias ID falls back to its
@@ -252,11 +265,12 @@ export function getMachineCredits(machine: {
   pinballmapExcluded: boolean;
   designers: readonly string[] | null;
   artists: readonly string[] | null;
+  programmers: readonly string[] | null;
   pinballmapTitle: { opdbId: string | null } | null;
 }): Promise<MachineCredits> {
   if (machine.pinballmapExcluded) {
     return Promise.resolve(
-      creditsFromNames(machine.designers, machine.artists)
+      creditsFromNames(machine.designers, machine.artists, machine.programmers)
     );
   }
   const opdbId = machine.pinballmapTitle?.opdbId ?? null;
@@ -284,6 +298,7 @@ export async function getMachineApronCards(
       tipEnabled: true,
       designEnabled: true,
       artEnabled: true,
+      codeEnabled: true,
     },
     orderBy: (cards, { asc }) => [asc(cards.createdAt), asc(cards.id)],
   });
@@ -318,3 +333,26 @@ export const getMachineAllIssues = cache(async (initials: string) => {
     orderBy: (issues, { desc }) => [desc(issues.createdAt)],
   });
 });
+
+/** One page of the machine's timeline, for the Timeline tab. */
+export function getMachineTimelinePage(
+  args: GetMachineTimelineArgs
+): Promise<MachineTimelineRow[]> {
+  return getMachineTimeline(db, args);
+}
+
+/**
+ * The machine's settings sets as the Settings tab renders them, each carrying
+ * the viewer's rights (machine-settings §2.5).
+ */
+export function getMachineSettingsSetsFor(
+  machineId: string,
+  viewer: SettingsSetsViewer
+): Promise<SettingsSetData[]> {
+  return getMachineSettingsSets(db, machineId, viewer);
+}
+
+/** The tags on a machine, for the Info tab. `cache()`-wrapped per request. */
+export const getMachineTags = cache(
+  (machineId: string): Promise<MachineTag[]> => getTagsForMachine(db, machineId)
+);

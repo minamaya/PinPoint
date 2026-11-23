@@ -1,7 +1,7 @@
 # PinPoint Non‑Negotiables
 
-**Last Updated**: 2026-10-06
-**Version**: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
+**Last Updated**: 2026-11-15
+**Version**: 2.15 (CORE-UI-008 added: action buttons and ⋯ menus go through `PageActions` and `ItemActionsMenu` — PP-jb9v.17). Prior: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
 
 > **Canonical catalog**: this document defines the canonical `CORE-*` rules for PinPoint. Portable skills (`.agents/skills/`) and agent context (`AGENTS.md`) cite rules by ID and provide domain/task-specific procedures.
 
@@ -35,7 +35,7 @@
 18. Rule of Three before abstracting; reuse helpers that already exist (CORE-ARCH-010)
 19. Baseline Widely available is the browser-support floor; look up patterns via the modern-web-guidance catalog (CORE-UI-005/006)
 20. Forms ship with the correct input `type`, `autocomplete` token, `:user-invalid` styling, and visible required indicators (CORE-FORM-001..006)
-21. Accessibility floor: skip link, semantic table markup, `motion-reduce:` paired with animations, no `<div role="button">`, `title` is not a tooltip (CORE-A11Y-001..006)
+21. Accessibility floor: skip link, semantic table markup, one global reduced-motion rule, no `<div role="button">`, `title` is not a tooltip, accessible names start with the visible text (CORE-A11Y-001..007)
 22. Image priority and preconnect discipline: `priority` is for the LCP candidate only; preconnect to known image origins (CORE-PERF-003)
 23. External side effects (HTTP, email, Discord, blob, Vault RPC) never run inside a DB transaction; deliver them post-commit (CORE-ARCH-011)
 24. A bug-fix regression test fails on the pre-fix code; tests reach production through real callers' seams (CORE-TEST-007/008)
@@ -43,7 +43,9 @@
 26. A caught error that is not returned to the user goes to `reportError`, never to a bare `log.error`; cron routes use `runCron` (CORE-ARCH-015)
 27. Server Actions are built with `createProtectedAction` / `createPublicAction` from `~/lib/actions` (CORE-ARCH-013)
 28. Third-party HTTP calls go through `~/lib/http/external` with a per-request timeout (CORE-ARCH-016)
-29. Additive migrations merge first in their own PR; destructive ones last (CORE-ARCH-017)
+29. Overlay libraries (`radix-ui`, `vaul`, `cmdk`, `@floating-ui`) are imported only in `src/components/ui`, and every floating primitive there carries `animate-in`/`animate-out` (CORE-UI-007)
+30. Additive migrations merge first in their own PR; destructive ones last (CORE-ARCH-017)
+31. Pages, layouts and components never import `~/server/db`; reads live in a `cache()`'d `_data.ts` loader or a `src/lib` read (CORE-ARCH-018)
 
 ---
 
@@ -238,11 +240,11 @@
 - **Severity:** Critical
 - **Why:** `pinpoint-prod` (`udhesuizjsgxfeotqybn`) is the **only** project in the Supabase org, so any remote-targeting Supabase call lands on live member data — there is no staging project to hit by mistake. PITR is off; the recovery floor is the previous nightly backup, i.e. up to ~24h of data loss. MCP tool calls do not go through Bash at all, so neither the `PreToolUse` hook stack nor the script-level guards (`assertNotDrizzlePush()`, `scripts/assert-local-db.mjs`) can see them, and the destructive Supabase CLI verbs beyond `db push` had no rule of any kind.
 - **Do:** Keep two lists in `.claude/settings.json` current:
-  - **MCP** — every write-capable tool on `permissions.ask` as a bare tool name (`mcp__claude_ai_Supabase__execute_sql`, `…__apply_migration`, `…__deploy_edge_function`, `…__pause_project`, `…__restore_project`, `…__create_project`, and the branch mutators), listed once per surface prefix — `mcp__claude_ai_Supabase__` (claude.ai connector in the CLI), `mcp__Supabase__` (cloud sessions), `mcp__plugin_supabase_supabase__` (plugin) — because a rule for one prefix does not match the others. MCP rules take no argument pattern: no `Bash(...)` wrapper, no `:*` suffix. Add newly-exposed write tools when the connector's surface grows.
+  - **MCP** — every write-capable tool on `permissions.ask` with a glob in the server position: `mcp__*__execute_sql`, `mcp__*__apply_migration`, `mcp__*__deploy_edge_function`, `mcp__*__pause_project`, `mcp__*__restore_project`, `mcp__*__create_project`, and the branch mutators. The server's name differs per surface — `claude_ai_Supabase` (claude.ai connector in the CLI), `Supabase` (cloud sessions), `plugin_supabase_supabase` (plugin), and a per-connector UUID in the desktop app — and a rule naming one surface leaves the others unprompted, so the glob covers all of them and any later rename. `create_branch` is the exception, because the GitHub server has a tool of the same name: it is listed per named surface, plus `mcp__*-*-*-*-*__create_branch` for the UUID-named desktop connector. A glob also prompts on another server's tool of the same name (Vercel and Sentry `create_project`, Vercel `pause_project`), which is intended. Ask and deny rules accept a glob over the full tool name; allow rules do not. MCP rules take no argument pattern: no `Bash(...)` wrapper, no `:*` suffix. Add newly-exposed write tools when the connector's surface grows.
   - **CLI** — `ask` on `supabase db reset`, `supabase db remote commit`, `supabase migration repair`, `supabase branches delete`; `deny` on `supabase db push` and `supabase projects delete`. `deny` is reserved for verbs with **no** legitimate use here (prod is the only project, and a deleted project is not recoverable from a nightly backup). `db reset` stays on `ask` rather than `deny` because the local form is routine and a prefix rule cannot reliably distinguish it from `--linked` — the prompt shows the full command, so the human sees `--linked` before approving.
 - **Don't:** Put a write surface on `allow`, or leave a newly-exposed one unlisted (unlisted defaults to unprompted). Don't gate the read-only MCP tools (`list_*`, `get_*`, `search_docs`, `generate_typescript_types`) — prompting on those trains the reflex to click through. Don't add a `PreToolUse` hook to chase wrapper evasion; this repo tried twice (PRs #1736, #1738) and concluded effect-rules belong at the lowest layer.
 - **Scope — these rules are a speed bump, not a security boundary.** Bash permission rules are prefix matchers over the command string, so a wrapper shape (`sh -c "…"`, `eval`, env indirection) walks straight past them, exactly as it does past the hook stack. `ask` is a prompt, not a block. They stop accidents, not intent. They also do not reach child processes: `e2e/global-setup.ts` shells out to `supabase db reset --yes` against the **local** stack from inside the Playwright global-setup process, which is not an agent Bash call and is therefore unaffected — as is `pnpm run db:reset`, which is `supabase stop && supabase start` + drop + migrate + seed and never calls `supabase db reset`.
-- **Enforced by:** `permissions.deny` / `permissions.ask` in `.claude/settings.json`. (The `verify-guard-stack.cjs` SessionStart check covers only missing hook scripts and the merge deny rules.)
+- **Enforced by:** `permissions.deny` / `permissions.ask` in `.claude/settings.json`. The `verify-guard-stack.cjs` SessionStart check warns when a wired hook script, a merge deny rule, or one of the MCP ask rules above is missing; it does not cover the CLI list.
 
 ---
 
@@ -459,6 +461,14 @@
 - **Do:** Once the feature spec settles the schema, ship the additive migration (new table, nullable column, index, enum value) with its `schema.ts` change in its own PR off main, ahead of the implementation PR. A subagent can own it while the implementation proceeds. Ship a destructive migration (drop, rename, NOT NULL, narrowed type) in its own PR after the code that stops reading the old shape is live. A schema change the implementation needs after the migration PR merged is a new migration, and its bead carries the `migration-correction` label. That label count measures whether specs settle schemas early enough.
 - **Don't:** Keep a migration on a feature branch until the feature merges.
 
+**CORE-ARCH-018:** Pages, layouts and components never import the database
+
+- **Severity:** Required
+- **Why:** A read written inline in a page or a component cannot be shared or request-deduped, so the same machine got loaded twice in one render (the Timeline tab re-queried what its layout already had), and copies of one query drifted across tabs. The 2026-10-05 audit (PP-az4d) found about twenty pages and layouts querying the database inline; PP-az4d.10 moved them.
+- **Do:** Put each read in a `cache()`'d loader in the route's `_data.ts`, or in a `src/lib/<domain>` read when more than one surface needs it. A `src/lib` read that takes the database handle as a required argument gets a one-line binding in `_data.ts`. The loaders to reuse are listed in `pinpoint-ui` § Data access.
+- **Don't:** Import `~/server/db` or `~/server/db/*` (the handle or the schema, types included) in any `.tsx` file under `src/app` or any file under `src/components`. Don't exempt a file to land a change; move its read.
+- **Enforced by:** a `no-restricted-imports` override in `.oxlintrc.json` over `src/app/**/*.tsx` and `src/components/**`. Its `excludeFiles` list is the only opt-out besides test files: it names files, never directories, and only shrinks (the four components still on it move in PP-az4d.34). `.ts` modules under `src/app` are not checked: they are where route reads and writes live (`_data.ts` and `queries.ts` loaders, Server Action files, `route.ts` handlers, and data modules such as `settings/account-deletion.ts` and `report/report-data.ts`).
+
 ---
 
 ## Integrations
@@ -503,6 +513,13 @@
 - **Do:** Use Tailwind utility classes or CSS variables
 - **Don't:** `style={{ marginTop: '10px' }}` (unless dynamic coordinates)
 
+**CORE-UI-008:** Action buttons and ⋯ menus go through the shared components
+
+- **Severity:** High
+- **Why:** One look, fold order, and overflow icon across the app (design-bible §26); hand-rolled headers and kebabs drift apart
+- **Do:** Page actions through `PageActions`, an item's ⋯ menu through `ItemActionsMenu`; ⋯ is `MoreHorizontal`; Delete entries end without "…"
+- **Don't:** Import `MoreVertical`/`Ellipsis*`, draw `MoreHorizontal` outside the allowlist in `src/test/unit/action-buttons-standard.test.ts`, or label a Delete entry "Delete tag…"
+
 ---
 
 ## Responsive Framework
@@ -521,7 +538,7 @@
 - **Do:** Use Tailwind breakpoint classes or container queries
 - **Don't:** `window.innerWidth`, `window.matchMedia`, `useMediaQuery` hooks
 - **Boundary:** Component-local geometry observation with `ResizeObserver` is allowed when JavaScript must derive behavior or semantic DOM state that CSS cannot expose (for example, which links belong in an overflow menu). It must not be used to restyle a component based on viewport-like breakpoints; CSS still owns presentation.
-- **Sanctioned exception** (a behavior swap CSS can't express, not styling): `use-is-mobile` (PP-43q3). Its consumers: machine settings swap inline cell editing for a bottom-sheet editor, and a set's tag picker swaps its popover for a bottom sheet; `ConfirmingDeleteButton` swaps the arm/confirm-tap delete for a modal confirm; on the issue detail page (read once in `IssueSections` via `IsMobileProvider`), `IssueFieldRow` swaps the anchored field menu for a bottom-sheet picker, `AssigneePicker` swaps its popover for a bottom sheet, `IssueSectionPanel` carries `tabpanel` roles only while the mobile tabs exist, and `EditableIssueTitle` swaps blur-to-cancel for explicit Save and Cancel. The former `use-table-responsive-columns` exception (PP-rs9) is gone: issue rows are two lines at every width (PP-jb9v).
+- **Sanctioned exception** (a behavior swap CSS can't express, not styling): `use-is-mobile` (PP-43q3). Its consumers: machine settings swap inline cell editing for a bottom-sheet editor, and a set's tag picker swaps its popover for a bottom sheet; `ConfirmingDeleteButton` swaps the arm/confirm-tap delete for a modal confirm; `PageActions` swaps the ⋯ Actions dropdown menu for a bottom sheet (list-views §3.10); on the issue detail page (read once in `IssueSections` via `IsMobileProvider`), `IssueFieldRow` swaps the anchored field menu for a bottom-sheet picker, `AssigneePicker` swaps its popover for a bottom sheet, `IssueSectionPanel` carries `tabpanel` roles only while the mobile tabs exist, and `EditableIssueTitle` swaps blur-to-cancel for explicit Save and Cancel. The former `use-table-responsive-columns` exception (PP-rs9) is gone: issue rows are two lines at every width (PP-jb9v).
 
 **CORE-RESP-003:** sm: is padding only
 
@@ -556,7 +573,21 @@
 - **Why:** Web platform features evolve faster than LLM training data refreshes. Memorizing patterns produces stale code. The Google Chrome `modern-web-guidance` plugin ships ~90 prescriptive guides — searchable by use case, each with Baseline status — and is the canonical reference for "what's the right way to do X today."
 - **Do:** At the start of any non-trivial UI work, search the catalog: `npx -y modern-web-guidance@latest search "<query>"`. Retrieve specific guides by id with `retrieve "<id>,<id2>"`. Check the guide's Browser Support section against CORE-UI-005 before adopting any recommendation.
 - **Don't:** Implement ad-hoc patterns when a Widely-available primitive exists for the same job. Don't pre-emptively pull every guide into context; search per task.
+- **Caveat — a guide's Baseline tier can lag the real Newly → Widely promotion:** Newly → Widely is pure elapsed time (Widely = 30 months after the Baseline low date, no new browser release required), so the catalog can still read "Newly available" after a feature has already crossed into Widely. That lag only ever under-reports — an unnecessary opt-in, never a gate bypass — so MWG's tier is not authoritative on its own. When a guide reads "Newly" for a feature whose Baseline low date is already more than 30 months past and that tier would gate a decision (adopt directly vs. opt-in per CORE-UI-005), confirm against a second source — `web-features`, caniuse, the Baseline dashboard (webstatus.dev), or MDN — before treating it as below the floor. (Casework: `:has()`, PP-l7fj.)
 - **Reference:** Plugin is installed at `~/.claude/plugins/marketplaces/googlechrome/skills/modern-web-guidance/`.
+
+---
+
+## Motion
+
+**CORE-UI-007:** Overlays animate through the shared `src/components/ui/` primitives
+
+- **Severity:** Required
+- **Why:** Dialogs, popovers, menus, tooltips, hover cards and sheets must open and close with the same fade and zoom everywhere. From 2025-11-09 (the Tailwind 4 move) until `tw-animate-css` was added (PP-p2ts.7) every one of them appeared and vanished instantly, because the utilities their classes name were no longer generated, and nothing noticed. A hand-built overlay (the @-mention popup) never had motion at all. Keeping the floating-content libraries behind one folder makes consistent motion a property of the folder, not of each author's memory.
+- **Do:** Import `@radix-ui/*`, `radix-ui`, `vaul`, `cmdk` and `@floating-ui/*` only inside `src/components/ui/**`. Everywhere else, use or extend the shared component there. A floating panel carries `data-[state=open]:animate-in data-[state=closed]:animate-out` plus the fade and zoom classes `popover.tsx` uses (`FloatingPanel` for a panel Radix does not render).
+- **Don't:** Import those libraries in a page, feature component or editor; hand-build a floating panel; add a primitive under `src/components/ui/` that renders floating content without `animate-in` and `animate-out`, unless it is listed in the allowlist in `src/components/ui/motion.test.ts` with a reason.
+- **Enforced by:** the `no-restricted-imports` patterns in `.oxlintrc.json` (the import half) and `src/components/ui/motion.test.ts` (the motion half, a static scan of `src/components/ui/`). Both run in CI. Reduced-motion is separate: one global block in `globals.css` (CORE-A11Y-002).
+- **Reference:** `pinpoint-design-bible` §11 Motion.
 
 ---
 
@@ -570,19 +601,19 @@
 - **Don't:** Ship a layout that puts content behind the header in tab order with no skip affordance.
 - **Status:** Implemented (PP-kqbk.3). `src/app/layout.tsx` renders the anchor as the first child of `<body>`; the `<main id="main-content" tabIndex={-1}>` target lives in `src/components/layout/MainLayout.tsx` and `src/app/(auth)/layout.tsx`. Both halves are load-bearing — a new layout shell must port the pair, not just the anchor.
 
-**CORE-A11Y-002:** `motion-reduce:` pairs with every animation utility
+**CORE-A11Y-002:** Reduced motion is honored by one global rule
 
 - **Severity:** Required
-- **Why:** Users with vestibular disorders need to suppress motion. The `prefers-reduced-motion` media query is Baseline Widely available, and Tailwind exposes the `motion-reduce:` variant out of the box. Adding `motion-reduce:animate-none` costs one utility and removes the motion entirely for users who request it.
-- **Do:** Every `animate-*` or `transition-*` utility that drives non-essential motion is paired with `motion-reduce:animate-none` (or `motion-reduce:transition-none` where appropriate). Loading spinners use `animate-spin motion-reduce:animate-none` — the static icon remains and is still recognizable as "loading."
-- **Don't:** Ship bare `animate-spin`, `animate-pulse`, or `animate-bounce`. Don't write JS feature-detection for `prefers-reduced-motion` — use the CSS variant.
+- **Why:** Users with vestibular disorders need to suppress motion. The `prefers-reduced-motion` media query is Baseline Widely available, so one `@media (prefers-reduced-motion: reduce)` block in `src/app/globals.css` covers every shadcn/Radix primitive and every future component, where a `motion-reduce:` variant per utility needs remembering on each one (PP-kqbk.4).
+- **Do:** Use `animate-*` and `transition-*` utilities freely; the global block turns every transition and animation off under reduced motion, dims `animate-spin` (`opacity: 0.5`, not frozen at full opacity, which reads as hung) and holds `animate-pulse` at a mid-pulse opacity. Sheet and Drawer content keep their slide-in as essential motion. New essential motion is excluded in the global block's `:not(...)` list, with a comment saying why.
+- **Don't:** Add a per-class `motion-reduce:` variant for ordinary motion (the global rule already applies). Don't write JS feature-detection for `prefers-reduced-motion` unless a library applies an inline `transition` that CSS cannot override (`usePrefersReducedMotion`).
 - **Reference:** modern-web-guidance `accessibility` § Motion.
 
 **CORE-A11Y-003:** Data tables ship with semantic structure
 
 - **Severity:** Required
 - **Why:** WCAG 1.3.1 Level A. Without `scope="col"` on header cells, screen readers can't announce the column header for each data cell. Without `aria-sort`, sort state is invisible to AT. Without `<caption>` or `aria-label`, the table has no accessible name in the page outline.
-- **Do:** Every `<th>` carries `scope="col"`. Sortable columns expose `aria-sort="ascending" | "descending" | "none"` synced to the active sort. The `<table>` has either a visible `<caption>` or an `aria-label` describing its contents. The table at `src/components/machines/view/MachineViewTable.tsx` is the reference implementation — match its semantics for new tables.
+- **Do:** Every `<th>` carries `scope="col"`. Sortable columns expose `aria-sort="ascending" | "descending" | "none"` synced to the active sort. The `<table>` has either a visible `<caption>` or an `aria-label` describing its contents.
 - **Don't:** Render a `<th>` without `scope`. Don't ship a sortable table with no `aria-sort`. Don't rely on column header text alone — that's not what AT uses.
 
 **CORE-A11Y-004:** No `<div role="button">` — use real `<button>`
@@ -606,6 +637,14 @@
 - **Do:** When opening a modal that doesn't use native `<dialog>.showModal()` (Radix Dialog, Sheet, AlertDialog, Drawer), set `inert` on the page root or the sibling containing background content. Wire `anyModalOpen` state once in `ClientProviders.tsx` (the same place that hosts the existing `<TooltipProvider>`) and consume it via React context — don't track open state per modal. Radix's `onOpenChange` callback feeds this context. Native `<dialog>` handles this automatically via top-layer.
 - **Don't:** Rely on `aria-hidden="true"` + pointer-events tricks alone. Don't manually manage focus trapping when `inert` does it for you.
 - **Status:** Not yet implemented; tracked under PP-kqbk.8. (Re-verified 2026-08-10: zero `inert` usages in `src/` — `RowEditSheet.tsx` mentions it only in a comment, and its test asserts `aria-hidden`, which is the weaker behavior this rule exists to replace.)
+
+**CORE-A11Y-007:** An accessible name starts with the control's visible text
+
+- **Severity:** Required
+- **Why:** WCAG 2.5.3 Label in Name, Level A. Voice-control users activate a control by saying the text they see; a name that rewords it ("Severity: Major, change" on a pill showing "Major") does not answer to "click Major". axe-core 4.14 enforces it as `label-content-name-mismatch` (serious), and `assertNoA11yViolations` fails every E2E spec on a page that breaks it.
+- **Do:** Start the name with the visible text, word for word, and put context after it. Prefer, in order: drop the `aria-label` when the text is already a good name; build the label from the same variables that render the text, then append context; keep the text as the name and move context to `sr-only` text placed after it or to `aria-describedby`. Separate sibling text elements inside a flex container with `{" "}`, because axe joins siblings with no space ("9On the Floor").
+- **Don't:** Write an `aria-label` that reorders or rewords what is on screen, or that puts context before the visible text. Don't change visible text to satisfy the rule. Icon-only controls and combobox triggers are outside it and keep their labels.
+- **Reference:** `pinpoint-ui` `references/accessibility.md` § Accessible name starts with the visible text. Established by PP-qm17.
 
 ---
 
@@ -632,7 +671,7 @@
 - **Severity:** Required
 - **Why:** `:user-invalid` (Baseline Widely available) flips a CSS pseudo-class on form controls only **after** the user has interacted with them — no premature red rings on page load, no JS state mirroring, no event listeners. The shared `<Input>` already has `aria-invalid:` styling; pair it with `:user-invalid:` and the browser does the rest.
 - **Do:** `src/components/ui/input.tsx` and `textarea.tsx` carry the equivalent of `[&:user-invalid]:border-destructive [&:user-invalid]:ring-destructive/40` so every input automatically picks up post-interaction invalid styling. Add to the primitive once — don't copy this per form. (`select.tsx` is a Radix trigger, not a native form control, so the `:user-invalid` pseudo-class does not apply to it — it uses `aria-invalid:` styling only.)
-- **Don't:** Hand-roll `useState` + `onBlur` to mirror invalid state. Don't paint inputs red on initial render.
+- **Don't:** Hand-roll `useState` + `onBlur` to mirror invalid state. Don't paint inputs red on initial render. Don't reach for Tailwind's `peer-invalid` variant — it matches from first render, painting the premature red rings `:user-invalid` exists to avoid; it is the obvious Tailwind-native choice and the wrong one.
 - **Reference:** modern-web-guidance `validate-input-after-interaction`.
 - **Status:** Implemented in `input.tsx` and `textarea.tsx` (PP-kqbk.2). `select.tsx` is out of scope — see the Do note.
 
@@ -728,7 +767,7 @@ If all Yes → ship it. Perfect is the enemy of done.
 - CORE‑ARCH‑001, 004..016: Architecture (002, 003 retired)
 - CORE‑RESP‑001..004: Responsive framework
 - CORE‑UI‑001..006: UI & styling + Browser support / MWG catalog (005, 006)
-- CORE‑A11Y‑001..006: Accessibility floor
+- CORE‑A11Y‑001..007: Accessibility floor
 - CORE‑FORM‑001..006: Form correctness
 - CORE‑PBM‑001: PinballMap API conduct
 

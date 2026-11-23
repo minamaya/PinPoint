@@ -20,26 +20,34 @@
 
 - **2.1** Issue View appears on `/issues` and on the Issues tab of every Collection and Tag.
 - **2.2** On an Issues tab the scope is the issues on that Collection's or Tag's machines; a Machine filter can narrow it but never widen it.
-- **2.3** The page title is "Issues". Issue View adds no page action; reporting an issue stays in the app header and tab bar.
+- **2.3** The page title is "Issues". Its only page action is Export (5.4), as its own button (list-views §3.7); reporting an issue stays in the app header and tab bar.
+- **2.4** On an Issues tab, Export sits in the Collection's or Tag's ⋯ (collections-and-tags 4.17), at every width.
 
 ---
 
 ## 3. Rows
 
-- **3.1** Every issue row has two lines at every screen size, and the full title is always shown, wrapping rather than truncating. On a narrow phone the second line also wraps rather than truncating, so the row may run longer.
-- **3.2** Line 1 shows the status icon, the title (linking to the issue), the severity badge, and the priority badge.
-- **3.3** Line 2 shows the issue ID, the machine name (linking to the machine), the status name, and how long ago the issue was updated.
-- **3.4** On desktop the row's right side shows the comment count (when nonzero) and the assignee's avatar; on phones the assignee's initials end line 2.
-- **3.5** A person allowed to change an issue can change its status, severity, priority, and assignee from the row. Other people see the same values as plain text.
-- **3.6** After a change from a row, the row keeps its place in the list until the list next reloads, even if the change means it no longer matches the sort or filters.
+- **3.1** Every issue row uses one two-line layout at every screen size. The full title is always shown, wrapping rather than truncating; line 2 always stays on one line and lines up with the title, not the status dot.
+- **3.2** Line 1 shows the status dot, the title, then the status pill and the severity pill, which flow inline after the title text. The two pills wrap as a pair: when both don't fit after the title, both move to the next line together.
+- **3.3** Line 2 shows the issue ID, the machine name, and the priority pill on the left, and, as a group anchored to the right end of the line, the assignee's initials, the comment count, and how long ago the issue was updated, shown as an activity icon and a short age such as “2d ago” at every screen size. The issue ID shows at every screen size and never drops.
+- **3.4** The comment count shows only when the issue has at least one comment, and the assignee appears only on line 2.
+- **3.5** _Retired 2026-10-11._ Rows offered inline editing of status, severity, priority, and assignee; 3.11 now forbids it. Number kept so older citations don't dangle.
+- **3.6** _Retired 2026-10-11._ Rows kept their place after an inline change; with no inline editing (3.11) there is nothing to keep in place. Number kept so older citations don't dangle.
 - **3.7** An unassigned issue shows an empty avatar announced as "Unassigned". Assignee names never show email addresses.
+- **3.8** Rows lead with a status dot in the status color whose shape marks the status group, as Playability dots do on machine rows: a ring for New, a filled circle for In Progress, a diamond for Closed. The status pill still shows the status by name.
+- **3.9** When line 2 does not fit, it drops the age first, then the comment count; then the machine name truncates, down to not showing at all, since the issue ID still names the machine; then the priority pill drops, then the assignee's initials.
+- **3.10** Row fields rank, most to least important: title, status, severity, assignee, priority, machine, comment count, age, issue ID. A field that gives way for room gives way in reverse of this order, except the issue ID, which never gives way (3.3).
+- **3.11** Rows never change an issue; status, severity, priority, and assignee are read-only values on the row for everyone.
+- **3.12** The whole row is a link to the issue, and the machine name is its own link to the machine.
+- **3.13** On List View pages, the status, severity, and priority pills have no border: a scoped exception to the design bible's chip style (§1, state colors), which keeps its border everywhere else.
+- **3.14** On line 2 a separator dot appears only between two plain-text items; none sits next to a pill, an avatar, or an icon.
 
 ---
 
 ## 4. Search and Filters
 
 - **4.1** Search matches issue titles, issue IDs (such as AFM-12), machine names and initials, people's names, description text, and comment text.
-- **4.2** The Primary Filters, in order, are Status, Severity, Priority, Machine, Assignee, and Machine Presence.
+- **4.2** The Primary Filters, in order, are Machine, Status, Severity, Assignee, Priority, and Machine Presence.
 - **4.3** The Secondary Filters, in order, are Created, Updated, Frequency, Machine owner, Machine tag, Machine collection, Reporter, and Watching. Machine tag and Machine collection follow collections-and-tags §12.
 - **4.4** Status offers every status grouped by status group; selecting a group selects all its statuses. The control reads "Open" when exactly the Open statuses are selected.
 - **4.5** Machine searches machines by name and initials, leaving out Removed machines unless Machine Presence includes Removed, and offers a My machines shortcut (machines the person owns, other than Removed ones). A machine already selected stays listed.
@@ -56,7 +64,7 @@
 - **5.1** Sort options are Updated, Created, Issue ID, Severity, Priority, and Assignee, each in either direction. The default is Updated, newest first.
 - **5.2** Assignee sorts by the assignee's display name, unassigned last; ties fall back to Updated, newest first.
 - **5.3** Every sort is deterministic: ties end in issue ID order.
-- **5.4** Export downloads a CSV of every issue matching the current View Configuration across all pages, within the Surface's scope.
+- **5.4** Export downloads a CSV of every issue matching the current View Configuration across all pages, within the Surface's scope. It is offered only to signed-in people.
 - **5.5** View options holds page size only.
 
 ---
@@ -88,7 +96,8 @@
 ## Known divergences (code vs spec)
 
 | Requirement | Divergence | Resolution |
-| :---------- | :--------- | :--------- |
+| :-- | :-- | :-- |
+| 4.3, 4.9, 7.1 | There are no Machine tag or Machine collection Secondary Filters and no `tag` or `collection` parameters; the Secondary Filters are Created, Updated, Frequency, Machine owner, Reporter, and Watching. | PP-wqit.15 |
 
 ---
 
@@ -96,6 +105,12 @@
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-21 | 2.3: Export, the page's only action, is its own button rather than ⋯'s only entry. |
+| 2026-11-20 | On line 2 the machine name gives way before the priority pill and the assignee: it truncates, down to not showing, after the age and comment count drop (3.9); the field ranking moves machine below priority (3.10). |
+| 2026-11-15 | Line 2 puts the assignee, comment count, and age in a group anchored to the right end (3.3); separator dots only between plain-text items (3.14); the priority stays a pill. |
+| 2026-10-12 | Issue rows: a leading status dot shaped by status group, with the status pill kept (3.2, 3.8); line 2 lines up with the title (3.1); the age shows as an activity icon and “2d ago” at every width (3.3); the status and severity pills wrap as a pair (3.2); the issue ID shows at every screen size, phones included (3.3, 3.10); the comment count returns on line 2 when above zero, dropping right after the age (3.3, 3.4, 3.9, 3.10). |
+| 2026-10-11 | Primary Filters reordered by field importance: Machine, Status, Severity, Assignee, Priority, Machine Presence (4.2). Issue View's only page action is ⋯, holding Export, on `/issues` and in the Collection's or Tag's ⋯ on an Issues tab, at every width (2.3, 2.4); Export is offered only to signed-in people (5.4). |
+| 2026-10-11 | Issue rows redesigned: one layout at every width with a one-line line 2 and a drop order (3.1, 3.9), status and severity pills on line 1 and no status icon (3.2, 3.8), line 2 order with the issue ID desktop only (3.3), no comment count (3.4), field importance (3.10), no inline editing (3.11; 3.5 and 3.6 retired), whole-row link (3.12), borderless pills on List View pages (3.13). |
 | 2026-10-07 | Owner Collections retired; the Issues tab appears on every Collection and Tag (2.1). |
 | 2026-10-07 | Created and Updated days are the collective's local days, America/Chicago (4.8). |
 | 2026-10-05 | Machine tag and Machine collection Secondary Filters (4.3, 4.9) and their `tag` and `collection` parameters (7.1). |

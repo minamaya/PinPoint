@@ -11,8 +11,6 @@ interface InfoRailProps {
   owner: { id: string; name: string; avatarUrl: string | null } | null;
   invitedOwner: { name: string } | null;
   addedAt: Date;
-  /** Edit-machine control (dialog trigger or denied tooltip), shown in the owner card footer. */
-  editSlot?: React.ReactNode;
   /** Top scores card slot, rendered below Details. */
   topScoresSlot?: React.ReactNode;
   /** PinTips tip card slot (spec pintips 4.1), after Top scores. */
@@ -44,10 +42,13 @@ interface InfoRailProps {
   manufacturer: string | null;
   year: number | null;
   /**
-   * Design and art credits from the machine's OPDB record, rendered under
-   * Year with the same rule: only alongside a model, and a role with no
-   * credits reads **Unknown** (PP-tv2u). Every name shows here; only the
-   * apron card limits the list.
+   * Design, art, and code credits from the machine's OPDB record, rendered
+   * under Year with the same rule: only alongside a model, and a role with no
+   * credits reads **Unknown** (PP-tv2u). Code is the exception: its row shows
+   * only when someone is credited, because EMs had no software and most
+   * pre-DMD games carry no code credit in OPDB, so "Unknown" there would
+   * usually be wrong rather than missing (PP-j6wh). Every name shows here;
+   * only the apron card limits the list.
    */
   credits: MachineCredits;
   /** Every tag the machine belongs to, in tag type order (spec 7.4). */
@@ -133,7 +134,7 @@ const LABEL =
 
 /**
  * InfoRail — the Info tab's reference cluster: Tags, then the Details card
- * (Model, Pinball Map standing, owner, Edit). The machine description is
+ * (Model, Pinball Map standing, owner). The machine description is
  * not here: it leads the main column, because a long one stretched this
  * 320px rail far past the main column's height. Renders as the desktop
  * right rail and folds inline on mobile (the caller controls placement + gap;
@@ -152,7 +153,6 @@ export function InfoRail({
   owner,
   invitedOwner,
   addedAt,
-  editSlot,
   topScoresSlot,
   tipSlot,
   modelName,
@@ -181,8 +181,7 @@ export function InfoRail({
 
       {/* Details — reading order: the machine's identity (Model + its Pinball
           Map standing), then the owner in a distinct panel
-          with an explicit role badge (name only, never email per CORE-SEC-007),
-          then the Edit-machine control.
+          with an explicit role badge (name only, never email per CORE-SEC-007).
 
           `@container` is here so the Config-issue warning can measure THIS card
           rather than the viewport (CORE-RESP-002). The card is 320px in the
@@ -231,6 +230,9 @@ export function InfoRail({
               </p>
               <CreditRow label="Design" names={credits.design} />
               <CreditRow label="Art" names={credits.art} />
+              {credits.code.length > 0 && (
+                <CreditRow label="Code" names={credits.code} />
+              )}
             </>
           )}
 
@@ -340,8 +342,6 @@ export function InfoRail({
             <p className="text-sm text-muted-foreground">No owner assigned</p>
           )}
         </div>
-
-        {editSlot ? <div className="mt-4">{editSlot}</div> : null}
       </div>
 
       {topScoresSlot}

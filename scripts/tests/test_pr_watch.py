@@ -7,13 +7,8 @@ failure, while an API outage is undetermined rather than a fabricated red
 result. Detailed run logs are fetched only after the aggregate gate has
 conclusively failed. (PP-r63o, PP-qkl8)
 
-Review state: `--check-ready` and `--phase review` report the merge gate's label
-(approved / changes requested / stale review / not reviewed) without owning the
-logic — `review_summary` shells out to `_review_summary` in `_pr-gates.sh`, so a
-stale approval cannot be flattened into "approved" by a Python copy that drifted.
-
-Everything is mocked at the `gh` CLI seam (`pr_watch.gh`) and the gate seam
-(`pr_watch.review_summary`) — these tests never reach GitHub (CORE-TEST-006).
+Everything is mocked at the `gh` CLI seam (`pr_watch.gh`) — these tests never
+reach GitHub (CORE-TEST-006).
 """
 
 import importlib.util
@@ -54,9 +49,12 @@ def _gate(
     completed_at: str = "",
     started_at: str | None = None,
     details_url: str = "",
+    name: str = pr_watch.CI_GATE_NAME,
+    workflow_name: str = "CI",
 ) -> dict:
     return {
-        "name": pr_watch.CI_GATE_NAME,
+        "name": name,
+        "workflowName": workflow_name,
         "status": status,
         "conclusion": conclusion,
         "completedAt": completed_at,
@@ -81,151 +79,55 @@ def _run(
     }
 
 
-def fake_summary(
-    label="not reviewed",
-    *,
-    head=HEAD_SHA,
-    checker="codex",
-    form="approval",
-    unresolved=0,
-    pending=False,
-    stale_sha=OLD_SHA,
-):
-    """A `_review_summary` document, as the bash gate emits it.
+def snapshot_gh(snapshots, merge_state="CLEAN", resolved=()):
+    """Return CI snapshots in sequence (the last repeats); record every call.
 
-    Only the fields the watcher reads are modelled: label, coverage (present exactly
-    when the label is "approved"), checkers, codex_request_pending, unresolved_threads.
+    The review-thread query a passed watch makes answers with `resolved`, one
+    isResolved flag per thread, and is kept out of `calls`.
     """
-
-    def record(verdict, sha):
-        return {
-            "checker": checker,
-            "verdict": verdict,
-            "form": form if verdict == "covers" else "",
-            "sha": sha,
-            "reviewer": "",
-            "detail": "",
-            "at": "2026-08-22T12:00:00Z",
-            "summary": "",
-        }
-
-    none = {name: record("none", "") for name in ("claude", "codex")}
-    checkers = dict(none)
-    if label == "approved":
-        checkers[checker] = record("covers", head)
-    elif label == "stale review":
-        checkers[checker] = record("stale", stale_sha)
-    elif label == "changes requested" and unresolved == 0:
-        checkers[checker] = record("changes_requested", head)
-    return {
-        "head": head,
-        "label": label,
-        "coverage": checkers[checker] if label == "approved" else None,
-        "checkers": checkers,
-        "codex_request_pending": pending,
-        "unresolved_threads": unresolved,
-    }
-
-
-def use_summaries(monkeypatch, *summaries):
-    """Answer successive `review_summary` calls; the last one repeats."""
-    queue = list(summaries)
-
-    def fake_review_summary(_pr, *, timeout=None):
-        del timeout
-        if len(queue) > 1:
-            return queue.pop(0)
-        return queue[0]
-
-    monkeypatch.setattr(pr_watch, "review_summary", fake_review_summary)
-
-
-def make_gh(
-    *,
-    rollup=(),
-    merge_state="CLEAN",
-    threads=(),
-    labels=(),
-):
-    """Build a fake `gh` that answers every call pr-watch makes.
-
-    Records each invocation on `.calls` so tests can assert what was queried.
-
-    Review evidence is not modelled here: the watcher reads it from the bash gate
-    (`review_summary`), which tests replace with `use_summaries`.
-    """
-
-    def fake_gh(*args: str) -> str:
-        fake_gh.calls.append(args)
-        if args[:2] == ("pr", "view"):
-            fields = args[4]
-            if fields == "headRefOid,statusCheckRollup,mergeStateStatus":
-                return json.dumps(
-                    {
-                        "headRefOid": HEAD_SHA,
-                        "statusCheckRollup": list(rollup),
-                        "mergeStateStatus": merge_state,
-                    }
-                )
-            if fields == "headRefOid,mergeStateStatus":
-                return json.dumps(
-                    {
-                        "headRefOid": HEAD_SHA,
-                        "mergeStateStatus": merge_state,
-                    }
-                )
-            if fields == "statusCheckRollup":
-                return json.dumps({"statusCheckRollup": list(rollup)})
-            if fields == "mergeStateStatus,labels":
-                return json.dumps(
-                    {
-                        "mergeStateStatus": merge_state,
-                        "labels": [{"name": n} for n in labels],
-                    }
-                )
-        if args[:2] == ("api", "graphql"):
-            return json.dumps(
-                {
-                    "data": {
-                        "repository": {
-                            "pullRequest": {
-                                "reviewThreads": {
-                                    "pageInfo": {
-                                        "hasNextPage": False,
-                                        "endCursor": None,
-                                    },
-                                    "nodes": list(threads),
-                                }
-                            }
-                        }
-                    }
-                }
-            )
-        raise AssertionError(f"unexpected gh call: {args}")
-
-    fake_gh.calls = []
-    return fake_gh
-
-
-def snapshot_gh(snapshots, merge_state="CLEAN"):
-    """Return CI snapshots in sequence (the last repeats); record every call."""
     remaining = list(snapshots)
 
     def fake_gh(*args: str) -> str:
+        if args[:2] == ("api", "graphql"):
+            fake_gh.thread_queries += 1
+            threads = {
+                "pageInfo": {"hasNextPage": False},
+                "nodes": [{"isResolved": r} for r in resolved],
+            }
+            return json.dumps(
+                {"data": {"repository": {"pullRequest": {"reviewThreads": threads}}}}
+            )
         fake_gh.calls.append(args)
         assert args[:2] == ("pr", "view"), args
-        assert args[4] == "headRefOid,statusCheckRollup,mergeStateStatus", args
+        assert args[4] == "headRefOid,statusCheckRollup,mergeStateStatus,isDraft", args
         snapshot = remaining.pop(0) if len(remaining) > 1 else remaining[0]
         return json.dumps({**snapshot, "mergeStateStatus": merge_state})
 
     fake_gh.calls = []
+    fake_gh.thread_queries = 0
     return fake_gh
 
 
-def ci_snapshot(head=HEAD_SHA, gate=None):
+def _review(conclusion: str, status: str = "COMPLETED", **kwargs) -> dict:
+    return _gate(
+        conclusion,
+        status=status,
+        name=pr_watch.CLAUDE_REVIEW_NAME,
+        workflow_name=pr_watch.CLAUDE_REVIEW_NAME,
+        **kwargs,
+    )
+
+
+# Most watch tests are about CI Gate, so the default snapshot carries a passed
+# Claude Review; the review tests pass their own.
+REVIEW_PASSED = _review("SUCCESS")
+
+
+def ci_snapshot(head=HEAD_SHA, gate=None, review=REVIEW_PASSED, draft=False):
     return {
         "headRefOid": head,
-        "statusCheckRollup": [] if gate is None else [gate],
+        "isDraft": draft,
+        "statusCheckRollup": [c for c in (gate, review) if c is not None],
     }
 
 
@@ -276,25 +178,28 @@ def test_completed_with_empty_conclusion_fails_safe(conclusion):
 
 
 # ---------------------------------------------------------------------------
-# _ci_gate_state — head-SHA-scoped, superseded leftovers don't shadow the live gate
+# _select_ci_gate — superseded leftovers don't shadow the live gate
 # ---------------------------------------------------------------------------
 
 
+def _selected(rollup) -> tuple[str, str]:
+    """(status, conclusion) of the gate the watch would act on, or ("", "")."""
+    gate = pr_watch._select_ci_gate(rollup)
+    return ("", "") if gate is None else (gate["status"], gate["conclusion"])
+
+
 @pytest.mark.unit
-def test_ci_gate_state_prefers_live_gate_over_cancelled_leftover(monkeypatch):
+def test_select_ci_gate_prefers_live_gate_over_cancelled_leftover():
     """A re-run leaves a cancelled CI Gate check next to the live one."""
     rollup = [
         _gate("CANCELLED", completed_at="2026-07-24T23:26:45Z"),
         _gate("", status="IN_PROGRESS", completed_at="2026-07-24T23:30:00Z"),
     ]
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=rollup))
-    assert pr_watch._ci_gate_state(PR) == ("IN_PROGRESS", "")
+    assert _selected(rollup) == ("IN_PROGRESS", "")
 
 
 @pytest.mark.unit
-def test_ci_gate_state_prefers_replacement_that_started_after_late_cancellation(
-    monkeypatch,
-):
+def test_select_ci_gate_prefers_replacement_that_started_after_late_cancellation():
     rollup = [
         _gate(
             "CANCELLED",
@@ -307,45 +212,40 @@ def test_ci_gate_state_prefers_replacement_that_started_after_late_cancellation(
             started_at="2026-07-24T23:30:00Z",
         ),
     ]
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=rollup))
-    assert pr_watch._ci_gate_state(PR) == ("COMPLETED", "SUCCESS")
+    assert _selected(rollup) == ("COMPLETED", "SUCCESS")
 
 
 @pytest.mark.unit
-def test_ci_gate_state_reports_newer_cancellation_over_older_failure(monkeypatch):
+def test_select_ci_gate_reports_newer_cancellation_over_older_failure():
     """The latest rerun is authoritative even when both outcomes are non-green."""
     rollup = [
         _gate("FAILURE", completed_at="2026-07-24T20:00:00Z"),
         _gate("CANCELLED", completed_at="2026-07-24T23:26:45Z"),
     ]
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=rollup))
-    assert pr_watch._ci_gate_state(PR) == ("COMPLETED", "CANCELLED")
+    assert _selected(rollup) == ("COMPLETED", "CANCELLED")
 
 
 @pytest.mark.unit
-def test_ci_gate_state_does_not_expose_older_green_after_cancellation(monkeypatch):
+def test_select_ci_gate_does_not_expose_older_green_after_cancellation():
     rollup = [
         _gate("SUCCESS", completed_at="2026-07-24T20:00:00Z"),
         _gate("CANCELLED", completed_at="2026-07-24T23:26:45Z"),
     ]
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=rollup))
-    assert pr_watch._ci_gate_state(PR) == ("COMPLETED", "CANCELLED")
+    assert _selected(rollup) == ("COMPLETED", "CANCELLED")
 
 
 @pytest.mark.unit
-def test_ci_gate_state_reports_cancelled_when_every_gate_is_superseded(monkeypatch):
+def test_select_ci_gate_reports_cancelled_when_every_gate_is_superseded():
     rollup = [
         _gate("CANCELLED", completed_at="2026-07-24T20:00:00Z"),
         _gate("CANCELLED", completed_at="2026-07-24T23:26:45Z"),
     ]
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=rollup))
-    assert pr_watch._ci_gate_state(PR) == ("COMPLETED", "CANCELLED")
+    assert _selected(rollup) == ("COMPLETED", "CANCELLED")
 
 
 @pytest.mark.unit
-def test_ci_gate_state_absent(monkeypatch):
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=[]))
-    assert pr_watch._ci_gate_state(PR) == ("", "")
+def test_select_ci_gate_absent():
+    assert _selected([]) == ("", "")
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +315,128 @@ def test_watch_phase_ci_fetches_failure_artifact_only_after_red(monkeypatch, cap
     assert verdict.failure_artifact == "tmp/gh-monitor/failure-555.md"
     assert "CI Gate failed" in capsys.readouterr().err
     assert len(fake.calls) == 1
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_waits_for_claude_review_after_ci_gate_passes(
+    monkeypatch, capsys
+):
+    fake = snapshot_gh(
+        [
+            ci_snapshot(gate=_gate("SUCCESS"), review=None),
+            ci_snapshot(gate=_gate("SUCCESS"), review=_review("", "IN_PROGRESS")),
+            ci_snapshot(gate=_gate("SUCCESS"), review=_review("SUCCESS")),
+        ]
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    no_sleep(monkeypatch)
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "passed"
+    assert verdict.claude_review == "SUCCESS"
+    assert len(fake.calls) == 3
+    err = capsys.readouterr().err
+    assert "Claude Review not yet posted" in err
+    assert "Claude Review in_progress" in err
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_red_claude_review_ends_watch_before_ci(monkeypatch):
+    review_url = "https://github.com/o/r/actions/runs/777/job/1"
+    fake = snapshot_gh(
+        [
+            ci_snapshot(
+                gate=_gate("", status="IN_PROGRESS"),
+                review=_review("FAILURE", details_url=review_url),
+            )
+        ]
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
+    )
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "failed"
+    assert verdict.claude_review == "FAILURE"
+    assert verdict.detail_url == review_url
+    assert verdict.failure_artifact == "tmp/gh-monitor/failure-777.md"
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_passed_verdict_counts_unresolved_threads(monkeypatch, capsys):
+    fake = snapshot_gh(
+        [ci_snapshot(gate=_gate("SUCCESS"))], resolved=(True, False, False)
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "passed"
+    assert verdict.unresolved_threads == 2
+    assert fake.thread_queries == 1
+    assert "2 unresolved review thread(s)" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_thread_count_outage_leaves_it_unknown(monkeypatch):
+    fake = snapshot_gh([ci_snapshot(gate=_gate("SUCCESS"))])
+
+    def flaky_gh(*args: str) -> str:
+        if args[:2] == ("api", "graphql"):
+            raise RuntimeError("HTTP 502")
+        return fake(*args)
+
+    monkeypatch.setattr(pr_watch, "gh", flaky_gh)
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "passed"
+    assert verdict.unresolved_threads is None
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_ready_pr_waits_past_a_draft_skipped_review(monkeypatch):
+    fake = snapshot_gh(
+        [
+            ci_snapshot(gate=_gate("SUCCESS"), review=_review("SKIPPED")),
+            ci_snapshot(gate=_gate("SUCCESS"), review=_review("SUCCESS")),
+        ]
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    no_sleep(monkeypatch)
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "passed"
+    assert verdict.claude_review == "SUCCESS"
+    assert len(fake.calls) == 2
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_draft_needs_only_ci_gate(monkeypatch):
+    fake = snapshot_gh([ci_snapshot(gate=_gate("SUCCESS"), review=None, draft=True)])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "passed"
+    assert verdict.claude_review == "SKIPPED_DRAFT"
+
+
+@pytest.mark.unit
+def test_watch_phase_ci_ignores_claude_review_name_from_another_workflow(monkeypatch):
+    impostor = _gate("SUCCESS", name=pr_watch.CLAUDE_REVIEW_NAME, workflow_name="")
+    fake = snapshot_gh(
+        [
+            ci_snapshot(gate=_gate("SUCCESS"), review=impostor),
+            ci_snapshot(gate=_gate("SUCCESS"), review=_review("SUCCESS")),
+        ]
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    no_sleep(monkeypatch)
+
+    verdict = pr_watch._watch_phase_ci(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "passed"
+    assert len(fake.calls) == 2
 
 
 @pytest.mark.unit
@@ -543,194 +565,569 @@ def test_failure_run_lookup_is_terminal_only_and_head_scoped(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Review phase — exact-head coverage and threads
+# Queue phase — one GraphQL snapshot per interval; run lookups only on removal
 # ---------------------------------------------------------------------------
 
-
-@pytest.mark.unit
-def test_watch_phase_review_passes_when_approved_and_zero_threads(monkeypatch):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    use_summaries(monkeypatch, fake_summary("approved"))
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "passed"
-    assert verdict.observed_head == HEAD_SHA
-    assert verdict.review_state == "approved"
-    assert verdict.unresolved_threads == 0
+MERGE_SHA = "46b0d567ab1ad159a843b5f480d59ee907b173d2"
+QUEUE_SHA = "95b2e4a0acbef8e771997da4a09de2b78abaeab8"
+ENQUEUED_AT = "2026-11-16T00:42:44Z"
 
 
-@pytest.mark.unit
-def test_watch_phase_review_rejects_evidence_for_another_head(monkeypatch):
-    """An approval the gate computed for a different commit must not pass."""
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    use_summaries(monkeypatch, fake_summary("approved", head=OLD_SHA))
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "stale"
-
-
-@pytest.mark.unit
-def test_watch_phase_review_action_required_when_threads_unresolved(monkeypatch):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    use_summaries(monkeypatch, fake_summary("approved", unresolved=1))
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "action_required"
-    assert verdict.unresolved_threads == 1
-
-
-@pytest.mark.unit
-def test_watch_phase_review_revalidates_evidence_before_passing(monkeypatch):
-    # The first read says approved with zero threads; the terminal re-read sees a
-    # thread opened in between. The re-read wins.
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    use_summaries(
-        monkeypatch,
-        fake_summary("approved"),
-        fake_summary("approved", unresolved=1),
-    )
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "action_required"
-    assert verdict.unresolved_threads == 1
-
-
-@pytest.mark.unit
-def test_watch_phase_review_action_required_on_changes_requested(monkeypatch, capsys):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    use_summaries(monkeypatch, fake_summary("changes requested", checker="codex"))
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "action_required"
-    assert verdict.review_state == "changes requested"
-    assert "Codex: requested changes" in capsys.readouterr().err
-
-
-@pytest.mark.unit
-def test_watch_phase_review_undetermined_when_the_gate_fails(monkeypatch, capsys):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-
-    def broken(_pr, *, timeout=None):
-        del timeout
-        raise RuntimeError("_review_summary failed (exit 1): boom")
-
-    monkeypatch.setattr(pr_watch, "review_summary", broken)
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "undetermined"
-    assert "boom" in capsys.readouterr().err
-
-
-@pytest.mark.unit
-def test_watch_phase_review_bounds_the_gate_call_by_the_remaining_deadline(
-    monkeypatch,
+def queue_snapshot(
+    state="OPEN",
+    head=HEAD_SHA,
+    entry_state="AWAITING_CHECKS",
+    position=1,
+    auto_merge=False,
+    merge_commit=None,
+    merge_state="UNKNOWN",
+    enqueued_at=ENQUEUED_AT,
+    group_sha=None,
 ):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    seen: list[float | None] = []
+    """One pullRequest node as the queue query returns it; entry_state=None: not queued.
 
-    def fake_review_summary(_pr, *, timeout=None):
-        seen.append(timeout)
-        return fake_summary("approved")
+    `group_sha` is the entry's merge-group commit (headCommit), None when GitHub
+    has not built it yet.
+    """
+    return {
+        "state": state,
+        "headRefOid": head,
+        "mergeStateStatus": merge_state,
+        "mergeCommit": {"oid": merge_commit} if merge_commit else None,
+        "autoMergeRequest": {"enabledAt": enqueued_at} if auto_merge else None,
+        "mergeQueueEntry": None
+        if entry_state is None
+        else {
+            "state": entry_state,
+            "position": position,
+            "enqueuedAt": enqueued_at,
+            "headCommit": {"oid": group_sha} if group_sha else None,
+        },
+    }
 
-    monkeypatch.setattr(pr_watch, "review_summary", fake_review_summary)
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=30, poll_sec=0)
-    assert verdict.outcome == "passed"
-    assert seen and all(t is not None and 0 < t <= 30 for t in seen)
+
+NOT_QUEUED = queue_snapshot(entry_state=None)
+
+
+def _queue_run(run_id, conclusion, pr=PR, sha=QUEUE_SHA, workflow="CI", created=None):
+    return {
+        "databaseId": run_id,
+        "status": "completed",
+        "conclusion": conclusion,
+        "headBranch": f"gh-readonly-queue/main/pr-{pr}-1698e1b603b364bd79105d30aea5f440d4f3da50",
+        "headSha": sha,
+        "workflowName": workflow,
+        "createdAt": created or "2026-11-16T00:43:51Z",
+        "url": f"https://github.com/minamaya/PinPoint/actions/runs/{run_id}",
+    }
+
+
+def queue_gh(snapshots, runs=(), jobs=()):
+    """Answer the queue query with `snapshots` in sequence (the last repeats).
+
+    `gh run list` answers with `runs` (only that commit's, for `--commit`), or
+    with what `runs()` returns when it is callable, for runs that appear
+    mid-watch; `gh run view --json jobs` answers with `jobs`. Every call is
+    recorded so a test can assert none of them happen early.
+    """
+    remaining = list(snapshots)
+
+    def fake_gh(*args: str) -> str:
+        fake_gh.calls.append(args)
+        if args[:2] == ("api", "graphql"):
+            assert "mergeQueueEntry" in args[3], args
+            snapshot = remaining.pop(0) if len(remaining) > 1 else remaining[0]
+            return json.dumps({"data": {"repository": {"pullRequest": snapshot}}})
+        if args[:2] == ("run", "list"):
+            assert args[args.index("--event") + 1] == "merge_group", args
+            current = list(runs() if callable(runs) else runs)
+            if "--commit" in args:
+                sha = args[args.index("--commit") + 1]
+                return json.dumps([run for run in current if run["headSha"] == sha])
+            return json.dumps(current)
+        if args[:2] == ("run", "view"):
+            return json.dumps({"jobs": list(jobs)})
+        raise AssertionError(args)
+
+    fake_gh.calls = []
+    return fake_gh
+
+
+def _queries(fake) -> int:
+    return sum(1 for call in fake.calls if call[:2] == ("api", "graphql"))
 
 
 @pytest.mark.unit
-def test_watch_phase_review_timeout_preserves_last_observed_state(monkeypatch):
-    monkeypatch.setattr(
-        pr_watch,
-        "_current_head_merge_snapshot",
-        lambda _pr: (HEAD_SHA, "CLEAN"),
+def test_watch_phase_queue_reports_merged_with_merge_commit(monkeypatch, capsys):
+    fake = queue_gh(
+        [
+            queue_snapshot(position=2),
+            queue_snapshot(entry_state="MERGEABLE", position=1),
+            queue_snapshot(state="MERGED", entry_state=None, merge_commit=MERGE_SHA),
+        ]
     )
-    use_summaries(monkeypatch, fake_summary("stale review"))
-    # deadline, loop check, the gate-call timeout budget, then the expiring loop check
-    monotonic_values = iter([0.0, 0.0, 0.0, 1.0])
-    monkeypatch.setattr(pr_watch.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(pr_watch, "gh", fake)
     no_sleep(monkeypatch)
 
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=0.5, poll_sec=0)
-    assert verdict.outcome == "timed_out"
-    assert verdict.review_state == "stale review"
-    assert verdict.merge_state == "CLEAN"
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "merged"
+    assert verdict.merge_commit == MERGE_SHA
+    assert verdict.pr_state == "MERGED"
+    assert _queries(fake) == 3
+    assert all(call[:2] == ("api", "graphql") for call in fake.calls)
+    err = capsys.readouterr().err
+    assert "Queued at position 2" in err
+    assert "merged as 46b0d56" in err
 
 
 @pytest.mark.unit
-def test_watch_phase_review_keeps_stale_review_pending_until_head_is_covered(
+def test_watch_phase_queue_waits_for_armed_auto_merge_to_enqueue(monkeypatch):
+    fake = queue_gh(
+        [
+            queue_snapshot(entry_state=None, auto_merge=True),
+            queue_snapshot(),
+            queue_snapshot(state="MERGED", entry_state=None, merge_commit=MERGE_SHA),
+        ]
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    no_sleep(monkeypatch)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "merged"
+    assert _queries(fake) == 3
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_removed_without_a_group_commit_scans_the_queue_branch(
     monkeypatch, capsys
 ):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-    use_summaries(
-        monkeypatch,
-        fake_summary("stale review"),
-        fake_summary("approved"),
-        fake_summary("approved"),
+    """No poll caught the group commit, so the fallback scans by branch prefix."""
+    runs = [
+        # This PR's newest group: CI failed, and a second workflow failed too.
+        _queue_run(90, "failure", workflow="UI Approval"),
+        _queue_run(91, "failure"),
+        _queue_run(92, "skipped", workflow="Claude Review"),
+        # An older group the queue rebuilt, and an earlier attempt's red run
+        # (newer id, but created before this enqueue).
+        _queue_run(80, "cancelled", sha=OLD_SHA),
+        _queue_run(99, "failure", sha=OLD_SHA, created="2026-11-15T20:00:00Z"),
+        # Another PR's red run in the same queue.
+        _queue_run(98, "failure", pr=PR + 1, sha=OLD_SHA),
+    ]
+    jobs = [
+        {"name": "Static checks", "status": "completed", "conclusion": "success"},
+        {"name": "E2E Full", "status": "completed", "conclusion": "failure"},
+        {"name": "CI Gate", "status": "completed", "conclusion": "failure"},
+        {"name": "Smoke", "status": "completed", "conclusion": "skipped"},
+    ]
+    fake = queue_gh([queue_snapshot(), NOT_QUEUED], runs=runs, jobs=jobs)
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
     )
     no_sleep(monkeypatch)
 
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "passed"
-    assert f"Review pending on {HEAD_SHA[:7]}: stale review" in (
-        capsys.readouterr().err
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "removed"
+    assert verdict.pr_state == "OPEN"
+    assert verdict.queue_state == "NOT_QUEUED"
+    assert verdict.detail_url == "https://github.com/minamaya/PinPoint/actions/runs/91"
+    assert verdict.failing_jobs == ["E2E Full", "CI Gate"]
+    assert verdict.failure_artifact == "tmp/gh-monitor/failure-91.md"
+    assert ("run", "view", "91", "--json", "jobs") in fake.calls
+    (scan,) = [call for call in fake.calls if call[:2] == ("run", "list")]
+    assert "--commit" not in scan
+    assert scan[scan.index("--limit") + 1] == str(pr_watch.QUEUE_RUN_SCAN_LIMIT)
+    assert "left the merge queue" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_red_group_is_removed_without_waiting(monkeypatch):
+    """The merge-group commit's red run settles the absence on the first read.
+
+    The commit lookup also finds the run on a busy queue, where the branch scan
+    could miss it.
+    """
+    runs = [
+        _queue_run(91, "failure"),
+        # Not this PR's group commit: never fetched by the commit lookup.
+        _queue_run(99, "failure", sha=OLD_SHA),
+    ]
+    jobs = [{"name": "CI Gate", "status": "completed", "conclusion": "failure"}]
+    fake = queue_gh(
+        [queue_snapshot(group_sha=QUEUE_SHA), NOT_QUEUED], runs=runs, jobs=jobs
     )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
+    )
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=600, poll_sec=30)
+    assert verdict.outcome == "removed"
+    assert verdict.detail_url == "https://github.com/minamaya/PinPoint/actions/runs/91"
+    assert verdict.failing_jobs == ["CI Gate"]
+    assert verdict.failing_group_commit == QUEUE_SHA
+    # One poll interval, then the absent read: no settle window.
+    assert clock.now == 30
+    assert _queries(fake) == 2
+    (lookup,) = [call for call in fake.calls if call[:2] == ("run", "list")]
+    assert lookup[lookup.index("--commit") + 1] == QUEUE_SHA
 
 
 @pytest.mark.unit
-def test_watch_phase_review_exits_stale_when_head_moves(monkeypatch):
-    monkeypatch.setattr(pr_watch, "gh", make_gh())
-
-    # PR head in fake_gh is HEAD_SHA, but the watch is pinned to OLD_SHA
-    verdict = pr_watch._watch_phase_review(PR, OLD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "stale"
-    assert verdict.observed_head == HEAD_SHA
-
-
-@pytest.mark.unit
-def test_watch_phase_review_exits_conflicting_on_conflict(monkeypatch):
-    monkeypatch.setattr(pr_watch, "gh", make_gh(merge_state="CONFLICTING"))
-
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "conflicting"
-    assert verdict.merge_state == "CONFLICTING"
-
-
-@pytest.mark.unit
-def test_watch_phase_review_treats_unknown_merge_state_as_not_conflicting(
-    monkeypatch,
+def test_watch_phase_queue_green_group_commit_falls_back_to_the_branch_scan(
+    monkeypatch, capsys
 ):
-    monkeypatch.setattr(pr_watch, "gh", make_gh(merge_state="UNKNOWN"))
-    use_summaries(monkeypatch, fake_summary("approved"))
+    """The queue rebuilt the group after the last poll and the new commit failed."""
+    runs = [
+        # The last-seen group commit: cancelled by the rebuild, nothing red.
+        _queue_run(80, "cancelled", sha=OLD_SHA),
+        # The rebuilt group's red run, never seen by a poll.
+        _queue_run(91, "failure"),
+        # An earlier attempt's red run on its own group commit, created before
+        # this enqueue: the scan's `since` bound keeps it out.
+        _queue_run(99, "failure", sha="ab" * 20, created="2026-11-15T20:00:00Z"),
+    ]
+    jobs = [{"name": "CI Gate", "status": "completed", "conclusion": "failure"}]
+    fake = queue_gh(
+        [queue_snapshot(group_sha=OLD_SHA), NOT_QUEUED], runs=runs, jobs=jobs
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
+    )
     no_sleep(monkeypatch)
 
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
-    assert verdict.outcome == "passed"
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "removed"
+    assert verdict.detail_url == "https://github.com/minamaya/PinPoint/actions/runs/91"
+    assert verdict.failure_artifact == "tmp/gh-monitor/failure-91.md"
+    # The scan's group, flagged as such: not proven to be the one that dropped it.
+    assert verdict.failing_group_commit == QUEUE_SHA
+    assert "came from the queue-branch scan" in capsys.readouterr().err
+    lookup, scan = [call for call in fake.calls if call[:2] == ("run", "list")]
+    assert lookup[lookup.index("--commit") + 1] == OLD_SHA
+    assert "--commit" not in scan
+    assert scan[scan.index("--limit") + 1] == str(pr_watch.QUEUE_RUN_SCAN_LIMIT)
 
 
 @pytest.mark.unit
-def test_watch_phase_review_exits_stale_if_head_moves_before_terminal_verdict(
-    monkeypatch,
-):
-    base = make_gh()
-    use_summaries(monkeypatch, fake_summary("approved"))
-    observed_heads = [HEAD_SHA, OLD_SHA]
+def test_watch_phase_queue_green_group_then_merged_25s_later_is_merged(monkeypatch):
+    """GitHub drops the entry well before it flips the state to MERGED."""
+    fake = queue_gh(
+        [
+            queue_snapshot(group_sha=QUEUE_SHA),
+            # Absent at 0s, 10s, and 20s into the settle window; MERGED by 30s.
+            NOT_QUEUED,
+            NOT_QUEUED,
+            NOT_QUEUED,
+            queue_snapshot(state="MERGED", entry_state=None, merge_commit=MERGE_SHA),
+        ],
+        runs=[_queue_run(91, "success")],
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda _run_id: pytest.fail("a green group has no failure artifact"),
+    )
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
 
-    def moving_head_gh(*args: str) -> str:
-        if args[:2] == ("pr", "view") and args[4] == "headRefOid,mergeStateStatus":
-            return json.dumps(
-                {
-                    "headRefOid": observed_heads.pop(0),
-                    "mergeStateStatus": "CLEAN",
-                }
-            )
-        return base(*args)
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=600, poll_sec=30)
+    assert verdict.outcome == "merged"
+    assert verdict.merge_commit == MERGE_SHA
+    assert clock.now == 30 + 3 * pr_watch.QUEUE_ABSENT_REREAD_SECONDS
+    # The failing-run lookup (commit, then branch scan) runs once per absence.
+    lookup, scan = [call for call in fake.calls if call[:2] == ("run", "list")]
+    assert "--commit" in lookup and "--commit" not in scan
 
-    monkeypatch.setattr(pr_watch, "gh", moving_head_gh)
 
-    verdict = pr_watch._watch_phase_review(PR, HEAD_SHA, timeout_sec=10, poll_sec=0)
+@pytest.mark.unit
+def test_watch_phase_queue_re_enqueue_starts_a_new_attempt(monkeypatch):
+    """A failure from before a drop and re-enqueue is not this attempt's."""
+    lookups = []
+    stale_run = _queue_run(91, "failure", created="2026-11-16T00:50:00Z")
+
+    def runs():
+        # The first attempt's red run, after the first enqueue and before the
+        # second, only shows up after the first absence was looked up.
+        lookups.append(1)
+        return [] if len(lookups) == 1 else [stale_run]
+
+    fake = queue_gh(
+        [
+            queue_snapshot(),
+            NOT_QUEUED,
+            queue_snapshot(enqueued_at="2026-11-16T01:30:00Z"),
+            NOT_QUEUED,
+        ],
+        runs=runs,
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda _run_id: pytest.fail("the earlier attempt's run must not be reported"),
+    )
+    monkeypatch.setattr(pr_watch, "time", FakeClock())
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=600, poll_sec=30)
+    assert verdict.outcome == "removed"
+    assert verdict.detail_url is None
+    assert verdict.failing_jobs == []
+    # First attempt's absence; the second's first absent read and its
+    # pre-verdict lookup, both bounded by the second enqueue time.
+    assert len(lookups) == 3
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_re_enqueue_drops_the_old_group_commit(monkeypatch):
+    def runs():
+        # Nothing red until the re-enqueue (the third read); both groups red after.
+        if _queries(fake) < 3:
+            return []
+        return [_queue_run(91, "failure"), _queue_run(99, "failure", sha=OLD_SHA)]
+
+    fake = queue_gh(
+        [
+            queue_snapshot(group_sha=OLD_SHA),
+            NOT_QUEUED,
+            queue_snapshot(enqueued_at="2026-11-16T01:30:00Z", group_sha=QUEUE_SHA),
+            NOT_QUEUED,
+        ],
+        runs=runs,
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
+    )
+    no_sleep(monkeypatch)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "removed"
+    assert verdict.failure_artifact == "tmp/gh-monitor/failure-91.md"
+    last_lookup = [call for call in fake.calls if call[:2] == ("run", "list")][-1]
+    assert last_lookup[last_lookup.index("--commit") + 1] == QUEUE_SHA
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_removed_without_a_failing_run(monkeypatch, capsys):
+    """A manual dequeue or a conflict leaves no red run: removed after the window."""
+    fake = queue_gh([queue_snapshot(), NOT_QUEUED], runs=[_queue_run(91, "cancelled")])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda _run_id: pytest.fail("no failing run, so no failure artifact"),
+    )
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=600, poll_sec=30)
+    assert verdict.outcome == "removed"
+    assert (verdict.detail_url, verdict.failing_jobs, verdict.failure_artifact) == (
+        None,
+        [],
+        None,
+    )
+    assert clock.now == 30 + pr_watch.QUEUE_ABSENT_SETTLE_SECONDS
+    # Two lookups for the whole settle window: the first absent read, and once
+    # more before the verdict; none on the re-reads between.
+    assert sum(1 for call in fake.calls if call[:2] == ("run", "list")) == 2
+    assert "No failing merge_group run" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_run_red_after_the_first_lookup_is_reported(monkeypatch):
+    """The failing run shows up only after the first absent read's lookup."""
+
+    def runs():
+        # Empty for the first absent read's lookup (the second query), red after.
+        return [] if _queries(fake) <= 2 else [_queue_run(91, "failure")]
+
+    jobs = [{"name": "CI Gate", "status": "completed", "conclusion": "failure"}]
+    fake = queue_gh([queue_snapshot(), NOT_QUEUED], runs=runs, jobs=jobs)
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
+    )
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=600, poll_sec=30)
+    assert verdict.outcome == "removed"
+    assert verdict.detail_url == "https://github.com/minamaya/PinPoint/actions/runs/91"
+    assert verdict.failing_jobs == ["CI Gate"]
+    assert verdict.failure_artifact == "tmp/gh-monitor/failure-91.md"
+    # Decided at the end of the settle window, not on the empty first lookup.
+    assert clock.now == 30 + pr_watch.QUEUE_ABSENT_SETTLE_SECONDS
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_final_read_at_the_deadline_repeats_the_lookup(monkeypatch):
+    def runs():
+        return [] if _queries(fake) <= 2 else [_queue_run(91, "failure")]
+
+    fake = queue_gh([queue_snapshot(), NOT_QUEUED], runs=runs)
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(
+        pr_watch,
+        "write_failure_artifact",
+        lambda run_id: f"tmp/gh-monitor/failure-{run_id}.md",
+    )
+    monkeypatch.setattr(pr_watch, "time", FakeClock())
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=35, poll_sec=30)
+    assert verdict.outcome == "removed"
+    assert verdict.failure_artifact == "tmp/gh-monitor/failure-91.md"
+    assert _queries(fake) == 3
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_not_queued_at_start_needs_action(monkeypatch):
+    fake = queue_gh([NOT_QUEUED])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=600, poll_sec=30)
+    assert verdict.outcome == "not_queued"
+    assert pr_watch.EXIT_CODES[verdict.outcome] == 1
+    assert verdict.queue_state == "NOT_QUEUED"
+    # Re-read through the settle window; never queued, so no run lookup.
+    assert clock.now == pr_watch.QUEUE_ABSENT_SETTLE_SECONDS
+    assert all(call[:2] == ("api", "graphql") for call in fake.calls)
+
+
+class FakeClock:
+    """Stands in for pr_watch.time: sleep advances monotonic instead of waiting."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_timeout_is_undetermined(monkeypatch, capsys):
+    fake = queue_gh([queue_snapshot(position=4)])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(pr_watch, "time", FakeClock())
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=90, poll_sec=30)
+    assert verdict.outcome == "timed_out"
+    assert pr_watch.EXIT_CODES[verdict.outcome] == 2
+    assert verdict.queue_position == 4
+    assert _queries(fake) == 3
+    err = capsys.readouterr().err
+    assert err.count("Queued at position 4") == 1
+    assert "no terminal verdict" in err
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_settle_window_never_overruns_the_timeout(monkeypatch):
+    """An absent read 5s before the deadline sleeps 5s, not 10, then reads once more.
+
+    That final read at the deadline decides: still absent is a removal.
+    """
+    fake = queue_gh([queue_snapshot(), NOT_QUEUED])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=35, poll_sec=30)
+    assert verdict.outcome == "removed"
+    assert clock.now == 35
+    assert _queries(fake) == 3
+    assert verdict.detail_url is None
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_final_read_at_the_deadline_reports_merged(monkeypatch):
+    fake = queue_gh(
+        [
+            queue_snapshot(),
+            NOT_QUEUED,
+            queue_snapshot(state="MERGED", entry_state=None, merge_commit=MERGE_SHA),
+        ]
+    )
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=35, poll_sec=30)
+    assert verdict.outcome == "merged"
+    assert verdict.merge_commit == MERGE_SHA
+    assert clock.now == 35
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_final_read_back_in_the_queue_times_out(monkeypatch):
+    fake = queue_gh([queue_snapshot(), NOT_QUEUED, queue_snapshot(position=2)])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    monkeypatch.setattr(pr_watch, "time", FakeClock())
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=35, poll_sec=30)
+    assert verdict.outcome == "timed_out"
+    assert verdict.queue_position == 2
+    assert _queries(fake) == 3
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_poll_sleep_is_clamped_to_the_budget(monkeypatch):
+    fake = queue_gh([queue_snapshot()])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+    clock = FakeClock()
+    monkeypatch.setattr(pr_watch, "time", clock)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=45, poll_sec=30)
+    assert verdict.outcome == "timed_out"
+    assert clock.now == 45
+    assert _queries(fake) == 2
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_exits_stale_when_head_moves(monkeypatch):
+    fake = queue_gh([queue_snapshot(head=OLD_SHA, entry_state=None)])
+    monkeypatch.setattr(pr_watch, "gh", fake)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
     assert verdict.outcome == "stale"
     assert verdict.observed_head == OLD_SHA
+    assert isinstance(verdict, pr_watch.QueueVerdict)
+
+
+@pytest.mark.unit
+def test_watch_phase_queue_reports_api_outage_as_undetermined(monkeypatch, capsys):
+    calls = []
+
+    def unavailable(*args):
+        calls.append(args)
+        raise RuntimeError(RATE_LIMIT_403)
+
+    monkeypatch.setattr(pr_watch, "gh", unavailable)
+
+    verdict = pr_watch._watch_phase_queue(PR, HEAD_SHA, timeout_sec=60, poll_sec=0)
+    assert verdict.outcome == "undetermined"
+    assert len(calls) == 1
+    assert RATE_LIMIT_403 in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
@@ -739,18 +1136,17 @@ def test_watch_phase_review_exits_stale_if_head_moves_before_terminal_verdict(
 
 
 @pytest.mark.unit
-def test_parse_args_watch_and_check_ready():
+def test_parse_args_watch():
     args = pr_watch._parse_args(["1734", "--phase", "ci", "--expected-head", HEAD_SHA])
     assert (args.pr, args.phase, args.expected_head) == (1734, "ci", HEAD_SHA)
-    assert args.check_ready is False
+
+    args = pr_watch._parse_args(["1734", "--phase=ci", f"--expected-head={HEAD_SHA}"])
+    assert (args.phase, args.expected_head) == ("ci", HEAD_SHA)
 
     args = pr_watch._parse_args(
-        ["1734", "--phase=review", f"--expected-head={HEAD_SHA}"]
+        ["1734", "--phase", "queue", "--expected-head", HEAD_SHA]
     )
-    assert (args.phase, args.expected_head) == ("review", HEAD_SHA)
-
-    args = pr_watch._parse_args(["--check-ready", "1734"])
-    assert (args.pr, args.check_ready) == (1734, True)
+    assert args.phase == "queue"
 
 
 @pytest.mark.unit
@@ -763,7 +1159,10 @@ def test_parse_args_watch_and_check_ready():
         ["1734", "--phase", "unknown", "--expected-head", HEAD_SHA],
         ["1734", "--phase", "ci", "--expected-head", HEAD_SHA[:10]],
         ["1734", "--phase", "ci", "--expected-head", HEAD_SHA.upper()],
-        ["1734", "--check-ready", "--phase", "ci"],
+        ["1734", "--phase", "review", "--expected-head", HEAD_SHA],
+        ["1734", "--phase", "queue"],
+        ["--check-ready", "1734"],
+        ["1734", "--check-ready", "--phase", "ci", "--expected-head", HEAD_SHA],
         ["1734", "--phase", "ci", "--expected-head", HEAD_SHA, "--force"],
         ["--phase", "ci", "--expected-head", HEAD_SHA],
     ],
@@ -789,15 +1188,15 @@ def test_main_prints_exactly_one_json_verdict_on_stdout(monkeypatch, capsys):
     assert len(stdout_lines) == 1, stdout_lines
     payload = json.loads(stdout_lines[0])
     assert payload == {
-        "schema_version": 1,
-        "repository": "timothyfroehlich/PinPoint",
+        "schema_version": 2,
+        "repository": "minamaya/PinPoint",
         "pr": PR,
         "phase": "ci",
         "expected_head": HEAD_SHA,
         "observed_head": HEAD_SHA,
         "outcome": "passed",
         "ci_gate": "SUCCESS",
-        "review_state": "not reviewed",
+        "claude_review": "SUCCESS",
         "unresolved_threads": 0,
         "merge_state": "CLEAN",
         "detail_url": None,
@@ -835,7 +1234,6 @@ def test_main_reports_failure_artifact_as_an_absolute_path(monkeypatch, capsys):
         ("failed", 1),
         ("stale", 1),
         ("conflicting", 1),
-        ("action_required", 1),
         ("timed_out", 2),
         ("undetermined", 2),
     ],
@@ -843,179 +1241,74 @@ def test_main_reports_failure_artifact_as_an_absolute_path(monkeypatch, capsys):
 def test_main_exit_code_follows_the_outcome(monkeypatch, capsys, outcome, code):
     monkeypatch.setattr(
         pr_watch,
-        "_watch_phase_review",
+        "_watch_phase_ci",
         lambda _pr, _head: pr_watch.Verdict(outcome),
     )
 
-    exit_code = pr_watch.main(
-        ["1734", "--phase", "review", "--expected-head", HEAD_SHA]
-    )
+    exit_code = pr_watch.main(["1734", "--phase", "ci", "--expected-head", HEAD_SHA])
 
     assert exit_code == code
     assert json.loads(capsys.readouterr().out)["outcome"] == outcome
 
 
-# ---------------------------------------------------------------------------
-# run_audit — a cancelled gate is "not ready", but not described as a failure
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_run_audit_reports_cancelled_gate_as_superseded(monkeypatch, capsys):
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=[_gate("CANCELLED")]))
-    use_summaries(monkeypatch, fake_summary())
-    assert pr_watch.run_audit(PR) is False
-    assert "cancelled (superseded)" in capsys.readouterr().out
-
-
-# ---------------------------------------------------------------------------
-# review_summary / review_state — read from the bash gate, never mirrored
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_review_summary_shells_out_to_the_gate(monkeypatch, tmp_path):
-    gate = tmp_path / "_pr-gates.sh"
-    gate.write_text(
-        '_review_summary() { echo "{\\"label\\": \\"approved\\", \\"pr\\": $1}"; }\n'
-    )
-    monkeypatch.setattr(pr_watch, "GATES_SCRIPT", gate)
-    assert pr_watch.review_summary(PR) == {"label": "approved", "pr": PR}
-
-
-@pytest.mark.unit
-def test_review_summary_raises_when_the_gate_fails_or_returns_junk(
-    monkeypatch, tmp_path
-):
-    gate = tmp_path / "_pr-gates.sh"
-    gate.write_text("_review_summary() { echo boom >&2; return 1; }\n")
-    monkeypatch.setattr(pr_watch, "GATES_SCRIPT", gate)
-    with pytest.raises(RuntimeError, match="boom"):
-        pr_watch.review_summary(PR)
-
-    gate.write_text("_review_summary() { echo '[1, 2]'; }\n")
-    with pytest.raises(RuntimeError, match="malformed"):
-        pr_watch.review_summary(PR)
-
-
-@pytest.mark.unit
-def test_review_summary_timeout_is_a_runtime_error(monkeypatch, tmp_path):
-    gate = tmp_path / "_pr-gates.sh"
-    gate.write_text("_review_summary() { sleep 5; echo '{}'; }\n")
-    monkeypatch.setattr(pr_watch, "GATES_SCRIPT", gate)
-    with pytest.raises(RuntimeError, match="timed out"):
-        pr_watch.review_summary(PR, timeout=0.2)
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("label", pr_watch.REVIEW_LABELS)
-def test_review_state_reports_the_gate_label_verbatim(monkeypatch, label):
-    use_summaries(monkeypatch, fake_summary(label))
-    state, _detail = pr_watch.review_state(PR)
-    assert state == label
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    "checker,who",
+    "outcome,code",
     [
-        ("claude", "Claude review record"),
-        ("codex", "Codex evidence"),
+        ("merged", 0),
+        ("removed", 1),
+        ("not_queued", 1),
+        ("stale", 1),
+        ("conflicting", 1),
+        ("timed_out", 2),
+        ("undetermined", 2),
     ],
 )
-def test_review_state_names_the_covering_checker(monkeypatch, checker, who):
-    use_summaries(monkeypatch, fake_summary("approved", checker=checker))
-    state, detail = pr_watch.review_state(PR)
-    assert state == "approved"
-    assert detail == f"{who} covers head {HEAD_SHA[:7]}"
-
-
-@pytest.mark.unit
-def test_review_state_not_reviewed_recommends_one_request(monkeypatch):
-    use_summaries(monkeypatch, fake_summary("not reviewed"))
-    state, detail = pr_watch.review_state(PR)
-    assert state == "not reviewed"
-    assert "Claude review: none; Codex: none" in detail
-    assert "claude-review-level.sh" in detail
-    assert f"record-claude-review.sh {PR}" in detail
-    assert "Tim's explicit --force" in detail
-
-
-@pytest.mark.unit
-def test_review_state_pending_request_is_not_recommended_again(monkeypatch):
-    use_summaries(monkeypatch, fake_summary("not reviewed", pending=True))
-    state, detail = pr_watch.review_state(PR)
-    assert state == "not reviewed"
-    assert "already requested" in detail
-    assert "do not request the same head again" in detail
-    assert "request-codex-review.sh" not in detail
-
-
-@pytest.mark.unit
-def test_review_state_stale_review_names_both_commits(monkeypatch):
-    use_summaries(monkeypatch, fake_summary("stale review", checker="codex"))
-    state, detail = pr_watch.review_state(PR)
-    assert state == "stale review"
-    assert (
-        f"Codex: newest evidence names {OLD_SHA[:7]}, head is {HEAD_SHA[:7]}" in detail
+def test_main_queue_exit_code_follows_the_outcome(monkeypatch, capsys, outcome, code):
+    monkeypatch.setattr(
+        pr_watch,
+        "_watch_phase_queue",
+        lambda _pr, _head: pr_watch.QueueVerdict(outcome),
     )
 
+    exit_code = pr_watch.main(["1734", "--phase", "queue", "--expected-head", HEAD_SHA])
 
-@pytest.mark.unit
-def test_review_state_changes_requested_names_the_reviewer(monkeypatch):
-    use_summaries(monkeypatch, fake_summary("changes requested", checker="codex"))
-    state, detail = pr_watch.review_state(PR)
-    assert state == "changes requested"
-    assert f"Codex: requested changes on head {HEAD_SHA[:7]}" in detail
-
-
-# ---------------------------------------------------------------------------
-# run_audit — the review state is reported, but does not gate readiness
-# ---------------------------------------------------------------------------
+    assert exit_code == code
+    assert json.loads(capsys.readouterr().out)["outcome"] == outcome
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "summary",
-    [
-        fake_summary("not reviewed"),
-        fake_summary("stale review"),
-        fake_summary("approved"),
-    ],
-)
-def test_run_audit_reports_the_review_state_without_gating_on_it(
-    monkeypatch, capsys, summary
-):
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=[_gate("SUCCESS")]))
-    use_summaries(monkeypatch, summary)
-    assert pr_watch.run_audit(PR) is True
-    assert f"✓ review: {summary['label']}:" in capsys.readouterr().out
-
-
-@pytest.mark.unit
-def test_run_audit_survives_a_gate_failure(monkeypatch, capsys):
-    monkeypatch.setattr(pr_watch, "gh", make_gh(rollup=[_gate("SUCCESS")]))
-
-    def broken(_pr):
-        raise RuntimeError("gate exploded")
-
-    monkeypatch.setattr(pr_watch, "review_summary", broken)
-    assert pr_watch.run_audit(PR) is True
-    assert "✓ review: unknown: could not determine (gate exploded)" in (
-        capsys.readouterr().out
-    )
-
-
-@pytest.mark.unit
-def test_run_audit_still_fails_on_unresolved_threads(monkeypatch, capsys):
+def test_main_queue_prints_exactly_one_json_verdict(monkeypatch, capsys):
     monkeypatch.setattr(
         pr_watch,
         "gh",
-        make_gh(
-            rollup=[_gate("SUCCESS")],
-            threads=[{"isResolved": False}, {"isResolved": True}],
+        queue_gh(
+            [queue_snapshot(state="MERGED", entry_state=None, merge_commit=MERGE_SHA)]
         ),
     )
-    use_summaries(monkeypatch, fake_summary())
-    assert pr_watch.run_audit(PR) is False
-    assert "✗ threads-resolved: 1 unresolved" in capsys.readouterr().out
+
+    exit_code = pr_watch.main(["1734", "--phase", "queue", "--expected-head", HEAD_SHA])
+
+    assert exit_code == 0
+    stdout_lines = capsys.readouterr().out.splitlines()
+    assert len(stdout_lines) == 1, stdout_lines
+    payload = json.loads(stdout_lines[0])
+    assert payload == {
+        "schema_version": 2,
+        "repository": "minamaya/PinPoint",
+        "pr": PR,
+        "phase": "queue",
+        "expected_head": HEAD_SHA,
+        "observed_head": HEAD_SHA,
+        "outcome": "merged",
+        "pr_state": "MERGED",
+        "queue_state": "NOT_QUEUED",
+        "queue_position": None,
+        "merge_state": "UNKNOWN",
+        "merge_commit": MERGE_SHA,
+        "failing_jobs": [],
+        "failing_group_commit": None,
+        "detail_url": None,
+        "failure_artifact": None,
+        "timestamp": payload["timestamp"],
+    }

@@ -28,33 +28,34 @@ Use this skill when:
 
 Sections keep their numbers wherever they live — `design-bible §17` resolves through this table.
 
-| §   | Section                       | Where                                                |
-| :-- | :---------------------------- | :--------------------------------------------------- |
-| 1   | Visual Identity               | this file                                            |
-| 2   | Surface Hierarchy             | this file                                            |
-| 3   | Shell Contract                | this file                                            |
-| 4   | Responsive Strategy           | this file                                            |
-| 5   | Page Archetypes               | `references/05-page-archetypes.md`                   |
-| 6   | Spacing Rhythm                | this file                                            |
-| 7   | Card & List Patterns          | `references/07-08-cards-and-navigation.md`           |
-| 8   | Navigation Patterns           | `references/07-08-cards-and-navigation.md`           |
-| 9   | Typography Scale              | `references/09-11-typography-borders-transitions.md` |
-| 10  | Border & Divider Rules        | `references/09-11-typography-borders-transitions.md` |
-| 11  | Transition Durations          | `references/09-11-typography-borders-transitions.md` |
-| 12  | Component Inventory           | `references/12-component-inventory.md`               |
-| 13  | Cross-Cutting UI States       | `references/13-14-states-and-feedback.md`            |
-| 14  | Feedback Decision Tree        | `references/13-14-states-and-feedback.md`            |
-| 15  | Date Formatting Vocabulary    | `references/15-16-dates-and-icons.md`                |
-| 16  | Icon Library                  | `references/15-16-dates-and-icons.md`                |
-| 17  | Modal Archetypes              | `references/17-modal-archetypes.md`                  |
-| 18  | Token Canonical Form          | this file                                            |
-| 19  | Browser Support Policy        | `references/19-browser-support.md`                   |
-| 20  | Form Correctness Conventions  | `references/20-form-correctness.md`                  |
-| 21  | Image Loading Discipline      | `references/21-22-images-and-guidance.md`            |
-| 22  | Modern Web Guidance Reference | `references/21-22-images-and-guidance.md`            |
-| 23  | Presenting Mockups for Review | `references/23-24-mockups-and-severity.md`           |
-| 24  | Severity Vocabulary           | `references/23-24-mockups-and-severity.md`           |
-| 25  | Status & Error Copy Register  | `references/25-copy-register.md`                     |
+| §   | Section                           | Where                                                |
+| :-- | :-------------------------------- | :--------------------------------------------------- |
+| 1   | Visual Identity                   | this file                                            |
+| 2   | Surface Hierarchy                 | this file                                            |
+| 3   | Shell Contract                    | this file                                            |
+| 4   | Responsive Strategy               | this file                                            |
+| 5   | Page Archetypes                   | `references/05-page-archetypes.md`                   |
+| 6   | Spacing Rhythm                    | this file                                            |
+| 7   | Card & List Patterns              | `references/07-08-cards-and-navigation.md`           |
+| 8   | Navigation Patterns               | `references/07-08-cards-and-navigation.md`           |
+| 9   | Typography Scale                  | `references/09-11-typography-borders-transitions.md` |
+| 10  | Border & Divider Rules            | `references/09-11-typography-borders-transitions.md` |
+| 11  | Transition Durations              | `references/09-11-typography-borders-transitions.md` |
+| 12  | Component Inventory               | `references/12-component-inventory.md`               |
+| 13  | Cross-Cutting UI States           | `references/13-14-states-and-feedback.md`            |
+| 14  | Feedback Decision Tree            | `references/13-14-states-and-feedback.md`            |
+| 15  | Date Formatting Vocabulary        | `references/15-16-dates-and-icons.md`                |
+| 16  | Icon Library                      | `references/15-16-dates-and-icons.md`                |
+| 17  | Modal Archetypes                  | `references/17-modal-archetypes.md`                  |
+| 18  | Token Canonical Form              | this file                                            |
+| 19  | Browser Support Policy            | `references/19-browser-support.md`                   |
+| 20  | Form Correctness Conventions      | `references/20-form-correctness.md`                  |
+| 21  | Image Loading Discipline          | `references/21-22-images-and-guidance.md`            |
+| 22  | Modern Web Guidance Reference     | `references/21-22-images-and-guidance.md`            |
+| 23  | Presenting Mockups for Review     | `references/23-24-mockups-and-severity.md`           |
+| 24  | Severity Vocabulary               | `references/23-24-mockups-and-severity.md`           |
+| 25  | Status & Error Copy Register      | `references/25-copy-register.md`                     |
+| 26  | Action Buttons and Overflow Menus | `references/26-action-buttons.md`                    |
 
 ## 1. Visual Identity
 
@@ -81,7 +82,8 @@ use it anywhere else.
 changing together by level: severity warm (yellow → amber → orange → red),
 New/Confirmed cyan, In Progress pink, Fixed green, priority blue, playability
 green/yellow/red. Unplayable is the same red for severity and playability. A
-chip is the text color with a 15% background and a 45% border. Text clears
+chip is the text color with a 15% background and a 45% border; List View
+rows are the one exception and drop the border (issues-list §3.13). Text clears
 4.5:1 on `bg-card` and on its own tint; bar segments clear 3:1.
 
 **Rules:**
@@ -105,6 +107,7 @@ Pick the surface level based on the element's role:
 | Card, popover, elevated container        | `bg-card` (#18151b, fully opaque) |
 | Header, app header, tab bar (nav chrome) | `bg-card/85 backdrop-blur-sm`     |
 | Header band inside a card/section        | `bg-muted` (#27272a, opaque)      |
+| List View's List Header bar              | `bg-card-raised` (#1c191f)        |
 | Closed/archived/dimmed item              | `bg-surface-variant/30`           |
 
 **Key distinction:** Navigation chrome gets the frosted glass treatment (opacity + blur). Content cards are always fully opaque `bg-card`.
@@ -125,6 +128,8 @@ These values are fixed. Do not deviate.
 | Mobile/desktop | `md:` (768px) is THE breakpoint (standard viewport, no hacks) |
 
 **If you add a new page:** it MUST include the content bottom padding or content will be hidden behind the tab bar on mobile.
+
+**Nothing full-width is pinned above the bottom tab bar on phones.** Page actions and pagers live in the page flow and scroll with it; the tab bar is the only fixed chrome at the bottom of the screen.
 
 ## 4. Responsive Strategy
 
@@ -264,12 +269,5 @@ red-500 — 5.09:1): outline buttons, error copy, required-field markers, form
 validation messages. Reach for `text-destructive` and you will ship an AA
 failure.
 
-The original token comment ("red-600 passes ~5.3:1") described only the
-white-on-red case and made the untested inverse look checked — which is how
-79 usages accumulated before anyone measured.
-
-**This rule is ahead of the codebase.** Only the machine Manage tab has been
-converted; `ui/alert.tsx`'s destructive variant and the auth screens still
-carry the failing token.
-**PP-mjms** sweeps them. Write new code to the rule above — don't take a
-neighbouring file as the example.
+A neighbouring file that still uses `text-destructive` for text is a leftover:
+fix it when you touch the file rather than copying it.

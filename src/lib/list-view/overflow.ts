@@ -6,6 +6,12 @@
  * inline and which move into an overflow menu. CSS still owns presentation.
  */
 
+/**
+ * Room every fit check leaves spare (§8.7), so a step fires a little before
+ * its part would overflow and real glyphs never crowd the edge.
+ */
+export const FIT_TOLERANCE = 16;
+
 function sum(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
@@ -28,8 +34,9 @@ export interface FilterFitInput {
 }
 
 /**
- * How many Primary Filters stay inline (§8.1): they move into More from the
- * right, one at a time, in the host's order, until the rest fit beside More.
+ * How many Primary Filters stay inline (§8.15): they move into More filters
+ * from the right, one at a time, in the host's order, until the rest fit
+ * beside More filters with the tolerance to spare (§8.7).
  * More itself shows only when it holds something (§4.5).
  */
 export function fitPrimaryFilters({
@@ -39,12 +46,13 @@ export function fitPrimaryFilters({
   hasSecondary,
   gap,
 }: FilterFitInput): number {
-  if (!hasSecondary && rowWidth(filterWidths, gap) <= available) {
+  const room = available - FIT_TOLERANCE;
+  if (!hasSecondary && rowWidth(filterWidths, gap) <= room) {
     return filterWidths.length;
   }
   for (let count = filterWidths.length; count > 0; count -= 1) {
     const inline = filterWidths.slice(0, count);
-    if (rowWidth([...inline, moreWidth], gap) <= available) return count;
+    if (rowWidth([...inline, moreWidth], gap) <= room) return count;
   }
   return 0;
 }
@@ -124,7 +132,8 @@ const STEPS: readonly { pager: CompactPagerMode; compactEdit: boolean }[] = [
 ];
 
 /**
- * Lays out the desktop List Header (§8.2, §8.3). View tabs move into More
+ * Lays out the desktop List Header (§8.16–§8.19), keeping the tolerance
+ * spare (§8.7). View tabs move into More
  * views from the right first; only when the Applied View's tab alone still
  * does not fit does the compact pager drop its range text, and then
  * disappear. The pager below the list always remains, and shows the result
@@ -137,7 +146,11 @@ export function planListHeader(input: ListHeaderFitInput): ListHeaderPlan {
     const pagerWidth =
       pager === "hidden" ? 0 : input.pagerWidths[pager] + input.gap;
     const leftAvailable =
-      input.available - input.controlsWidth - pagerWidth - input.gap;
+      input.available -
+      FIT_TOLERANCE -
+      input.controlsWidth -
+      pagerWidth -
+      input.gap;
     const editWidth = compactEdit ? input.editCompactWidth : input.editWidth;
     const tabs = fitTabs(input, leftAvailable, editWidth);
     if (tabs) return { ...tabs, pager, compactEdit };
@@ -148,4 +161,349 @@ export function planListHeader(input: ListHeaderFitInput): ListHeaderPlan {
     pager: "hidden",
     compactEdit: true,
   };
+}
+
+/** The narrowest the phone search field may be before it becomes an icon. */
+export const PHONE_SEARCH_MIN_WIDTH = 175;
+
+/**
+ * Fit tolerance (list-views §8.7): the icon takes over slightly before the
+ * field would drop below its minimum, so a field at exactly 175px is
+ * already an icon.
+ */
+const FIT_TOLERANCE_PX = 1;
+
+export interface PhoneSearchFitInput {
+  /** The phone List Header's inner width. */
+  available: number;
+  /** The views button's untruncated width, Edited marker included. */
+  viewsWidth: number;
+  /** Width of the Filters icon button. */
+  filtersWidth: number;
+  gap: number;
+}
+
+/**
+ * Whether the phone List Header shows search as an icon button instead of
+ * the field (list-views §7.12). The field takes what the views button and
+ * Filters leave, and becomes an icon when that would be narrower than
+ * 175px, the field's width on a 400px screen with "Open issues" as the view
+ * name, with the §8.7 tolerance on top. A longer view name, or the Edited
+ * marker, makes it an icon on a wider screen.
+ */
+export function phoneSearchAsIcon({
+  available,
+  viewsWidth,
+  filtersWidth,
+  gap,
+}: PhoneSearchFitInput): boolean {
+  const fieldWidth = available - viewsWidth - filtersWidth - 2 * gap;
+  return fieldWidth < PHONE_SEARCH_MIN_WIDTH + FIT_TOLERANCE_PX;
+}
+
+/** One part of a one-line row, at its full width. */
+export interface LineFitPart<Part extends string> {
+  key: Part;
+  width: number;
+  /**
+   * Plain text. A "·" separates two plain-text parts that show next to each
+   * other in the same group, and nothing else.
+   */
+  text: boolean;
+  /**
+   * Makes the part shrinkable: at its turn in the drop order it truncates,
+   * down to this width, before it hides. Without it, a part drops whole.
+   */
+  minWidth?: number;
+}
+
+/**
+ * How a part shows on the line: at its full width, truncated (narrower than
+ * its full width, never below its `minWidth`), or not at all.
+ */
+export type LinePartFit = "full" | "truncated" | "hidden";
+
+/** The spacing of a one-line row (list-views §8, issues-list §3.9). */
+export interface LineFitSpacing {
+  /** The gap between the leading group's parts, separators included. */
+  gap: number;
+  /** The gap between the trailing group's parts. */
+  trailingGap: number;
+  /** The least room between the leading and the trailing group. */
+  groupGap: number;
+  /** The width of a "·" separator. */
+  separatorWidth: number;
+}
+
+export interface LineFitInput<Part extends string> extends LineFitSpacing {
+  /** The line's inner width. */
+  available: number;
+  /** The parts that lead the line, in display order. */
+  leading: readonly LineFitPart<Part>[];
+  /**
+   * The right-anchored group at the line's end, in display order. The group
+   * takes no room once none of its parts shows.
+   */
+  trailing: readonly LineFitPart<Part>[];
+  /**
+   * The parts that give way for room, the first to give way first. A part
+   * with a `minWidth` truncates before it drops.
+   */
+  dropOrder: readonly Part[];
+}
+
+/** One group's width with the parts in `shown`, separators included. */
+function groupWidth<Part extends string>(
+  parts: readonly LineFitPart<Part>[],
+  shown: ReadonlySet<Part>,
+  gap: number,
+  separatorWidth: number
+): number {
+  const widths: number[] = [];
+  let previousText = false;
+  for (const part of parts) {
+    if (!shown.has(part.key)) continue;
+    if (part.text && previousText) widths.push(separatorWidth);
+    widths.push(part.width);
+    previousText = part.text;
+  }
+  return rowWidth(widths, gap);
+}
+
+/**
+ * How each part of a one-line row shows (machine-views §5.10, issues-list
+ * §3.9): the parts in `dropOrder` give way one at a time, in that order,
+ * until the line fits with `FIT_TOLERANCE` to spare. A part with a
+ * `minWidth` gives way by truncating first: when the line fits with that
+ * part narrower but still at least `minWidth` wide, it is truncated and the
+ * fit stops; otherwise it hides like any other part, its "·" separator with
+ * it. A part outside `dropOrder` never gives way; when those alone still do
+ * not fit, every droppable part is gone and the component truncates what
+ * remains.
+ */
+export function planLineParts<Part extends string>({
+  available,
+  leading,
+  trailing,
+  dropOrder,
+  gap,
+  trailingGap,
+  groupGap,
+  separatorWidth,
+}: LineFitInput<Part>): ReadonlyMap<Part, LinePartFit> {
+  const parts = new Map<Part, LineFitPart<Part>>(
+    [...leading, ...trailing].map((part) => [part.key, part])
+  );
+  const plan = new Map<Part, LinePartFit>(
+    [...parts.keys()].map((key) => [key, "full"])
+  );
+  const shown = new Set<Part>(parts.keys());
+  const room = available - FIT_TOLERANCE;
+  const lineWidth = (): number => {
+    const lead = groupWidth(leading, shown, gap, separatorWidth);
+    const end = groupWidth(trailing, shown, trailingGap, separatorWidth);
+    return end === 0 ? lead : lead + groupGap + end;
+  };
+  for (const key of dropOrder) {
+    const overflow = lineWidth() - room;
+    if (overflow <= 0) break;
+    const part = parts.get(key);
+    if (part === undefined) continue;
+    if (part.minWidth !== undefined && part.width - overflow >= part.minWidth) {
+      plan.set(key, "truncated");
+      break;
+    }
+    shown.delete(key);
+    plan.set(key, "hidden");
+  }
+  return plan;
+}
+
+/**
+ * The parts of a one-line row that show, at full width or truncated
+ * (`planLineParts`).
+ */
+export function fitLineParts<Part extends string>(
+  input: LineFitInput<Part>
+): ReadonlySet<Part> {
+  const shown = new Set<Part>();
+  for (const [key, fit] of planLineParts(input)) {
+    if (fit !== "hidden") shown.add(key);
+  }
+  return shown;
+}
+
+/** One page action's width with its label and as an icon button. */
+export interface PageActionWidths {
+  key: string;
+  labeled: number;
+  icon: number;
+}
+
+export interface PageActionsFitInput {
+  /** The width the row gives the page actions. */
+  available: number;
+  /** The page's actions before ⋯, in display order. */
+  actions: readonly PageActionWidths[];
+  /** ⋯ with its "More" label and as an icon button. */
+  more: { labeled: number; icon: number };
+  /**
+   * Whether ⋯ holds anything of its own before any action folds into it,
+   * not counting `loneEntry`.
+   */
+  moreHasItems: boolean;
+  /**
+   * ⋯'s only entry, when it can show as a button: planned as a trailing
+   * action that folds after every fold step, so while there is room it
+   * shows as its own button instead (list-views §3.7).
+   */
+  loneEntry?: PageActionWidths | undefined;
+  /**
+   * The page's fold order (list-views §3.9): each step names the actions
+   * that fold into ⋯ together, the first step first. An action named in no
+   * step never folds.
+   */
+  foldSteps: readonly (readonly string[])[];
+  gap: number;
+}
+
+export interface PageActionsPlan {
+  /** The actions shown as their own buttons, in display order. */
+  shown: string[];
+  /** The actions folded into ⋯, in display order. */
+  folded: string[];
+  /** Every shown button, ⋯ included, shows its label; otherwise all are icons. */
+  labeled: boolean;
+  /** Whether ⋯ shows: it holds items of its own or a folded action. */
+  showMore: boolean;
+}
+
+/**
+ * Lays out a page's actions (list-views §3.7–§3.9, §8.11, §8.12). Every
+ * shown action shows its label while they all fit with the tolerance to
+ * spare (§8.7); otherwise every one is an icon button, with no size
+ * between. When even the icons do not fit, the next fold step moves its
+ * actions into ⋯ and the rest try labels, then icons, again. ⋯ never folds
+ * and shows only while it holds something. A lone entry (§3.7) shows as the
+ * last button and folds after every step, so ⋯ holds it alone only when
+ * space forces it. When nothing fits even after the last step, that step's
+ * icons remain.
+ */
+export function planPageActions({
+  available,
+  actions: pageActions,
+  more,
+  moreHasItems,
+  loneEntry,
+  foldSteps: pageFoldSteps,
+  gap,
+}: PageActionsFitInput): PageActionsPlan {
+  const room = available - FIT_TOLERANCE;
+  const actions = loneEntry ? [...pageActions, loneEntry] : pageActions;
+  const foldSteps = loneEntry
+    ? [...pageFoldSteps, [loneEntry.key]]
+    : pageFoldSteps;
+  const keys = actions.map((action) => action.key);
+  // Each level folds one more step; a step naming no present action adds
+  // no level.
+  const levels: string[][] = [[]];
+  for (const step of foldSteps) {
+    const previous = levels[levels.length - 1] ?? [];
+    const adds = step.filter(
+      (key) => keys.includes(key) && !previous.includes(key)
+    );
+    if (adds.length > 0) levels.push([...previous, ...adds]);
+  }
+  let plan: PageActionsPlan = {
+    shown: keys,
+    folded: [],
+    labeled: false,
+    showMore: moreHasItems,
+  };
+  for (const foldedKeys of levels) {
+    const shownActions = actions.filter(
+      (action) => !foldedKeys.includes(action.key)
+    );
+    const folded = keys.filter((key) => foldedKeys.includes(key));
+    const showMore = moreHasItems || folded.length > 0;
+    const width = (labeled: boolean): number =>
+      rowWidth(
+        [
+          ...shownActions.map((action) =>
+            labeled ? action.labeled : action.icon
+          ),
+          ...(showMore ? [labeled ? more.labeled : more.icon] : []),
+        ],
+        gap
+      );
+    plan = {
+      shown: shownActions.map((action) => action.key),
+      folded,
+      labeled: false,
+      showMore,
+    };
+    if (width(true) <= room) return { ...plan, labeled: true };
+    if (width(false) <= room) return plan;
+  }
+  return plan;
+}
+
+/** The room between an inline breadcrumb and the title it precedes. */
+export const GROUP_HEADER_BREADCRUMB_GAP = 8;
+/** The room between the title block and a description beside it. */
+export const GROUP_HEADER_DESCRIPTION_GAP = 24;
+/** The narrowest a Collection's description column beside the title may be. */
+export const GROUP_HEADER_DESCRIPTION_MIN = 280;
+
+export interface GroupHeaderFitInput {
+  /** The page header's inner width. */
+  available: number;
+  /**
+   * The breadcrumb's width on one line in its inline form, trailing "›"
+   * included; 0 when the page shows no breadcrumb.
+   */
+  breadcrumb: number;
+  /** The title's width on one line. */
+  title: number;
+  /**
+   * Whether a description competes for the row beside the title: a
+   * Collection with a description, at and above the md breakpoint. Below it
+   * the description always sits under the title (collections-and-tags 4.11).
+   */
+  description: boolean;
+}
+
+export interface GroupHeaderPlan {
+  /** The breadcrumb sits before the title rather than above it. */
+  breadcrumbInline: boolean;
+  /** The description sits beside the title rather than under it. */
+  descriptionBeside: boolean;
+}
+
+/**
+ * Lays out a Collection or Tag page's header (list-views §8.9, §8.10;
+ * collections-and-tags 4.9, 4.11). The breadcrumb stays inline before the
+ * title while the breadcrumb, the title, and a description's 280px column
+ * fit on one line; it is the first to move, above the title, before the
+ * description leaves its column. The description sits beside the title
+ * while the column there can be at least 280px, and moves under it
+ * otherwise. Both checks keep the §8.7 tolerance.
+ */
+export function planGroupHeader({
+  available,
+  breadcrumb,
+  title,
+  description,
+}: GroupHeaderFitInput): GroupHeaderPlan {
+  const room = available - FIT_TOLERANCE;
+  const column = description
+    ? GROUP_HEADER_DESCRIPTION_GAP + GROUP_HEADER_DESCRIPTION_MIN
+    : 0;
+  const inlineWidth = breadcrumb + GROUP_HEADER_BREADCRUMB_GAP + title;
+  const breadcrumbInline = breadcrumb > 0 && inlineWidth + column <= room;
+  if (!description) return { breadcrumbInline, descriptionBeside: false };
+  const titleBlock = breadcrumbInline
+    ? inlineWidth
+    : Math.max(breadcrumb, title);
+  return { breadcrumbInline, descriptionBeside: titleBlock + column <= room };
 }

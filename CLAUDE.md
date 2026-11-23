@@ -18,17 +18,13 @@ PinPoint uses single-context domain documentation. See `docs/agents/domain.md`.
 
 `REVIEW.md` at the repo root is the canonical review rubric. Read it before launching the code-review skill.
 
-Review flow (a local `/code-review` whose review record covers the exact head) is
-canonical in AGENTS.md §5 "Getting a PR reviewed" and `pinpoint-pr-workflow` Phase 3.4.
+The required review is the automated `Claude Review` CI check; a local `/code-review`
+is optional. The flow is canonical in AGENTS.md §5 "Getting a PR reviewed" and
+`pinpoint-pr-workflow` Phase 3.4.
 
 ### Sandbox network isolation
 
 - `gh` CLI TLS errors are fixed by `enableWeakerNetworkIsolation: true` in `.claude/settings.local.json`.
-
-### Working Style
-
-- If you've spent more than 3 tool calls on environment setup without reproducing
-  the actual issue, stop and ask the user for guidance.
 
 ### Status Vocabulary
 
@@ -36,4 +32,4 @@ canonical in AGENTS.md §5 "Getting a PR reviewed" and `pinpoint-pr-workflow` Ph
 
 ### Session Completion (Claude Code specifics)
 
-The merge handoff and post-merge steps (`pinpoint-pr-workflow` skill, Phases 4–5) apply to the lead agent and solo sessions.
+The merge and post-merge steps (`pinpoint-pr-workflow` skill, Phases 4–5) apply to the lead agent and solo sessions.

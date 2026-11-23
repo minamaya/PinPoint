@@ -1,0 +1,21 @@
+# Egress fence for the ghrunner user (PP-4k0). Everything a runner VM sends
+# leaves through passt, which runs as ghrunner, so this rule covers every VM:
+# public internet only, nothing on the LAN, the tailnet, or this host.
+#
+# Every reject sits behind an explicit skuid match. Packets the kernel sends
+# with no owning socket (TCP resets for closed ports, ICMP errors, IPv6
+# neighbour discovery) match no skuid test at all, so they must never reach a
+# rule that lacks one; the first version of this file rejected them, which made
+# connects to closed localhost ports hang instead of failing fast.
+table inet ghrunner_egress {
+  chain output {
+    type filter hook output priority filter; policy accept;
+    meta skuid "ghrunner" jump ghrunner_out
+  }
+  chain ghrunner_out {
+    oif "lo" ip daddr 127.0.0.53 meta l4proto { udp, tcp } th dport 53 accept
+    meta nfproto ipv6 counter reject
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16,
+               172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } counter reject
+  }
+}

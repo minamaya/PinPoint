@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,7 +13,19 @@ import type {
   IssueViewSavedViewSummary,
   IssueViewState,
 } from "~/lib/types";
+import { PageExportProvider, usePageExportEntry } from "~/components/list-view";
 import { IssueView } from "./IssueView";
+
+/**
+ * The toolbar's search field. List View renders search twice, in the toolbar
+ * and in the phone List Header, and CSS shows one (list-views §7.3); jsdom
+ * applies no CSS, so both are in the tree and the toolbar's comes first.
+ */
+function toolbarSearch(name: string | RegExp): HTMLElement {
+  const [field] = screen.getAllByRole("searchbox", { name });
+  if (!field) throw new Error("no search field");
+  return field;
+}
 
 window.matchMedia = vi.fn().mockImplementation(() => ({
   matches: false,
@@ -52,12 +64,6 @@ vi.mock("~/app/(app)/issues/saved-view-actions", () => actions);
 vi.mock("~/app/(app)/issues/export-action", () => ({
   exportIssuesAction: exportAction,
 }));
-vi.mock("~/app/(app)/issues/actions", () => ({
-  updateIssueStatusAction: vi.fn(),
-  updateIssueSeverityAction: vi.fn(),
-  updateIssuePriorityAction: vi.fn(),
-  assignIssueAction: vi.fn(),
-}));
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -90,9 +96,7 @@ function row(overrides: Partial<IssueListRow> = {}): IssueListRow {
     machineInitials: "AFM",
     reporterName: null,
     assignedTo: null,
-    machine: { id: "machine-1", name: "Attack from Mars", ownerId: null },
-    reportedByUser: null,
-    invitedReporter: null,
+    machine: { id: "machine-1", name: "Attack from Mars" },
     assignedToUser: null,
     commentCount: 0,
     ...overrides,
@@ -104,7 +108,6 @@ function result(overrides: Partial<IssueViewResult> = {}): IssueViewResult {
     rows: [row()],
     totalCount: 1,
     summary: {
-      open: 1,
       byStatusGroup: { new: 1, in_progress: 0 },
       bySeverity: { cosmetic: 0, minor: 0, major: 1, unplayable: 0 },
       byPriority: { low: 0, medium: 0, high: 1 },
@@ -151,7 +154,6 @@ function renderView(
       result={options.result ?? result()}
       savedViews={options.views ?? savedViews()}
       title={"title" in options ? options.title : "Issues"}
-      viewer={{ userId: ALEX, accessLevel: "member" }}
     />
   );
 }
@@ -176,13 +178,20 @@ describe("IssueView", () => {
     vi.restoreAllMocks();
   });
 
-  it("titles the page Issues with no page action (issues-list §2.3)", () => {
+  it("titles the page Issues with Export as its only page action, its own button (issues-list §2.3)", () => {
     renderView();
     expect(
       screen.getByRole("heading", { level: 1, name: "Issues" })
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /report/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export" })).toHaveAttribute(
+      "data-testid",
+      "export-csv-button"
+    );
+    expect(
+      screen.queryByRole("button", { name: "More" })
     ).not.toBeInTheDocument();
   });
 
@@ -394,28 +403,56 @@ describe("IssueView", () => {
   });
 
   it("offers Export only to signed-in viewers, since exporting requires sign-in", () => {
-    const { unmount } = renderView({
-      result: result({ signedIn: false, myMachines: [] }),
-    });
+    // With no Export, an anonymous visitor sees no page action.
+    renderView({ result: result({ signedIn: false, myMachines: [] }) });
     expect(
-      screen.queryByRole("button", { name: "Export to CSV" })
+      screen.queryByRole("button", { name: "Export" })
     ).not.toBeInTheDocument();
-    unmount();
-
-    renderView();
     expect(
-      screen.getByRole("button", { name: "Export to CSV" })
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "More" })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-csv-button")).not.toBeInTheDocument();
   });
 
   it("searches without a placeholder, named for the list it searches (list-views §4.2)", () => {
     renderView();
-    expect(
-      screen.getByRole("searchbox", { name: "Search issues" })
-    ).not.toHaveAttribute("placeholder");
+    expect(toolbarSearch("Search issues")).not.toHaveAttribute("placeholder");
   });
 
-  it("lists the Secondary Filters under More, in order (issues-list §4.3)", async () => {
+  it("orders the Primary Filters Machine, Status, Severity, Assignee, Priority, Machine presence (issues-list §4.2)", () => {
+    renderView();
+    const filters = screen.getByRole("group", { name: "Filters" });
+    expect(
+      [
+        ...filters.querySelectorAll<HTMLElement>(
+          "[data-filter-trigger]:not([data-testid='list-filter-more'])"
+        ),
+      ].map((trigger) => trigger.getAttribute("data-filter-trigger"))
+    ).toEqual([
+      "machine",
+      "status",
+      "severity",
+      "assignee",
+      "priority",
+      "presence",
+    ]);
+  });
+
+  it("names More filters and badges only the filters it holds that changed (list-views §4.5, §4.10)", () => {
+    renderView();
+    // Every Secondary Filter is at its Page Preset value.
+    expect(screen.getByTestId("list-filter-more")).toHaveAccessibleName(
+      "More filters"
+    );
+    cleanup();
+
+    renderView({ result: withState({ watching: true }) });
+    expect(screen.getByTestId("list-filter-more")).toHaveAccessibleName(
+      "More filters, 1 changed"
+    );
+  });
+
+  it("lists the Secondary Filters under More filters, in order (issues-list §4.3)", async () => {
     const user = userEvent.setup();
     renderView();
 
@@ -462,7 +499,9 @@ describe("IssueView", () => {
       }),
     });
 
-    await user.click(screen.getByRole("button", { name: /^Filters/ }));
+    await user.click(
+      screen.getByRole("button", { name: /^(?:Filters|\d+ active filters?)$/ })
+    );
     await user.click(await screen.findByRole("button", { name: "Reset all" }));
     expect(navigation.replace).toHaveBeenLastCalledWith(
       "/issues?q=gate&sort=created&dir=asc",
@@ -515,8 +554,43 @@ describe("IssueView", () => {
     });
     renderView({ result: withState({ severity: ["major"], page: 2 }) });
 
-    await user.click(screen.getByRole("button", { name: "Export to CSV" }));
+    await user.click(screen.getByRole("button", { name: "Export" }));
     expect(exportAction).toHaveBeenCalledWith({ query: "severity=major" });
+  });
+
+  it("offers an Issues tab's Export, with its scope, to the page header's ⋯ (issues-list 2.4)", async () => {
+    exportAction.mockReturnValue(new Promise(() => undefined));
+    function HeaderProbe(): React.JSX.Element | null {
+      const entry = usePageExportEntry();
+      if (!entry || !("onSelect" in entry)) return null;
+      return (
+        <button
+          type="button"
+          onClick={(event) => entry.onSelect(event.currentTarget)}
+        >
+          {entry.label}
+        </button>
+      );
+    }
+    navigation.pathname = "/c/c1/issues";
+    render(
+      <PageExportProvider>
+        <HeaderProbe />
+        <IssueView
+          result={result()}
+          savedViews={savedViews({ offersDefault: false })}
+          exportScope={{ kind: "collection", handle: "c1" }}
+        />
+      </PageExportProvider>
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Export to CSV" })
+    );
+    expect(exportAction).toHaveBeenCalledWith({
+      query: "",
+      scope: { kind: "collection", handle: "c1" },
+    });
   });
 
   it("saves the configuration as a new issue Saved View (list-views §10.1)", async () => {
@@ -611,10 +685,7 @@ describe("IssueView", () => {
     const user = userEvent.setup();
     renderView();
 
-    await user.type(
-      screen.getByRole("searchbox", { name: "Search issues" }),
-      "flipper{Enter}"
-    );
+    await user.type(toolbarSearch("Search issues"), "flipper{Enter}");
 
     expect(navigation.replace).toHaveBeenLastCalledWith("/issues?q=flipper", {
       scroll: false,

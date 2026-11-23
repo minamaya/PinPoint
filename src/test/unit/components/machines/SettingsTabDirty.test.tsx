@@ -19,6 +19,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode } from "react";
+import type * as TooltipModule from "~/components/ui/tooltip";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
 import { SettingsTab } from "~/components/machines/settings/SettingsTab";
@@ -100,14 +101,19 @@ vi.mock("~/app/(app)/m/[initials]/(tabs)/settings/actions", () => ({
 }));
 
 // The badges use shadcn Tooltip, which needs a TooltipProvider ancestor the
-// bare render() lacks. Render tooltip parts as pass-throughs (their text isn't
-// asserted here).
-vi.mock("~/components/ui/tooltip", () => ({
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
-  TooltipContent: () => null,
-}));
+// bare render() lacks. Give each tooltip its own provider, keeping the real
+// triggers: a ⋯ menu's trigger composes with them (ItemActionsMenu).
+vi.mock("~/components/ui/tooltip", async (importOriginal) => {
+  const actual = await importOriginal<typeof TooltipModule>();
+  return {
+    ...actual,
+    Tooltip: ({ children }: { children: ReactNode }) => (
+      <actual.TooltipProvider>
+        <actual.Tooltip>{children}</actual.Tooltip>
+      </actual.TooltipProvider>
+    ),
+  };
+});
 
 const saveMock = vi.mocked(saveSettingsSetAction);
 
@@ -290,7 +296,7 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
     // Cards render collapsed by default (PP-tn6t) — expand to reach the body.
     fireEvent.click(
-      screen.getByRole("button", { name: /Comp rules settings set/ })
+      screen.getByRole("button", { name: /Comp rules(?: settings set)?$/ })
     );
 
     // The pre-existing row cells are always open.
@@ -421,7 +427,7 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
     // Cards render collapsed by default (PP-tn6t) — expand to reach the body.
     fireEvent.click(
-      screen.getByRole("button", { name: /Comp rules settings set/ })
+      screen.getByRole("button", { name: /Comp rules(?: settings set)?$/ })
     );
 
     // No text inputs for the settings rows.
@@ -473,7 +479,7 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
     // Cards render collapsed by default (PP-tn6t) — expand to reach the body.
     fireEvent.click(
-      screen.getByRole("button", { name: /Comp rules settings set/ })
+      screen.getByRole("button", { name: /Comp rules(?: settings set)?$/ })
     );
 
     expect(
@@ -569,7 +575,7 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
     // Cards render collapsed by default (PP-tn6t) — expand to reach the body.
     fireEvent.click(
-      screen.getByRole("button", { name: /Comp rules settings set/ })
+      screen.getByRole("button", { name: /Comp rules(?: settings set)?$/ })
     );
 
     // The section title is an always-live input (customTitle=true).
@@ -623,14 +629,24 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
     // Cards render collapsed by default (PP-tn6t) — expand to reach the body.
     fireEvent.click(
-      screen.getByRole("button", { name: /Comp rules settings set/ })
+      screen.getByRole("button", { name: /Comp rules(?: settings set)?$/ })
     );
 
     await user.click(
       screen.getByRole("button", {
-        name: "More options for the Post positions section",
+        name: "Section actions",
+        description: "the Post positions section",
       })
     );
+    // design-bible §26.3: Move up and Move down, then Delete section after a
+    // divider.
+    const sectionMenu = await screen.findByRole("menu");
+    expect(
+      within(sectionMenu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent)
+    ).toEqual(["Move up", "Move down", "Delete section"]);
+    expect(within(sectionMenu).getAllByRole("separator")).toHaveLength(1);
     await user.click(
       await screen.findByRole("menuitem", { name: "Move down" })
     );
@@ -670,7 +686,8 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "More options for the Post positions section",
+        name: "Section actions",
+        description: "the Post positions section",
       })
     );
     await user.click(
@@ -814,8 +831,157 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
 
       // Empty name blocked: the execute guard sees isNew && name.trim() === "".
       expect(saveMock).not.toHaveBeenCalled();
+      // Nothing was entered, so there is nothing to lose: no failure banner.
+      // Leaving the blank required field does mark it, under the field.
+      expect(screen.getByRole("alert")).toHaveTextContent("Name required");
+      expect(screen.queryByText(/couldn.t be saved/i)).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Unnamed draft: a new set with content but no name (PP-bhd7.8, CORE-ARCH-012)
+  //
+  // The set cannot insert without its name. That is a FAILED save: the name
+  // field shows "Name required" under it (not the page-level save-failure
+  // banner), and leaving prompts. The bug
+  // reported it as a success, so none of the three fired and the draft was
+  // discarded silently.
+  // ---------------------------------------------------------------------------
+
+  function renderEmptyTab(): void {
+    render(
+      <SettingsTab
+        canCreate
+        viewerId="u1"
+        machineOwnerId="u1"
+        machineId="m1"
+        initialSets={[]}
+        settingsRequests={null}
+        settingsInstructions={null}
+        allTags={ALL_TAGS}
+        canManageTags={false}
+      />
+    );
+  }
+
+  /** New set → type a description, never touching the name. */
+  function startUnnamedDraft(): void {
+    fireEvent.click(screen.getByRole("button", { name: "New set" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add a short description…, edit description",
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "type-in-Edit text" }));
+  }
+
+  function appendLink(): HTMLAnchorElement {
+    const link = document.createElement("a");
+    link.setAttribute("href", "/somewhere");
+    link.textContent = "Go";
+    document.body.appendChild(link);
+    return link;
+  }
+
+  it("(unnamed draft) content with no name fails the save: inline name error, leave prompt — then saves once named", async () => {
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => false);
+    saveMock.mockResolvedValue({
+      success: true,
+      id: "server-uuid",
+      changed: true,
+    });
+    renderEmptyTab();
+    const link = appendLink();
+    try {
+      startUnnamedDraft();
+      // Blurring the editor flushes the save, which cannot run without a name.
+      fireEvent.blur(screen.getByRole("textbox", { name: "Edit text" }));
+
+      // The error sits under the name field, linked to it. The page-level
+      // banner is for real save failures and stays out of this.
+      const error = await screen.findByRole("alert");
+      expect(error).toHaveTextContent("Name required");
+      expect(
+        screen.queryByRole("button", { name: /retry/i })
+      ).not.toBeInTheDocument();
+      expect(saveMock).not.toHaveBeenCalled();
+      const nameInput = screen.getByRole("textbox", { name: /^set name/ });
+      expect(nameInput).toHaveAttribute("aria-invalid", "true");
+      expect(nameInput).toHaveAttribute("aria-describedby", error.id);
+
+      // Leaving would lose the draft, so the guard prompts and cancel blocks.
+      const blocked = fireEvent.click(link);
+      expect(confirmSpy).toHaveBeenCalledWith(
+        "A settings change failed to save. Leave and lose it?"
+      );
+      expect(blocked).toBe(false);
+
+      // Naming the set lifts the failure and the draft inserts, content intact.
+      fireEvent.change(nameInput, { target: { value: "Bat City" } });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      fireEvent.blur(nameInput);
+      await waitFor(() => {
+        expect(saveMock).toHaveBeenCalledTimes(1);
+      });
+      const payload = saveMock.mock.calls[0]?.[0];
+      expect(payload?.id).toBeUndefined();
+      expect(payload?.name).toBe("Bat City");
+      expect(payload?.description).toEqual(SAMPLE_DOC);
+    } finally {
+      link.remove();
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("(unnamed draft) leaving before the first save attempt still prompts — a flush cannot rescue it", () => {
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => false);
+    renderEmptyTab();
+    const link = appendLink();
+    try {
+      // Edit, then click a link inside the 800 ms debounce: no save has been
+      // attempted, so nothing has failed yet.
+      startUnnamedDraft();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      const blocked = fireEvent.click(link);
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(blocked).toBe(false);
+    } finally {
+      link.remove();
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("(unnamed draft) deleting the draft clears its failure — no error, no leave prompt", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => false);
+    renderEmptyTab();
+    const link = appendLink();
+    try {
+      startUnnamedDraft();
+      fireEvent.blur(screen.getByRole("textbox", { name: "Edit text" }));
+      await screen.findByRole("alert");
+
+      await user.click(screen.getByRole("button", { name: "Set actions" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+      await user.click(await screen.findByRole("button", { name: "Delete" }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      });
+      fireEvent.click(link);
+      expect(confirmSpy).not.toHaveBeenCalled();
+    } finally {
+      link.remove();
+      confirmSpy.mockRestore();
     }
   });
 
@@ -840,9 +1006,7 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "New set" }));
-    await user.click(
-      screen.getByRole("button", { name: "More options for this set" })
-    );
+    await user.click(screen.getByRole("button", { name: "Set actions" }));
 
     // Tagging, choosing a default, and duplicating act on a persisted row, so
     // they're disabled until first save.
@@ -852,6 +1016,12 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
     const duplicate = screen.getByRole("menuitem", { name: "Duplicate" });
     expect(editTags).toHaveAttribute("aria-disabled", "true");
     expect(duplicate).toHaveAttribute("aria-disabled", "true");
+    // design-bible §26.3: Delete comes last, after a divider, and enabled.
+    const setMenu = screen.getByRole("menu");
+    const items = within(setMenu).getAllByRole("menuitem");
+    expect(items.at(-1)).toHaveTextContent("Delete");
+    expect(items.at(-1)).not.toHaveAttribute("aria-disabled");
+    expect(within(setMenu).getAllByRole("separator")).toHaveLength(1);
 
     await user.click(editTags);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1379,7 +1549,11 @@ describe("SettingsTab — always-live auto-save model (PP-43q3 pivot)", () => {
     );
 
     // The description is click-to-edit (PP-tn6t): open the editor first.
-    fireEvent.click(screen.getByRole("button", { name: "Edit description" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add a short description…, edit description",
+      })
+    );
 
     // Edit the description via the mock editor's onChange (markDirty + schedule,
     // debounce pending). Then blur the editor → onBlur → flush.
@@ -1659,7 +1833,7 @@ describe("SettingsTab — the tag picker", () => {
     index: number
   ): Promise<HTMLElement> {
     const button = screen.getAllByRole("button", {
-      name: "More options for this set",
+      name: "Set actions",
     })[index];
     if (!button) throw new Error(`no menu button ${String(index)}`);
     await user.click(button);
@@ -1673,7 +1847,7 @@ describe("SettingsTab — the tag picker", () => {
     const user = userEvent.setup();
     renderTab(false);
     const noCurate = screen.getAllByRole("button", {
-      name: "More options for this set",
+      name: "Set actions",
     })[2];
     if (!noCurate) throw new Error("no menu button");
     await user.click(noCurate);
@@ -1824,9 +1998,7 @@ describe("SettingsTab — making a set community (spec §2.3)", () => {
       />
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "More options for this set" })
-    );
+    await user.click(screen.getByRole("button", { name: "Set actions" }));
     await user.click(
       await screen.findByRole("menuitem", { name: "Make community set" })
     );
@@ -1835,9 +2007,7 @@ describe("SettingsTab — making a set community (spec §2.3)", () => {
     // A community set is edited and deleted by curators only, so the menu,
     // which held only author actions, goes away.
     await waitFor(() => {
-      expect(
-        screen.queryByRole("button", { name: "More options for this set" })
-      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Set actions" })).toBeNull();
     });
   });
 });

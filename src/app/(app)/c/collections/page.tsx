@@ -3,38 +3,34 @@ import type { Metadata } from "next";
 import { Gamepad2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "~/lib/supabase/server";
-import { db } from "~/server/db";
+import { getViewer } from "~/lib/auth/viewer";
 import { getLoginUrl } from "~/lib/url";
 import {
   getMyCollections,
   getOwnedMachineCount,
   getSharedWithMe,
 } from "~/lib/collections/list";
-import { getCollectionPickerMachines } from "~/lib/collections/user";
+import { getPickerMachines } from "~/app/(app)/c/[id]/_data";
 import { ownerMachinesHref } from "~/lib/machines/links";
 import { PageContainer } from "~/components/layout/PageContainer";
 import { PageHeader } from "~/components/layout/PageHeader";
-import { CreateCollectionDialog } from "~/components/collections/CreateCollectionDialog";
+import { CollectionsPageActions } from "~/components/collections/CollectionsPageActions";
 
 export const metadata: Metadata = {
   title: "My Collections | PinPoint",
 };
 
 export default async function MyCollectionsPage(): Promise<React.JSX.Element> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { userId } = await getViewer();
+  if (!userId) {
     redirect(getLoginUrl("/c/collections"));
   }
 
   const [owned, shared, allMachines, ownedMachineCount] = await Promise.all([
-    getMyCollections(undefined, user.id),
-    getSharedWithMe(undefined, user.id),
-    getCollectionPickerMachines(db, null),
-    getOwnedMachineCount(undefined, user.id),
+    getMyCollections(undefined, userId),
+    getSharedWithMe(undefined, userId),
+    getPickerMachines(null),
+    getOwnedMachineCount(undefined, userId),
   ]);
 
   return (
@@ -42,7 +38,7 @@ export default async function MyCollectionsPage(): Promise<React.JSX.Element> {
       <div className="space-y-6">
         <PageHeader
           title="My Collections"
-          actions={<CreateCollectionDialog allMachines={allMachines} />}
+          pageActions={<CollectionsPageActions allMachines={allMachines} />}
         />
 
         {owned.length === 0 &&
@@ -67,7 +63,7 @@ export default async function MyCollectionsPage(): Promise<React.JSX.Element> {
                   {ownedMachineCount > 0 && (
                     <li>
                       <Link
-                        href={ownerMachinesHref(user.id)}
+                        href={ownerMachinesHref(userId)}
                         data-testid="my-machines-collection-link"
                         className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-surface-variant"
                       >

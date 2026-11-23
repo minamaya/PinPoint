@@ -279,17 +279,6 @@ async function openUserMenu(
   await openDropdownMenu(userMenu);
 }
 
-/**
- * No-op: Navigation uses AppHeader (desktop nav links) + BottomTabBar (mobile).
- * There is no sidebar to open.
- */
-export async function openSidebarIfMobile(
-  _page: Page,
-  _testInfo: TestInfo
-): Promise<void> {
-  // No-op — mobile navigation is handled by the bottom tab bar
-}
-
 interface RetryNavClickOptions {
   /** Outer `toPass` timeout. Default 15 000 ms. */
   timeout?: number;
@@ -442,6 +431,28 @@ export async function selectOption(
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The List View's search field, visible and ready to type into, at any width
+ * (list-views §4.1, §7.3). From md up it sits in the toolbar. Below md it sits
+ * in the phone List Header, which shows a search icon instead whenever the
+ * field would be narrower than 175px; the icon carries the field's name and
+ * opens it. A field that holds text stays open, so later calls find it
+ * without the icon. The click is retried because a press before React
+ * attaches the handler is dropped.
+ */
+export async function openListSearch(
+  page: Page,
+  label: string
+): Promise<Locator> {
+  const field = page.getByRole("searchbox", { name: label, exact: true });
+  const icon = page.getByRole("button", { name: label, exact: true });
+  await expect(async () => {
+    if (await icon.isVisible()) await icon.click({ timeout: 2_000 });
+    await expect(field).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  return field;
 }
 
 /**
@@ -775,32 +786,6 @@ export async function assertNoHorizontalOverflow(
 }
 
 /**
- * Asserts that a shadcn Select dropdown trigger is displaying its placeholder text.
- */
-export async function assertSelectAtPlaceholder(
-  trigger: Locator,
-  placeholderText: string | RegExp
-): Promise<void> {
-  await expect(trigger).toHaveAttribute("data-placeholder");
-  await expect(trigger.locator('[data-slot="select-value"]')).toHaveText(
-    placeholderText
-  );
-}
-
-/**
- * Asserts that a shadcn Select dropdown trigger is displaying the expected option label.
- */
-export async function assertSelectValue(
-  trigger: Locator,
-  expectedLabel: string | RegExp
-): Promise<void> {
-  await expect(trigger).not.toHaveAttribute("data-placeholder");
-  await expect(trigger.locator('[data-slot="select-value"]')).toHaveText(
-    expectedLabel
-  );
-}
-
-/**
  * Asserts that the page has no serious or critical accessibility (a11y) violations.
  * Fails only on 'serious' and 'critical' impacts, and logs 'minor' and 'moderate' impacts.
  */
@@ -819,6 +804,26 @@ export async function assertNoA11yViolations(
   ];
 
   const rulesToIgnore = Array.from(new Set([...defaultIgnore, ...ignoreRules]));
+
+  // Scan a settled page (PP-4bhb). Axe computes color contrast through
+  // opacity, so a surface dimmed while a request is in flight (ListView sets
+  // aria-busy and opacity-60 while its router transition is pending) or
+  // mid-fade fails color-contrast for every muted label on it at once.
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  await page.evaluate(async () => {
+    // Infinite animations (spinners, skeleton pulses) never finish; paused
+    // ones never resolve. Wait only for finite ones in flight.
+    const inFlight = document
+      .getAnimations()
+      .filter(
+        (animation) =>
+          animation.playState === "running" &&
+          animation.effect?.getTiming().iterations !== Infinity
+      );
+    await Promise.all(
+      inFlight.map((animation) => animation.finished.catch(() => undefined))
+    );
+  });
 
   const builder = new AxeBuilder({ page });
   if (rulesToIgnore.length > 0) {

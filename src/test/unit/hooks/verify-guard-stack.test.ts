@@ -15,13 +15,29 @@ const hookPath = path.resolve(
 );
 
 const MERGE_DENY = [
-  "Bash(gh pr merge*)",
+  "Bash(gh pr merge *--admin*)",
   "Bash(gh api *pulls/*/merge*)",
   "Bash(gh api *mergePullRequest*)",
   "Bash(gh api *enablePullRequestAutoMerge*)",
-  "mcp__github__merge_pull_request",
-  "mcp__github__enable_pr_auto_merge",
+  "mcp__*__merge_pull_request",
+  "mcp__*__enable_pr_auto_merge",
 ];
+
+const SUPABASE_ASK = [
+  "mcp__*__execute_sql",
+  "mcp__*__apply_migration",
+  "mcp__*__deploy_edge_function",
+  "mcp__*__pause_project",
+  "mcp__*__restore_project",
+  "mcp__*__create_project",
+  "mcp__*__delete_branch",
+  "mcp__*__merge_branch",
+  "mcp__*__rebase_branch",
+  "mcp__*__reset_branch",
+  "mcp__*-*-*-*-*__create_branch",
+];
+
+const HEALTHY = { deny: MERGE_DENY, ask: SUPABASE_ASK };
 
 const WIRED = {
   SessionStart: [
@@ -59,9 +75,9 @@ function runWith(settings: string): { status: number | null; stdout: string } {
 }
 
 describe("verify-guard-stack.cjs", () => {
-  it("is silent when wired scripts exist and the merge denies are present", () => {
+  it("is silent when wired scripts exist and the guard rules are present", () => {
     const result = runWith(
-      JSON.stringify({ hooks: WIRED, permissions: { deny: MERGE_DENY } })
+      JSON.stringify({ hooks: WIRED, permissions: HEALTHY })
     );
     expect(result).toEqual({ status: 0, stdout: "" });
   });
@@ -73,9 +89,7 @@ describe("verify-guard-stack.cjs", () => {
         { hooks: [{ command: "node .claude/hooks/deleted-guard.cjs" }] },
       ],
     };
-    const result = runWith(
-      JSON.stringify({ hooks, permissions: { deny: MERGE_DENY } })
-    );
+    const result = runWith(JSON.stringify({ hooks, permissions: HEALTHY }));
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
       "hook scripts missing from disk: .claude/hooks/deleted-guard.cjs"
@@ -83,13 +97,26 @@ describe("verify-guard-stack.cjs", () => {
   });
 
   it("reports a missing merge deny rule", () => {
-    const deny = MERGE_DENY.filter((rule) => rule !== "Bash(gh pr merge*)");
+    const deny = MERGE_DENY.filter(
+      (rule) => rule !== "Bash(gh pr merge *--admin*)"
+    );
     const result = runWith(
-      JSON.stringify({ hooks: WIRED, permissions: { deny } })
+      JSON.stringify({ hooks: WIRED, permissions: { ...HEALTHY, deny } })
     );
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "merge deny rules missing from permissions.deny: Bash(gh pr merge*)"
+      "merge deny rules missing from permissions.deny: Bash(gh pr merge *--admin*)"
+    );
+  });
+
+  it("reports a missing Supabase write-tool ask rule", () => {
+    const ask = SUPABASE_ASK.filter((rule) => rule !== "mcp__*__execute_sql");
+    const result = runWith(
+      JSON.stringify({ hooks: WIRED, permissions: { ...HEALTHY, ask } })
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "Supabase write-tool rules missing from permissions.ask: mcp__*__execute_sql"
     );
   });
 

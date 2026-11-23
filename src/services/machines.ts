@@ -77,6 +77,7 @@ export interface MachinePbmColumns {
   playerCount: number | null;
   designers: string[] | null;
   artists: string[] | null;
+  programmers: string[] | null;
   opdbId: string | null;
   ipdbId: number | null;
 }
@@ -174,16 +175,9 @@ export async function updateMachineWatchMode({
       .returning();
 
     if (!updated) {
-      // If we try to update a non-existent watcher, should we create it or fail?
-      // Logic implies "update mode", so failing if not watching makes sense,
-      // but simplistic approach might just be treating it as a no-op/error.
-      // Let's assume the UI only shows this when watching.
-      return ok({ watchMode }); // Return verified mode even if no-op? Or error?
-      // Better to imply success if state matches intent, or fail if context missing.
-      // Let's stick to simple return for now, or check 'updated'.
-      // If NOT updated, it means they weren't watching.
-      // We could return err("NOT_FOUND") but "SERVER" is generically defined above.
-      // Let's keep it simple for now matching strict return types.
+      // Not watching: nothing to update. The UI only offers this while
+      // watching, so report the requested mode as a no-op.
+      return ok({ watchMode });
     }
 
     return ok({ watchMode });
@@ -925,6 +919,7 @@ type PbmLinkBasis = StoredPbmLinkState & {
   playerCount: number | null;
   designers: string[] | null;
   artists: string[] | null;
+  programmers: string[] | null;
 };
 
 const PBM_LINK_COLUMNS = {
@@ -946,6 +941,7 @@ const PBM_LINK_COLUMNS = {
   playerCount: true,
   designers: true,
   artists: true,
+  programmers: true,
   opdbId: true,
   ipdbId: true,
 } as const;
@@ -972,7 +968,8 @@ function pbmLinkBasisUnchanged(a: PbmLinkBasis, b: PbmLinkBasis): boolean {
     a.display === b.display &&
     a.playerCount === b.playerCount &&
     sameNameList(a.designers, b.designers) &&
-    sameNameList(a.artists, b.artists)
+    sameNameList(a.artists, b.artists) &&
+    sameNameList(a.programmers, b.programmers)
   );
 }
 
@@ -1031,6 +1028,7 @@ function carryExcludedFields(
     | "playerCount"
     | "designers"
     | "artists"
+    | "programmers"
   >
 ): PbmLinkSelection {
   // Only a re-statement of an exclusion that was already stored can carry —
@@ -1059,6 +1057,8 @@ function carryExcludedFields(
     carried.designers = stored.designers;
   if (selection.artists === undefined && stored.artists !== null)
     carried.artists = stored.artists;
+  if (selection.programmers === undefined && stored.programmers !== null)
+    carried.programmers = stored.programmers;
   return carried;
 }
 
@@ -1228,6 +1228,7 @@ export async function updateMachinePbmLink({
           playerCount: machines.playerCount,
           designers: machines.designers,
           artists: machines.artists,
+          programmers: machines.programmers,
           opdbId: machines.opdbId,
           ipdbId: machines.ipdbId,
           presenceStatus: machines.presenceStatus,

@@ -80,7 +80,7 @@ NODE_HOOK_COMMANDS = _node_hook_commands()
 # settings.json edit that silently drops one is caught rather than the
 # parametrized tests just running over a shorter list.
 EXPECTED_NODE_HOOK_BASENAMES = [
-    "inject-beads-actor.cjs",
+    "beads-actor-env.cjs",
     "block-main-worktree-branch-switch.cjs",
     "ui-screenshot-reminder.cjs",
     "verify-guard-stack.cjs",
@@ -105,9 +105,13 @@ def test_project_hooks_do_not_register_global_huddle_runtime() -> None:
     assert "huddle-service" not in registered
 
 
-def test_codex_forbids_raw_pr_merge_without_blanket_blocking_gh() -> None:
+def test_codex_prompts_on_pr_merge_without_blanket_blocking_gh() -> None:
+    """gh pr merge prompts (prefix rules cannot deny a later --admin flag), and
+    update-branch is allowed; neither rule widens into blocking all of gh."""
     compact_rules = re.sub(r"\s+", "", CODEX_RULES_PATH.read_text(encoding="utf-8"))
-    assert 'pattern=["gh","pr","merge"],decision="forbidden"' in compact_rules
+    assert 'pattern=["gh","pr","merge"],decision="prompt"' in compact_rules
+    assert 'pattern=["gh","pr","merge"],decision="allow"' not in compact_rules
+    assert 'pattern=["gh","pr","update-branch"],decision="allow"' in compact_rules
     assert 'pattern=["gh"],decision="forbidden"' not in compact_rules
 
 
@@ -119,6 +123,19 @@ def test_all_expected_node_hooks_are_wired() -> None:
     joined = "\n".join(NODE_HOOK_COMMANDS)
     missing = [b for b in EXPECTED_NODE_HOOK_BASENAMES if b not in joined]
     assert not missing, f"expected node hook(s) not found in settings.json: {missing}"
+
+
+def test_pre_tool_use_guards_block_when_the_hook_itself_fails() -> None:
+    """A PreToolUse guard that cannot start, times out, or crashes must refuse
+    the tool call. Claude Code's default lets the call through, which is how a
+    broken guard goes silently inert."""
+    settings = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    handlers = [h for entry in settings["hooks"]["PreToolUse"] for h in entry["hooks"]]
+    assert handlers, "expected at least one PreToolUse guard"
+    failing_open = [h["command"] for h in handlers if h.get("onFailure") != "block"]
+    assert not failing_open, (
+        f"PreToolUse guards without onFailure=block: {failing_open}"
+    )
 
 
 @pytest.mark.parametrize("command", NODE_HOOK_COMMANDS, ids=lambda c: c.split("/")[-1])

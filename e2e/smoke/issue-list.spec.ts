@@ -2,9 +2,11 @@ import { test, expect, type Page } from "../support/fixtures.js";
 import {
   assertNoHorizontalOverflow,
   assertNoA11yViolations,
+  openListSearch,
   setListFilterOptions,
 } from "../support/actions.js";
 import { seededIssue } from "../support/constants.js";
+import { clickPageAction } from "../support/page-actions.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 
 /** The List View's announced result count (list-views §12.4). */
@@ -39,7 +41,7 @@ test.describe("Issue List Features", () => {
     await assertNoA11yViolations(page);
 
     // 2. Search for Issue 1
-    const searchInput = page.getByRole("searchbox", { name: "Search issues" });
+    const searchInput = await openListSearch(page, "Search issues");
     await searchInput.fill("Thing flips the bird");
     await searchInput.press("Enter");
     await expect
@@ -67,7 +69,7 @@ test.describe("Issue List Features", () => {
     await expect(issues.getByRole("link", { name: title2 })).toBeVisible();
     // Every row left is Major.
     await expect(
-      issues.getByRole("button", { name: /^Severity: (?!Major,)/ })
+      issues.getByTestId("issue-severity").filter({ hasNotText: "Major" })
     ).toHaveCount(0);
 
     // Clear the Severity filter
@@ -120,11 +122,10 @@ test.describe("Issue List Features", () => {
       .not.toBe("999");
   });
 
-  test("should export issues to CSV", async ({ page }, testInfo) => {
-    test.skip(
-      testInfo.project.name.includes("Mobile"),
-      "Export sits in the desktop List Header (list-views §5.5); the phone header has none (§7.3)"
-    );
+  // Export, the page's only action, is its own button rather than ⋯'s
+  // only entry, or "Export to CSV" in ⋯ if the row ever folds it
+  // (issues-list §2.3, list-views §3.7, §5.5).
+  test("should export issues to CSV", async ({ page }) => {
     await page.goto("/issues");
 
     // Wait for issue list to load
@@ -133,7 +134,7 @@ test.describe("Issue List Features", () => {
     // Set up download listener before clicking
     const downloadPromise = page.waitForEvent("download");
 
-    await page.getByRole("button", { name: "Export to CSV" }).click();
+    await clickPageAction(page, { button: "Export", entry: "Export to CSV" });
 
     // Verify download was triggered
     const download = await downloadPromise;

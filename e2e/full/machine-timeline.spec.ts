@@ -92,7 +92,7 @@ test.describe("Machine Timeline (PP-0x98)", () => {
       await expect(page.getByText(body)).toBeVisible({ timeout: 10_000 });
 
       // Newest-first ordering puts our just-posted note at the top, so the
-      // first comment kebab is ours. Open it → Edit → Save (a save stamps
+      // first comment ⋯ menu is ours. Open it → Edit → Save (a save stamps
       // editedAt even with no content change).
       await page
         .getByRole("button", { name: /comment actions/i })
@@ -149,7 +149,7 @@ test.describe("Machine Timeline (PP-0x98)", () => {
   // Reassignment is a ONE-WAY move of a real row, so this journey files its own
   // issue instead of moving a seeded one. It used to move seeded TAF-01 to EBD
   // and leave it there: TAF-01 then no longer existed at /m/TAF/i/1, so a second
-  // run in the same database timed out waiting for the kebab that page never
+  // run in the same database timed out waiting for the ⋯ menu that page never
   // rendered — and machine-info.spec.ts, which asserts TAF-01 in the hero's
   // known-issues peek, went red as collateral. Moving it back is not a repair:
   // a returning issue gets a fresh per-machine number, so TAF-01 would stay

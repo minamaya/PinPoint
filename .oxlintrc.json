@@ -137,6 +137,17 @@
               {
                 "group": ["../../*", "../../../*", "../../../../*"],
                 "message": "Use '~/' path alias instead of deep relative imports (../../). This improves maintainability and prevents broken imports when files are moved."
+              },
+              {
+                "group": [
+                  "@radix-ui/*",
+                  "radix-ui",
+                  "radix-ui/*",
+                  "vaul",
+                  "cmdk",
+                  "@floating-ui/*"
+                ],
+                "message": "Overlay and primitive libraries (radix-ui, vaul, cmdk, floating-ui) are only imported inside src/components/ui. Use or extend the shared component in src/components/ui so open/close motion stays consistent (CORE-UI-007)."
               }
             ]
           }
@@ -248,6 +259,24 @@
       }
     },
     {
+      // The shared primitives are the one place the overlay libraries may be
+      // imported (CORE-UI-007); the deep-relative pattern still applies here.
+      "files": ["src/components/ui/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../../*", "../../../*", "../../../../*"],
+                "message": "Use '~/' path alias instead of deep relative imports (../../). This improves maintainability and prevents broken imports when files are moved."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": [
         "**/*.test.ts",
         "**/*.test.tsx",
@@ -268,6 +297,11 @@
         "typescript/no-unsafe-argument": "off",
         "typescript/unbound-method": "off",
         "typescript/no-non-null-assertion": "off",
+        // no-unnecessary-condition is off for test files because
+        // tsconfig.tests.json extends tsconfig.base.json only (not
+        // @tsconfig/strictest), so noUncheckedIndexedAccess is unset and the
+        // defensive index checks tests rely on read as "unnecessary" to the
+        // type-aware rule. (PP-8xk7)
         "typescript/no-unnecessary-condition": "off",
         "pinpoint/no-restricted-disable-directives": "off"
       }
@@ -296,6 +330,17 @@
           }
         ],
         "pinpoint/no-test-com-literals": "warn",
+        // no-unnecessary-condition is off here for a DIFFERENT reason than the
+        // test block above: e2e/tsconfig.json DOES extend @tsconfig/strictest,
+        // so noUncheckedIndexedAccess is true and the index-access rationale
+        // does not apply. It is off because e2e uses concurrency-coordination
+        // flags mutated across async closures (e.g. `claimed` in
+        // support/page-helpers.ts), which the type-aware rule mis-reports as
+        // "always falsy" — a false positive, not dead code. Type-aware linting
+        // is enabled today via `options.typeAware: true` above (equivalent to
+        // --type-aware; needs the installed oxlint-tsgolint), so this disable is
+        // load-bearing in `pnpm run lint`/CI now: removing it fails the gate on
+        // page-helpers.ts. (PP-8xk7)
         "typescript/no-unnecessary-condition": "off",
         "pinpoint/no-restricted-disable-directives": "off"
       }
@@ -510,6 +555,56 @@
               {
                 "pattern": "^(?:[^:]+:)*[a-z0-9-]+-\\[(?:[^\\]]*?)#[0-9a-fA-F]{3,8}(?:[^\\]]*?)\\](?:\\/.*)?$",
                 "message": "Hardcoded arbitrary hex values are forbidden. Please use semantic tokens instead (e.g. text-muted-foreground, bg-primary). See pinpoint-ui §Color System and pinpoint-design-bible §1."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // Every component under src/app (pages, layouts and the server components
+      // a route colocates) and every file under src/components never touches
+      // the database handle or the schema: their reads live in a cache()'d
+      // route `_data.ts` loader or a `src/lib/<domain>` read (CORE-ARCH-018,
+      // pinpoint-ui § Data access). An override replaces the base rule's
+      // options, so the deep-relative ban is repeated here.
+      "files": ["src/app/**/*.tsx", "src/components/**"],
+      // The only opt-out. Exempt files by name, never by directory, and shrink
+      // the list as files move off the database. Test files keep the test
+      // override's exemption, which this later override would otherwise undo.
+      "excludeFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        // PP-az4d.34: move its reads into a loader.
+        "src/components/collections/MachineGroupShell.tsx",
+        // PP-az4d.34: move its reads into a loader.
+        "src/components/collections/MachineGroupTimelineTab.tsx",
+        // PP-az4d.34: fold its notification reads into one query, once the
+        // List Header change to this file (PR #2486) lands.
+        "src/components/layout/MainLayout.tsx",
+        // PP-az4d.34: move its reads into a loader.
+        "src/components/machines/timeline/MachineRecentActivity.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "~/server/db",
+                "message": "Pages, layouts and components do not import the database. Move the read into a cache()'d route _data.ts loader or a src/lib/<domain> read (CORE-ARCH-018, pinpoint-ui § Data access)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["../../*", "../../../*", "../../../../*"],
+                "message": "Use '~/' path alias instead of deep relative imports (../../). This improves maintainability and prevents broken imports when files are moved."
+              },
+              {
+                "group": ["~/server/db/*"],
+                "message": "Pages, layouts and components do not import the database schema. Move the read into a cache()'d route _data.ts loader or a src/lib/<domain> read (CORE-ARCH-018, pinpoint-ui § Data access)."
               }
             ]
           }

@@ -1,19 +1,20 @@
 import type React from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import {
+  GroupBreadcrumb,
+  tagCrumbs,
+} from "~/components/collections/GroupBreadcrumb";
 import { PageContainer } from "~/components/layout/PageContainer";
-import { AddTagDialog } from "~/components/tags/AddTagDialog";
 import { AutomaticBadge } from "~/components/tags/AutomaticBadge";
 import { ExclusiveBadge } from "~/components/tags/ExclusiveBadge";
 import { TagList } from "~/components/tags/TagList";
-import { TagTrail } from "~/components/tags/TagTrail";
-import { TagTypeActionsMenu } from "~/components/tags/TagTypeActionsMenu";
-import { getViewer } from "~/lib/collections/viewer";
+import { TagTypePageActions } from "~/components/tags/TagTypePageActions";
+import { getViewer } from "~/lib/auth/viewer";
 import { checkPermission, getAccessLevel } from "~/lib/permissions/helpers";
-import { exclusiveConflicts } from "~/lib/tags/conflicts";
 import { listTags } from "~/lib/tags/tags";
 import type { TagGroup } from "~/lib/tags/types";
-import { db } from "~/server/db";
+import { getExclusiveConflicts } from "./_data";
 
 interface PageProps {
   params: Promise<{ type: string }>;
@@ -68,17 +69,18 @@ export default async function TagTypePage({
   // Opens the one-per-machine dialog already knowing what blocks it (11.7).
   const conflicts =
     managed && !managed.type.exclusive
-      ? await exclusiveConflicts(db, managed.type.id)
+      ? await getExclusiveConflicts(managed.type.id)
       : [];
 
   return (
     <PageContainer size="standard">
       <div className="space-y-6">
         <div className="space-y-1">
-          <TagTrail />
-          {/* Wraps rather than squeezing at 320px: title, badge, actions. */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-outline-variant pb-2">
-            <h1 className="text-balance text-3xl font-bold tracking-tight">
+          <GroupBreadcrumb crumbs={tagCrumbs()} />
+          {/* Title, badge, then the page actions in the room left, where
+              they lose labels and fold rather than wrap (design-bible §26). */}
+          <div className="flex min-h-11 items-center gap-x-3 border-b border-outline-variant pb-2">
+            <h1 className="min-w-0 text-balance text-3xl font-bold tracking-tight [overflow-wrap:anywhere]">
               {typeLabel(group)}
             </h1>
             {group.kind === "automatic" ? (
@@ -87,18 +89,13 @@ export default async function TagTypePage({
               <ExclusiveBadge />
             ) : null}
             {managed ? (
-              <div className="ml-auto flex items-center gap-2">
-                <AddTagDialog
-                  type={{ id: managed.type.id, name: managed.type.name }}
-                />
-                <TagTypeActionsMenu
-                  tagTypeId={managed.type.id}
-                  name={managed.type.name}
-                  tagCount={managed.tags.length}
-                  exclusive={managed.type.exclusive}
-                  exclusiveConflicts={conflicts}
-                />
-              </div>
+              <TagTypePageActions
+                tagTypeId={managed.type.id}
+                name={managed.type.name}
+                tagCount={managed.tags.length}
+                exclusive={managed.type.exclusive}
+                exclusiveConflicts={conflicts}
+              />
             ) : null}
           </div>
           {group.kind === "automatic" ? (

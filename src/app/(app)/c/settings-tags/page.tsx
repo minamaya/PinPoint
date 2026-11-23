@@ -3,18 +3,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageContainer } from "~/components/layout/PageContainer";
-import { NewSettingsTagDialog } from "~/components/settings-tags/NewSettingsTagDialog";
+import { SettingsTagsPageActions } from "~/components/settings-tags/SettingsTagsPageActions";
 import { getViewer } from "~/lib/auth/viewer";
 import { canManageSettingsTags } from "~/lib/permissions";
 import { getAccessLevel } from "~/lib/permissions/helpers";
-import { listSettingsTagSummaries } from "~/lib/machines/settings-tag-queries";
 import {
   builtinSlotOf,
   setsOnMachinesPhrase,
   settingsTagHref,
 } from "~/lib/machines/settings-tags";
 import { cn } from "~/lib/utils";
-import { db } from "~/server/db";
+import { getSettingsTagSummaries } from "./_data";
 
 export const metadata: Metadata = {
   title: "Settings tags | PinPoint",
@@ -39,7 +38,7 @@ function chipTone(slug: string): string {
  */
 export default async function SettingsTagsPage(): Promise<React.JSX.Element> {
   const [tags, viewer] = await Promise.all([
-    listSettingsTagSummaries(db),
+    getSettingsTagSummaries(),
     getViewer(),
   ]);
   const canManage = canManageSettingsTags(getAccessLevel(viewer.role));
@@ -47,11 +46,11 @@ export default async function SettingsTagsPage(): Promise<React.JSX.Element> {
   return (
     <PageContainer size="standard" className="max-w-3xl">
       <div className="space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-outline-variant pb-3 md:pb-2">
-          <h1 className="text-balance text-3xl font-bold tracking-tight">
+        <div className="flex min-h-11 items-center gap-3 border-b border-outline-variant pb-3 md:pb-2">
+          <h1 className="shrink-0 text-balance text-3xl font-bold tracking-tight">
             Settings tags
           </h1>
-          {canManage ? <NewSettingsTagDialog /> : null}
+          {canManage ? <SettingsTagsPageActions /> : null}
         </div>
         <ul className="overflow-hidden rounded-xl border border-outline-variant bg-card">
           {tags.map((tag, index) => {

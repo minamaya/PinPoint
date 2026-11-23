@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ArrowUpDown, Check, ChevronDown, Columns3 } from "lucide-react";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -32,10 +31,11 @@ import { useMeasuredWidths } from "./use-measured-widths";
 
 const GAP = 2;
 
+// View tabs are quiet pills, the Applied View's filled, so they never read
+// as the page's own underlined tabs (§5.8).
 const tabClass =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 px-2.5 text-sm whitespace-nowrap text-muted-foreground shadow-[inset_0_-2px_0_transparent] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none";
-const currentTabClass =
-  "font-semibold text-foreground shadow-[inset_0_-2px_0_var(--color-primary)]";
+  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-muted/40 data-[state=open]:text-foreground motion-reduce:transition-none";
+const currentTabClass = "bg-muted font-semibold text-foreground hover:bg-muted";
 const ghostButtonClass =
   "inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-muted data-[state=open]:text-foreground motion-reduce:transition-none";
 const iconButtonClass = listHeaderIconButtonClass;
@@ -106,7 +106,7 @@ function SortMenu({ sort }: { sort: ListSortModel }): React.JSX.Element {
   );
 }
 
-/** View options (list-views §5.6, §5.7): page size and displayed fields. */
+/** View options (list-views §5.6, §5.7): the page size. */
 function ViewOptionsMenu({
   display,
 }: {
@@ -134,26 +134,6 @@ function ViewOptionsMenu({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
-        {display.fields ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Fields</DropdownMenuLabel>
-            {display.fields.options.map((field) => (
-              <DropdownMenuCheckboxItem
-                key={field.value}
-                checked={
-                  display.fields?.selected.includes(field.value) ?? false
-                }
-                onCheckedChange={(checked) =>
-                  display.fields?.onToggle(field.value, checked === true)
-                }
-                onSelect={(event) => event.preventDefault()}
-              >
-                {field.label}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </>
-        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -319,18 +299,21 @@ interface ListHeaderProps {
   sort: ListSortModel;
   pagination: ListPaginationModel;
   display: ListDisplayModel;
-  /** Export, when the host offers it (§5.5). */
-  exportControl?: React.ReactNode;
+  /**
+   * An action on the whole result a host places in the List Header, such as
+   * Add all on Print settings sheets. Export is a page action instead (§5.5).
+   */
+  listAction?: React.ReactNode;
   onSaveChanges: () => void;
   onSaveAsNew: () => void;
   onManage: () => void;
 }
 
 /**
- * The desktop List Header (list-views §5, §8.2, §8.3): Built-in Views as
+ * The desktop List Header (list-views §5, §8.16–§8.19): Built-in Views as
  * tabs in a "Saved views" navigation landmark (§12.3), More views, Save and
  * Discard changes beside an Edited Saved View or Save view when there is no
- * Applied View, then the compact pager, sort, Export, and
+ * Applied View, then the compact pager, sort, any host list action, and
  * View options. Hidden below md, where the phone header takes over (§7.3).
  */
 export function ListHeader({
@@ -338,7 +321,7 @@ export function ListHeader({
   sort,
   pagination,
   display,
-  exportControl,
+  listAction,
   onSaveChanges,
   onSaveAsNew,
   onManage,
@@ -413,7 +396,7 @@ export function ListHeader({
   const controls = (
     <>
       <SortMenu sort={sort} />
-      {exportControl}
+      {listAction}
       <ViewOptionsMenu display={display} />
     </>
   );
@@ -432,7 +415,7 @@ export function ListHeader({
           const current = tab.id === views.appliedId;
           return (
             // Only the Applied View's tab may shrink, truncating its name,
-            // once nothing else is left to move (§8.2).
+            // once nothing else is left to move (§8.19).
             <Link
               key={tab.id}
               href={views.hrefFor(tab.id)}
@@ -491,8 +474,8 @@ export function ListHeader({
 
       {/* Exact widths of the controls that come and go, as static faces
           kept out of the accessibility tree and clipped so they never widen
-          the page (CORE-RESP-002 boundary). The live sort, Export, and View
-          options group measures itself. */}
+          the page (CORE-RESP-002 boundary). The live sort, list action, and
+          View options group measures itself. */}
       <div
         aria-hidden="true"
         className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"

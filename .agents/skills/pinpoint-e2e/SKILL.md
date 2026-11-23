@@ -53,7 +53,7 @@ See AGENTS.md §5 "Which tests to run" — canonical, don't duplicate here.
 
 PinPoint E2E tests run in parallel against a **shared database**.
 
-**YOU MUST PREVENT CROSSTALK.**
+Keep each test's data apart from every other worker's:
 
 1.  **Unique Data**: Never assume the DB is empty. Always create your own unique data.
 2.  **Unique Users**: Do not share `admin@test.com` across parallel tests if those tests modify global state (e.g., settings, notifications).
@@ -74,25 +74,25 @@ The three required PR E2E jobs each run a single project against their own datab
 
 ## Common Helpers
 
-- **Select Reset Assertions**: Use `assertSelectAtPlaceholder(trigger, placeholderText)` for placeholder state, or `assertSelectValue(trigger, expectedLabel)` for default value state (e.g. `await assertSelectValue(page.getByTestId("select-id"), "Minor")`).
 - **Accessibility scan**: `assertNoA11yViolations(page)` — see "Accessibility Checks (axe-core)" below.
 
 ## Accessibility Checks (axe-core)
 
-`assertNoA11yViolations(page, options?)` in `e2e/support/actions.ts` is the E2E suite's real accessibility mechanism: a genuine `@axe-core/playwright` scan. A passing `getByLabel()` only proves one accessible name resolved, whereas this helper catches whole classes an accessible-name check cannot — color contrast, ARIA misuse, and table semantics among them. It is the dynamic backstop to the CORE-A11Y-001..006 accessibility floor (`docs/NON_NEGOTIABLES.md`), not a replacement for it: the floor's static rules (skip link, `motion-reduce:` pairing, real `<button>`s) still need their own review — see `pinpoint-ui` references/accessibility.md.
+`assertNoA11yViolations(page, options?)` in `e2e/support/actions.ts` is the E2E suite's real accessibility mechanism: a genuine `@axe-core/playwright` scan. A passing `getByLabel()` only proves one accessible name resolved, whereas this helper catches whole classes an accessible-name check cannot — color contrast, ARIA misuse, and table semantics among them. It is the dynamic backstop to the CORE-A11Y-001..007 accessibility floor (`docs/NON_NEGOTIABLES.md`), not a replacement for it: the floor's static rules (skip link, `motion-reduce:` pairing, real `<button>`s) still need their own review — see `pinpoint-ui` references/accessibility.md.
 
 **Signature:** `assertNoA11yViolations(page: Page, options?: { ignore?: string[] }): Promise<void>`
 
 **What it does:**
 
 - Runs `new AxeBuilder({ page }).analyze()` against the page's **current rendered state**, so call it _after_ you have navigated and the surface you want to check has settled (await your usual load/visibility assertions first).
+- **Waits for a settled page first**: no element with `aria-busy="true"`, then every finite running CSS animation or transition finished (infinite spinners and pulses are skipped). Axe computes contrast through opacity, so a list dimmed by `ListView`'s pending-transition `opacity-60`, or a fade in flight, fails `color-contrast` for every muted label at once (PP-4bhb). The wait cannot see work that has not started yet: after typing into a debounced field such as `ListSearchField` (250 ms), wait for the result to land (the URL's `q=`, or the list's `aria-busy` clearing) before scanning.
 - **Fails the test only on `serious` and `critical` impact violations** — it throws with a per-violation report (rule id, help URL, offending selectors + HTML).
 - **`minor`/`moderate` (and un-ranked) violations do not fail** — they are logged to the console (up to 5, with up to 3 elements each). Watch for `[A11y Warning]` lines; they are real findings the gate deliberately does not block on.
 - Attaches the full scan to the Playwright report as `a11y-scan-results.json` when run inside a test.
 
 **Always-disabled rules** (hard-coded, with reasons in the source): `aria-prohibited-attr` (Tiptap `contenteditable` editor), `nested-interactive` (Radix/shadcn accordion + collapsible triggers), and `scrollable-region-focusable` (the skip-to-main `tabindex="-1"` content container). `options.ignore` adds further rule ids to disable (deduped with the defaults) — reach for it only to suppress a framework-level false positive you have confirmed, never to hide a real app violation.
 
-**When to call it:** when you are already writing a smoke spec for a page-level or redesigned-UI surface, add a scan on its primary rendered state — after the content is visible (an opened modal/menu counts). Don't spin up a new spec just to host a scan; fold it into the journey you're already testing (see the pre-flight checklist above). It is currently used across the `e2e/smoke/` specs as the bare `assertNoA11yViolations(page)` — no caller passes `ignore`. To re-derive real usage rather than trust a frozen count, `rg -c 'assertNoA11yViolations\(page' e2e/smoke/` (at this writing: 26 calls across 14 smoke specs), and `rg 'assertNoA11yViolations\(page, \{' e2e/` to find any `ignore` overrides.
+**When to call it:** when you are already writing a smoke spec for a page-level or redesigned-UI surface, add a scan on its primary rendered state — after the content is visible (an opened modal/menu counts). Don't spin up a new spec just to host a scan; fold it into the journey you're already testing (see the pre-flight checklist above). It is currently used across the `e2e/smoke/` specs as the bare `assertNoA11yViolations(page)` — no caller passes `ignore`. To re-derive real usage rather than trust a frozen count, `rg -c 'assertNoA11yViolations\(page' e2e/smoke/`, and `rg 'assertNoA11yViolations\(page, \{' e2e/` to find any `ignore` overrides.
 
 ## References
 

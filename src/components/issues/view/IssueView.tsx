@@ -9,21 +9,21 @@ import {
   setIssueViewDefaultAction,
   updateSavedIssueViewAction,
 } from "~/app/(app)/issues/saved-view-actions";
+import { exportIssuesAction } from "~/app/(app)/issues/export-action";
 import type { IssueExportScope } from "~/app/(app)/issues/export-schema";
-import { ExportButton } from "~/components/issues/ExportButton";
 import {
-  ListSearchField,
   ListTitleRow,
   ListView,
+  PageActions,
+  PageExportProvider,
+  RegisterPageExport,
+  usePageExportEntry,
+  type PageExport,
   type ListDisplayModel,
   type ListPaginationModel,
   type ListSortModel,
 } from "~/components/list-view";
 import { useListViewHost } from "~/components/list-view/use-list-view-host";
-import {
-  SummaryRowToggle,
-  useSummaryWidgetsController,
-} from "~/components/summary-widgets";
 import { Button } from "~/components/ui/button";
 import { EmptyState } from "~/components/ui/empty-state";
 import {
@@ -48,13 +48,8 @@ import {
   type IssueViewState,
 } from "~/lib/types";
 import { buildIssueFilters, presetFilters } from "./issue-filters";
-import {
-  ISSUE_SUMMARY_STORAGE_KEY,
-  ISSUE_SUMMARY_WIDGET_COUNT,
-  IssueSummaryRow,
-  IssueSummaryWidgets,
-} from "./IssueSummaryWidgets";
-import { IssueViewRows, type IssueRowsViewer } from "./IssueViewRows";
+import { IssueSummaryWidgets } from "./IssueSummaryWidgets";
+import { IssueViewRows } from "./IssueViewRows";
 
 const NOUN = { one: "issue", other: "issues" } as const;
 
@@ -73,20 +68,33 @@ function serialize(
   return serializeIssueViewState(state, view);
 }
 
+/**
+ * The Issues page's actions (issues-list 2.3): Export as its own button,
+ * since it would be ⋯'s only entry (list-views §3.7). Anonymous visitors,
+ * who cannot export, see none.
+ */
+function IssuesPageActions(): React.JSX.Element {
+  const exportEntry = usePageExportEntry();
+  return (
+    <PageActions
+      actions={[]}
+      menu={exportEntry ? [[exportEntry]] : []}
+      foldSteps={[]}
+    />
+  );
+}
+
 interface IssueViewProps {
   result: IssueViewResult;
   /** The views this Surface offers the viewer (list-views §10). */
   savedViews: IssueViewSavedViews;
   /**
    * The page title, when Issue View owns its page (`/issues`). A Collection
-   * or Tag tab's title row belongs to its own page, so the Summary Row
-   * toggle then sits on its own row (list-views §7.2).
+   * or Tag tab's title row belongs to its own page.
    */
   title?: string | undefined;
   /** The Collection or Tag tab this list is on, for Export (issues-list §5.4). */
   exportScope?: IssueExportScope | undefined;
-  /** Who is looking, for per-row edit permissions (issues-list §3.5). */
-  viewer: IssueRowsViewer;
 }
 
 /**
@@ -99,13 +107,8 @@ export function IssueView({
   savedViews,
   title,
   exportScope,
-  viewer,
 }: IssueViewProps): React.JSX.Element {
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const summaryController = useSummaryWidgetsController(
-    ISSUE_SUMMARY_STORAGE_KEY,
-    ISSUE_SUMMARY_WIDGET_COUNT
-  );
   const defaults = ISSUE_VIEW_PRESET;
   const { state, applied, edited, pagePresetName, isPending, update, views } =
     useListViewHost({
@@ -183,57 +186,55 @@ export function IssueView({
     },
   };
 
+  // Export runs the list's own query on the server, within the Surface's
+  // scope. The action requires sign-in, so anonymous visitors are not
+  // offered it.
+  const exportQuery = serializeIssueViewState({ ...state, page: 1 }).toString();
+  const { signedIn } = result;
+  const pageExport = React.useMemo<PageExport | null>(() => {
+    if (!signedIn) return null;
+    return {
+      exportCsv: () =>
+        exportIssuesAction({
+          query: exportQuery,
+          ...(exportScope !== undefined && { scope: exportScope }),
+        }),
+      emptyMessage: "No issues to export.",
+    };
+  }, [signedIn, exportQuery, exportScope]);
+
   const summary = (
     <IssueSummaryWidgets
       summary={result.summary}
       state={state}
       onStateChange={(next) => update(next, false)}
-      controller={title ? summaryController : undefined}
     />
   );
 
-  return (
+  const page = (
     <div ref={rootRef} className="scroll-mt-14">
+      <RegisterPageExport value={pageExport} />
       <ListView
         label="Issues list"
         noun={NOUN}
         titleRow={
           title ? (
-            <ListTitleRow
-              title={title}
-              summaryToggle={
-                <SummaryRowToggle controller={summaryController}>
-                  <IssueSummaryRow summary={result.summary} />
-                </SummaryRowToggle>
-              }
-            />
+            <ListTitleRow title={title} actions={<IssuesPageActions />} />
           ) : undefined
         }
         summary={summary}
-        search={
-          <ListSearchField
-            id="issue-view-search"
-            value={state.q}
-            onSearch={(q) => update({ q })}
-            label="Search issues"
-          />
-        }
+        search={{
+          id: "issue-view-search",
+          label: "Search issues",
+          value: state.q,
+          onSearch: (q) => update({ q }),
+        }}
         primaryFilters={filters.primary}
         secondaryFilters={filters.secondary}
         views={views}
         sort={sort}
         display={display}
         pagination={pagination}
-        // The export action requires sign-in, so anonymous visitors are not
-        // offered Export.
-        exportControl={
-          result.signedIn ? (
-            <ExportButton
-              query={serializeIssueViewState({ ...state, page: 1 }).toString()}
-              scope={exportScope}
-            />
-          ) : undefined
-        }
         busy={isPending}
         onResetAll={resetFilters}
         emptyState={({ discard, openPagePreset }) =>
@@ -257,13 +258,11 @@ export function IssueView({
           )
         }
       >
-        <IssueViewRows
-          rows={result.rows}
-          listKey={serializeIssueViewState(result.state).toString()}
-          users={result.people}
-          viewer={viewer}
-        />
+        <IssueViewRows rows={result.rows} />
       </ListView>
     </div>
   );
+  // Drawing its own title row, Issue View holds the page actions that
+  // offer its Export; on a Collection or Tag tab the page header does.
+  return title ? <PageExportProvider>{page}</PageExportProvider> : page;
 }

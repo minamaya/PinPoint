@@ -14,10 +14,15 @@
  * key typing surface on the Settings tab lands inside it once focused.
  *
  * This is a REACHABILITY / REFLOW proxy, not a pixel-exact keyboard-geometry
- * test — it catches gross regressions (a field trapped in a clipped or
- * non-scrollable container, a permanently-occluding sticky element) rather than
- * "the keyboard overlaps by N px". Same honest limit the RowEditSheet unit test
- * records (src/test/unit/components/machines/RowEditSheet.test.tsx).
+ * test — it catches gross regressions (a field stranded below the fold, or
+ * trapped in a clipped / non-scrollable container) rather than "the keyboard
+ * overlaps by N px". Two things it deliberately does NOT cover: `toBeInViewport`
+ * tests intersection with the viewport rectangle only, so a field occluded by a
+ * higher z-order sticky element is invisible to it; and Playwright cannot
+ * disable the browser's native focus-scroll, so the guard proves the field is
+ * reachable without isolating the app's `scrollIntoView`-on-focus handler from
+ * that native scroll. Same honest limit the RowEditSheet unit test records
+ * (src/test/unit/components/machines/RowEditSheet.test.tsx).
  *
  * Runs across every configured project — including "Mobile Safari" (WebKit),
  * the closest headless proxy for iOS Safari, which ignores `interactive-widget`
@@ -42,9 +47,42 @@ const machine = seededMachines.addamsFamily.initials;
 // keyboard produces, so it is a faithful stand-in for "keyboard is up".
 const KEYBOARD_OPEN = { width: 390, height: 430 } as const;
 
-/** After focusing a field, it must sit inside the (short) visible viewport. */
-async function expectReachable(locator: Locator): Promise<void> {
-  await expect(locator).toBeInViewport();
+/**
+ * Drive focus WITHOUT a preceding `click()`, then assert the focused control
+ * reached the short, keyboard-open viewport.
+ *
+ * Why `focus()` and not `click()`: `locator.click()` runs Playwright's
+ * actionability scrolling — it scrolls the target into view BEFORE clicking —
+ * so a following `toBeInViewport()` would pass even if the app never reflowed on
+ * focus, making the guard vacuous (PP-ppln). `locator.focus()` injects no such
+ * scroll, so the only things that can pull an off-screen field into view are the
+ * browser's native focus-scroll and the app's `scrollIntoView`-on-focus handlers
+ * (EditableCell / RowEditSheet / InlineEditableField) under
+ * `interactive-widget=resizes-content`.
+ *
+ * `whole: true` demands the entire control sit inside the viewport (`ratio: 1`),
+ * which is only safe for single-line controls. A tall editor can exceed the
+ * short viewport, and `scrollIntoView({ block: "nearest" })` then guarantees
+ * only that it intersects — so editors assert reachability at the default (>0)
+ * ratio. Neither form detects z-order occlusion (see the file header).
+ */
+async function expectReachableOnFocus(
+  locator: Locator,
+  { whole = false }: { whole?: boolean } = {}
+): Promise<void> {
+  // Wait for the control to render and settle before focusing. The TipTap
+  // editors mount via a client-only dynamic import; focusing a node still being
+  // replaced mid-mount would silently drop focus (`toBeFocused` re-polls
+  // `document.activeElement` but never re-fires `focus()`). `click()` used to
+  // imply this visibility wait — `focus()` does not, so make it explicit.
+  await expect(locator).toBeVisible();
+  await locator.focus();
+  await expect(locator).toBeFocused();
+  if (whole) {
+    await expect(locator).toBeInViewport({ ratio: 1 });
+  } else {
+    await expect(locator).toBeInViewport();
+  }
 }
 
 test.describe("Soft-keyboard reflow (PP-a0pl)", () => {
@@ -61,7 +99,8 @@ test.describe("Soft-keyboard reflow (PP-a0pl)", () => {
 
     // The two always-open TipTap callouts stack near the top of the tab; the
     // second one starts below the fold at keyboard-open height, so focusing it
-    // must scroll it into the short viewport (the exact reflow the fix enables).
+    // must scroll it into the short viewport (the reflow the fix is meant to
+    // enable — see the helper's note on what this can and cannot attribute).
     for (const testId of [
       "machine-settings-requests",
       "machine-settings-instructions",
@@ -73,9 +112,7 @@ test.describe("Soft-keyboard reflow (PP-a0pl)", () => {
       const summary = field.locator("summary");
       if ((await summary.count()) > 0) await summary.click();
       const editor = field.locator(".ProseMirror").first();
-      await editor.click();
-      await expect(editor).toBeFocused();
-      await expectReachable(editor);
+      await expectReachableOnFocus(editor);
     }
   });
 
@@ -126,9 +163,7 @@ test.describe("Soft-keyboard reflow (PP-a0pl)", () => {
       // Focus the sheet's first text input and confirm it isn't stranded behind
       // the (simulated) keyboard fold.
       const firstInput = sheet.getByRole("textbox").first();
-      await firstInput.click();
-      await expect(firstInput).toBeFocused();
-      await expectReachable(firstInput);
+      await expectReachableOnFocus(firstInput, { whole: true });
     });
   });
 });

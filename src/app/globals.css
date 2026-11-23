@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* Material Design 3 Color System - Tailwind v4 */
 @theme {
@@ -9,6 +10,7 @@
   /* Card & Surface - Slightly lighter charcoal */
   --color-card: #18151b;
   --color-card-foreground: #f8fafc;
+  --color-card-raised: #1c191f; /* a step above card: a List Header bar */
   --color-popover: #18151b;
   --color-popover-foreground: #f8fafc;
 
@@ -21,6 +23,7 @@
   --color-secondary-foreground: #042f2e; /* teal-950 */
   --color-muted: #27272a;
   --color-muted-foreground: #a1a1aa;
+  --color-foreground-secondary: #d4d4d8; /* zinc-300: secondary text, between foreground and muted-foreground */
 
   /* Accents & Status */
   --color-accent: #27272a;
@@ -163,11 +166,14 @@
   );
 }
 
-/* A List View's phone pager (list-views §7.8) is a 44px bar pinned directly
-   above the tab bar. It renders into the scroller's pager slot, so the
-   scroller reserves its height the same way (§12.5). */
-#main-content:has([data-list-pager]) {
-  --floating-action-clearance: 2.75rem;
+/* A List View's phone List Header (list-views §7.10) is a 48px bar pinned to
+   the top of the scroller; the app header sits above the scroller, outside
+   it. The scroller's top scroll padding covers the List Header, so a focused
+   row never lands beneath it (§12.5). */
+@media (width < 48rem) {
+  #main-content:has([data-list-phone-header]) {
+    scroll-padding-top: 49px;
+  }
 }
 
 @utility glow-primary {
@@ -339,4 +345,52 @@ body {
     Arial,
     sans-serif;
   line-height: 1.6;
+}
+
+/* Reduced motion (CORE-A11Y-002, PP-kqbk.4). One global rule instead of a
+   `motion-reduce:` variant on every utility: it covers shadcn/Radix primitives
+   and any future component automatically. It is unlayered, so it wins over
+   Tailwind's utilities layer without `!important`.
+   - Every transition and animation is turned off, so Radix fade/zoom/slide on
+     dialogs, popovers, menus and tooltips become instant. Radix Presence reads
+     `animation-name: none` and unmounts at once.
+   - Sheet and Drawer content keep their slide-in: the slide is what tells the
+     user where the surface came from. Their overlays still lose the fade.
+   - Spinners are dimmed, not frozen: a full-opacity icon that stops turning
+     reads as hung. Skeleton pulses hold a mid-pulse opacity instead of vanishing. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(
+    [data-slot="sheet-content"],
+    [data-slot="drawer-content"],
+    [data-vaul-drawer]
+  ),
+  *:not(
+      [data-slot="sheet-content"],
+      [data-slot="drawer-content"],
+      [data-vaul-drawer]
+    )::before,
+  *:not(
+      [data-slot="sheet-content"],
+      [data-slot="drawer-content"],
+      [data-vaul-drawer]
+    )::after {
+    transition: none;
+    animation: none;
+  }
+
+  /* vaul styles its own overlay fade with a more specific selector. */
+  [data-vaul-overlay] {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .animate-spin {
+    animation: none;
+    opacity: 0.5;
+  }
+
+  .animate-pulse {
+    animation: none;
+    opacity: 0.75;
+  }
 }

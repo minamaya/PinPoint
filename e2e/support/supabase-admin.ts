@@ -130,30 +130,6 @@ export async function seedSettingsSet(
 }
 
 /**
- * Create an invited user directly in the database
- */
-export async function createInvitedUser(
-  email: string,
-  firstName = "Test",
-  lastName = "Invite",
-  role: "guest" | "member" | "admin" = "member"
-) {
-  const { data, error } = await supabaseAdmin
-    .from("invited_users")
-    .insert({
-      email,
-      first_name: firstName,
-      last_name: lastName,
-      role,
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-/**
  * Update a user's role directly in the database
  */
 export async function updateUserRole(
@@ -172,34 +148,6 @@ export async function updateUserRole(
  */
 export async function deleteTestUser(userId: string) {
   const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
-  if (error) throw error;
-}
-
-/**
- * Delete a test issue by machine initials and issue number
- */
-export async function deleteTestIssueByNumber(
-  machineInitials: string,
-  issueNumber: number
-) {
-  // First, get the machine ID
-  const { data: machine } = await supabaseAdmin
-    .from("machines")
-    .select("id")
-    .eq("initials", machineInitials)
-    .single();
-
-  if (!machine) {
-    // Machine might not exist (already deleted?), so ignore
-    return;
-  }
-
-  const { error } = await supabaseAdmin
-    .from("issues")
-    .delete()
-    .eq("machine_initials", machineInitials)
-    .eq("issue_number", issueNumber);
-
   if (error) throw error;
 }
 

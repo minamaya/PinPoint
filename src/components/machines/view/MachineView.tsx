@@ -9,21 +9,21 @@ import {
   setMachineViewDefaultAction,
   updateSavedMachineViewAction,
 } from "~/app/(app)/m/saved-view-actions";
+import { exportMachinesAction } from "~/app/(app)/m/export-action";
 import {
-  ListSearchField,
   ListTitleRow,
   ListView,
+  PageExportProvider,
+  RegisterPageExport,
   type ListDisplayModel,
+  type PageExport,
   type ListPaginationModel,
   type ListSortModel,
 } from "~/components/list-view";
 import { useListViewHost } from "~/components/list-view/use-list-view-host";
-import {
-  SummaryRowToggle,
-  useSummaryWidgetsController,
-} from "~/components/summary-widgets";
 import { Button } from "~/components/ui/button";
 import { EmptyState } from "~/components/ui/empty-state";
+import type { MachineExportScope } from "~/app/(app)/m/export-schema";
 import { isListPageSize } from "~/lib/list-view/url-state";
 import {
   getMachineViewPreset,
@@ -34,7 +34,6 @@ import {
   applyMachineBuiltInView,
   hasMachineViewConfiguration,
   isMachineViewField,
-  nextMachineViewSort,
   serializeMachineViewState,
   toMachineViewSavedState,
 } from "~/lib/machines/view/state";
@@ -47,24 +46,15 @@ import {
   type MachineViewSavedViews,
   type MachineViewState,
 } from "~/lib/types";
-import {
-  MACHINE_SUMMARY_STORAGE_KEY,
-  MACHINE_SUMMARY_WIDGET_COUNT,
-  MachineSummaryRow,
-  MachineSummaryWidgets,
-} from "./MachineSummaryWidgets";
-import { MachineViewCompactList } from "./MachineViewCompactList";
-import { MachineViewTable } from "./MachineViewTable";
+import { MachineSummaryWidgets } from "./MachineSummaryWidgets";
 import type {
   MachineRowAction,
   MachineSelectionHandler,
-} from "./field-catalog";
+} from "./MachineListEntry";
+import { MachineViewRows } from "./MachineViewRows";
 import { buildMachineFilters } from "./machine-filters";
 
-const MOBILE_MODE_STORAGE_KEY = "pinpoint:machine-view:mobile-mode";
 const NOUN = { one: "machine", other: "machines" } as const;
-
-type MobileMode = "compact" | "table";
 
 interface MachineViewProps {
   result: MachineViewResult;
@@ -73,11 +63,14 @@ interface MachineViewProps {
   savedViews: MachineViewSavedViews;
   /**
    * The page title row, when Machine View owns its page (the Machines page).
-   * A Collection or Tag tab's title row belongs to its own page, so the
-   * Summary Row toggle then sits on its own row (list-views §7.2).
+   * A Collection or Tag tab's title row belongs to its own page.
    */
   title?: string | undefined;
-  /** The page actions beside the title (list-views §3.2). */
+  /**
+   * The page actions beside the title (list-views §3.2). They find the
+   * list's Export through the PageExportProvider Machine View wraps its
+   * page in when it draws the title row.
+   */
   actions?: React.ReactNode;
   onMachineSelect?: MachineSelectionHandler | undefined;
   /**
@@ -87,6 +80,12 @@ interface MachineViewProps {
   rowAction?: MachineRowAction | undefined;
   /** An action in the List Header that applies to the whole result. */
   listAction?: React.ReactNode;
+  /**
+   * The Surface to export from (machine-views §3.15). Export is a page
+   * action in ⋯ (list-views §5.5), offered to signed-in viewers only; a
+   * Surface without page actions leaves this out.
+   */
+  exportScope?: MachineExportScope | undefined;
   /** Whether the Summary Widgets show. A picker Surface leaves them out. */
   showSummary?: boolean;
   /** Told when a new result starts and finishes loading. */
@@ -128,26 +127,15 @@ export function MachineView({
   onMachineSelect,
   rowAction,
   listAction,
+  exportScope,
   showSummary = true,
   onBusyChange,
 }: MachineViewProps): React.JSX.Element {
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const [mobileMode, setMobileMode] = React.useState<MobileMode>("compact");
-  const summaryController = useSummaryWidgetsController(
-    MACHINE_SUMMARY_STORAGE_KEY,
-    MACHINE_SUMMARY_WIDGET_COUNT
-  );
   const defaults = getMachineViewPreset(preset).defaultState;
   const serialize = React.useCallback(
     (next: MachineViewState, view: string | null): URLSearchParams =>
       serializeMachineViewState(next, preset, view),
-    [preset]
-  );
-  const applyBuiltIn = React.useCallback(
-    (
-      view: { id: string; state: MachineViewSavedState },
-      current: MachineViewSavedState
-    ): MachineViewSavedState => applyMachineBuiltInView(preset, view, current),
     [preset]
   );
   const { state, applied, edited, pagePresetName, isPending, update, views } =
@@ -160,29 +148,11 @@ export function MachineView({
       hasConfiguration: hasMachineViewConfiguration,
       toSaved: toMachineViewSavedState,
       withPage,
-      applyBuiltIn,
+      applyBuiltIn: applyMachineBuiltInView,
       defaultPageName: "Machines",
       actions: MACHINE_VIEW_ACTIONS,
     });
   React.useEffect(() => onBusyChange?.(isPending), [isPending, onBusyChange]);
-
-  React.useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY);
-      if (stored === "compact" || stored === "table") setMobileMode(stored);
-    } catch {
-      // Storage can be unavailable; Compact list is the default.
-    }
-  }, []);
-
-  function changeMobileMode(mode: MobileMode): void {
-    setMobileMode(mode);
-    try {
-      window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, mode);
-    } catch {
-      // Without storage the choice lasts for this page view.
-    }
-  }
 
   const filters = buildMachineFilters({
     state,
@@ -225,39 +195,12 @@ export function MachineView({
     },
   };
 
+  // View options holds page size only.
   const display: ListDisplayModel = {
     pageSize: state.pageSize,
     pageSizes: LIST_PAGE_SIZES,
     onPageSizeChange: (pageSize) => {
       if (isListPageSize(pageSize)) update({ pageSize });
-    },
-    fields: {
-      options: result.permittedFields
-        .filter((field) => field !== "machine")
-        .map((field) => ({
-          value: field,
-          label: MACHINE_VIEW_FIELDS[field].label,
-        })),
-      selected: state.columns.filter((field) => field !== "machine"),
-      // Displayed fields keep the page (§4.8).
-      onToggle: (value, checked) => {
-        if (!isMachineViewField(value)) return;
-        const columns = checked
-          ? [...new Set([...state.columns, value])]
-          : state.columns.filter((column) => column !== value);
-        update({ columns }, false);
-      },
-    },
-    layout: {
-      label: "Layout",
-      options: [
-        { value: "compact", label: "Compact list" },
-        { value: "table", label: "Table" },
-      ],
-      value: mobileMode,
-      onChange: (value) => {
-        if (value === "compact" || value === "table") changeMobileMode(value);
-      },
     },
   };
 
@@ -272,48 +215,53 @@ export function MachineView({
     },
   };
 
+  // Export runs the list's own query on the server, within the Surface's
+  // scope. The action requires sign-in, so anonymous visitors are not
+  // offered it.
+  const exportQuery = serializeMachineViewState(
+    { ...state, page: 1 },
+    preset
+  ).toString();
+  const { signedIn } = result;
+  const pageExport = React.useMemo<PageExport | null>(() => {
+    if (!signedIn || exportScope === undefined) return null;
+    return {
+      exportCsv: () =>
+        exportMachinesAction({ query: exportQuery, scope: exportScope }),
+      emptyMessage: "No machines to export.",
+    };
+  }, [signedIn, exportQuery, exportScope]);
+
   const summary = (
     <MachineSummaryWidgets
       summary={result.summary}
       state={state}
       onStateChange={(next) => update(next, false)}
-      controller={title ? summaryController : undefined}
     />
   );
 
-  return (
+  const page = (
     <div ref={rootRef} className="scroll-mt-14">
+      <RegisterPageExport value={pageExport} />
       <ListView
         label="Machines list"
         noun={NOUN}
         titleRow={
-          title ? (
-            <ListTitleRow
-              title={title}
-              actions={actions}
-              summaryToggle={
-                <SummaryRowToggle controller={summaryController}>
-                  <MachineSummaryRow summary={result.summary} compact />
-                </SummaryRowToggle>
-              }
-            />
-          ) : undefined
+          title ? <ListTitleRow title={title} actions={actions} /> : undefined
         }
         summary={showSummary ? summary : undefined}
-        search={
-          <ListSearchField
-            id="machine-view-search"
-            value={state.q}
-            onSearch={(q) => update({ q })}
-            label="Search machines"
-          />
-        }
+        search={{
+          id: "machine-view-search",
+          label: "Search machines",
+          value: state.q,
+          onSearch: (q) => update({ q }),
+        }}
         primaryFilters={filters}
         views={views}
         sort={sort}
         display={display}
         pagination={pagination}
-        exportControl={listAction}
+        listAction={listAction}
         busy={isPending}
         onResetAll={resetFilters}
         emptyState={({ discard, openPagePreset }) =>
@@ -340,25 +288,16 @@ export function MachineView({
           )
         }
       >
-        {mobileMode === "compact" ? (
-          <MachineViewCompactList
-            rows={result.rows}
-            onMachineSelect={onMachineSelect}
-            rowAction={rowAction}
-          />
-        ) : null}
-        <MachineViewTable
+        <MachineViewRows
           rows={result.rows}
-          state={state}
-          mobileMode={mobileMode}
-          onSort={(field) => {
-            const nextSort = nextMachineViewSort(state, field, preset);
-            update(nextSort);
-          }}
+          age={state.sort === "dateAdded" ? "added" : "lastServiced"}
           onMachineSelect={onMachineSelect}
           rowAction={rowAction}
         />
       </ListView>
     </div>
   );
+  // Drawing its own title row, Machine View holds the page actions that
+  // offer its Export; on a Collection or Tag tab the page header does.
+  return title ? <PageExportProvider>{page}</PageExportProvider> : page;
 }

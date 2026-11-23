@@ -46,7 +46,7 @@ Use this skill when:
 7. **TooltipProvider is hoisted**: `<TooltipProvider>` is mounted once in `ClientProviders` — don't add nested providers. See `pinpoint-design-bible` §12.
 8. **Baseline Widely available is the floor** (CORE-UI-005): use `<dialog>`, container queries, `:has()`, `:user-invalid`, `inert`, `aspect-ratio`, native form validation directly — no polyfills. Newly-available features (Popover API, View Transitions, anchor positioning) require a per-feature opt-in in `pinpoint-design-bible` §19; `fetchpriority` and `text-wrap: balance` are the two that have one. Never trust a cached Baseline date — look it up live (`references/browser-support.md`).
 9. **Form correctness** (CORE-FORM-001..006): right `type`, correct `autocomplete` token, `:user-invalid` styling, `aria-invalid` blur sync, visible required-field indicator, `enterkeyhint` on sequential mobile fields. Conventions are owned by `pinpoint-design-bible` §20; the code is in `references/form-correctness.md`.
-10. **Accessibility floor** (CORE-A11Y-001..006): skip link, `motion-reduce:` paired with animations, semantic `<table>` markup, real `<button>` (no `<div role="button">`), `title` is not a tooltip, `inert` background on modals. See **Accessibility** in `references/accessibility.md`.
+10. **Accessibility floor** (CORE-A11Y-001..007): skip link, one global `prefers-reduced-motion` rule in `globals.css`, semantic `<table>` markup, real `<button>` (no `<div role="button">`), `title` is not a tooltip, `inert` background on modals, accessible names that start with the visible text. See **Accessibility** in `references/accessibility.md`.
 11. **Early UI review gate (pre-E2E)** (PP-4c4b): Present rendered screenshots at the three review viewports (desktop, large mobile 430px, small mobile 320px — `pinpoint-design-bible` §4 Review Viewports) to Tim for visual approval before authoring or updating Playwright/E2E specs or running preflight. Fast unit tests (`pnpm run test`) run early; heavy E2E suites wait until layout and visual hierarchy are approved.
 
 ## Reference Files
@@ -61,7 +61,7 @@ Everything below lives one hop away in `references/`. Load the file you need.
 | `references/enums-and-props.md`    | Config-Driven Enums, discriminated-union props for multi-type components               |
 | `references/form-correctness.md`   | Form-correctness code (types, autocomplete, `:user-invalid`), native HTML primitives   |
 | `references/styling-and-shadcn.md` | Tailwind CSS v4 styling, shadcn/ui component patterns, Button variants/sizes/`loading` |
-| `references/accessibility.md`      | Accessibility floor (CORE-A11Y-001..006), Animation & Motion                           |
+| `references/accessibility.md`      | Accessibility floor (CORE-A11Y-001..007), Animation & Motion                           |
 
 ## Color System
 
@@ -80,6 +80,16 @@ Server Components are the default (CORE-ARCH-001). `"use client"` marks an **int
 The consequence that bites most often is that `"use client"` is viral downward — everything a client file imports is bundled for the client too. So don't co-locate a data query, a Node-only import, or `~/lib/logger` (which pulls in `fs`) in a file that is or will become a client component.
 
 Canonical page composition and the layout wrappers are in `references/key-files.md` § Layout.
+
+### List View page actions
+
+Reuse these (`src/components/list-view/`, `src/lib/list-view/overflow.ts`; spec `docs/feature-specs/list-views.md` §3.7–§3.10):
+
+- `PageActions` renders a page's actions; `planPageActions` decides their faces in order: labeled, then icons, then folding into ⋯ along the page's `foldSteps`.
+- `PageExportProvider`, `RegisterPageExport`, and `usePageExportEntry` let a list hand its Export up to the page header's ⋯.
+- `useReturnFocus` returns focus to the page action or ⋯ that opened a dialog from state: wrap its `onSelect` in `opens`, and pass `onCloseAutoFocus` to the dialog's content.
+- `FIT_TOLERANCE` is the 16px every fit check keeps spare; a new fit check uses it rather than its own margin.
+- `groupSettingsSheetsHref` (`src/lib/collections/settings-sheets-href.ts`) builds a Machine Group's Print settings sheets link with its machines On the Floor.
 
 ## Server Action Forms
 
@@ -125,7 +135,7 @@ A controlled native `<select value="X">` whose `value` does not match any `<opti
 
 This combines disastrously with localStorage-backed drafts: if the saved ID references a record that has since been deleted (or that belongs to a different tenant after a session change), restoration silently puts the form into a state where the dropdown shows — and submits — the alphabetically-first record. The Zod `uuid()` schema and any "does this id exist?" server checks both pass, because the submitted UUID _is_ a valid record. The user never sees an error, and an entity is created against the wrong target.
 
-**Mitigation** (apply when restoring an option-ID from localStorage or any other side channel): validate the restored ID against the live options list before writing it into state, and add a defense-in-depth effect that clears the selection whenever the current value is absent from the list. Regression coverage lives at `src/app/(app)/report/select-fallback.test.tsx` (JSDOM unit test pinning the HTML behavior) and `e2e/full/report-stale-machine.spec.ts` (seeds a stale draft, asserts an empty placeholder and a refusal to submit).
+**Mitigation** (apply when restoring an option-ID from localStorage or any other side channel): validate the restored ID against the live options list before writing it into state, and add a defense-in-depth effect that clears the selection whenever the current value is absent from the list. Regression coverage lives at `src/app/(app)/report/select-fallback.test.tsx` (JSDOM unit test pinning the HTML behavior) and `src/app/(app)/report/unified-report-form.test.tsx` (a stale draft machine id disables submit and clears the hidden input).
 
 **Better long term**: replace native `<select>` with the project's shadcn `Select` for any field whose options come from a list that can change between sessions — the command-palette pattern surfaces "no match" instead of silently picking the first option.
 
@@ -163,7 +173,7 @@ Native reset clears the form's DOM state; explicit `setState` clears React's vie
 
 **Edge cases**: preserve URL-derived defaults across reset (`?machine=MM` → reset to `defaultMachineId ?? ""`, not `""`); clear localStorage drafts in the same effect and make the save-draft effect short-circuit on success so it doesn't race the reset; for a child that owns its own selection state (like `OwnerSelect`), bump a `key` to remount it.
 
-**E2E coverage**: every CREATE form needs at least one assertion that, after a successful submit, every field reads back empty/placeholder. For forms that navigate away, submit → wait for redirect → navigate back → assert empty. See `e2e/full/form-resets.spec.ts`.
+**Test coverage**: every CREATE form needs at least one test that, after a successful submit, every field reads back empty/placeholder. Form-state lifecycle is bug class C, so its home is an RTL unit test beside the form (`pinpoint-testing` § Bug Classes): see `src/app/(app)/m/new/create-machine-form.test.tsx`, `src/app/(app)/report/unified-report-form.test.tsx`, and `src/components/users/InviteUserDialog.test.tsx`.
 
 ### Unsaved changes navigation guard (PP-kny4)
 
@@ -251,6 +261,13 @@ Three guardrails enforce this, so a violation fails loudly instead of silently s
 
 Data access lives in **colocated** `_data.ts` / `queries.ts` files next to the route that uses it, wrapped in `cache()` from React so a layout and its page don't double-hit the DB in one render pass. There is **no** `src/server/data-access/` directory — don't create one.
 
+No component imports `~/server/db` or its subpaths: not a page, a layout, a server component a route colocates, or anything in `src/components` (CORE-ARCH-018). An oxlint `no-restricted-imports` override in `.oxlintrc.json` fails `src/app/**/*.tsx` and `src/components/**` on that import, the handle and the schema alike. Route `_data.ts`, `actions.ts` and `route.ts` files are `.ts`, so they keep the database. Its `excludeFiles` list is the only opt-out besides test files: it names files, never directories, and only shrinks (PP-az4d.34 empties it). A `src/lib` read whose database handle is a required first argument gets a one-line binding in the route's `_data.ts`, so the page never holds `db`. A read whose handle defaults to `db` is called with `undefined` in that position, as the Collection reads already are. Reuse the loaders that already exist before writing one:
+
+- `getMachineForLayout(initials)` (`m/[initials]/_data.ts`) is the machine for every `/m/[initials]/*` tab. A tab reads the machine from it, never with its own query.
+- `getSameTitleMachines(pinballmapMachineId)` (`~/lib/pinballmap/same-title`) returns the cabinets sharing a Pinball Map title, used by the Info and Manage tabs and the MCP `get_machine` block.
+- `getSettingsTags()` (`m/settings-sheets/_data.ts`) returns every settings tag, used by Print settings sheets, its print page and a machine's Settings tab.
+- `getPickerMachines(collectionId | null)` (`c/[id]/_data.ts`) returns the Collection machine picker's choices. Pass null for a Collection not yet created.
+
 The current viewer is the one shared exception: pages, layouts and server components read it from `getViewer()` (`~/lib/auth/viewer`), a request-scoped `cache()` that runs `auth.getUser()` and the profile read (id, role, name, report modes) once per render. It returns nulls for a signed-out viewer or a missing profile row; the caller keeps its own redirect, 404 or Forbidden. Server Actions keep their own auth check (`createProtectedAction`).
 
 Revalidate with `revalidatePath` — that's the convention throughout. `revalidateTag` has **zero** usages in `src/`; if you think you need it, you're introducing a second caching convention.
@@ -289,9 +306,10 @@ Before committing UI code:
 - [ ] Input fields carry the correct `type` and `autocomplete` token (CORE-FORM-001, 002)
 - [ ] Multi-field forms set `enterkeyhint` per field (CORE-FORM-006)
 - [ ] Required fields have a visible `*` indicator (CORE-FORM-005)
-- [ ] Every `animate-*` or non-essential `transition-*` pairs with `motion-reduce:` (CORE-A11Y-002)
+- [ ] Motion that must survive reduced motion (essential, like a Sheet slide) is excluded in the global block in `globals.css`; nothing else needs a `motion-reduce:` variant (CORE-A11Y-002)
 - [ ] No `<div role="button">` introduced (CORE-A11Y-004)
 - [ ] No `title="..."` as a tooltip (CORE-A11Y-005)
+- [ ] A control that shows text has an accessible name starting with that text (CORE-A11Y-007)
 - [ ] If you added a sortable table: `<th scope="col">`, `aria-sort`, accessible name (CORE-A11Y-003)
 - [ ] If you added an image with `priority`: it is the LCP candidate for the page's dominant viewport, and `sizes` is set (CORE-PERF-003)
 - [ ] If you added an animation, dialog, or layout pattern: searched `modern-web-guidance` for the Widely-available primitive first (CORE-UI-006)

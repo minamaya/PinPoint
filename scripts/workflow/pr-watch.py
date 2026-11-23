@@ -1,41 +1,39 @@
 #!/usr/bin/env python3
-"""Wait on one PR head's CI Gate or review, or report review-readiness.
+"""Wait on one PR head: its CI Gate and Claude Review, or its merge-queue entry.
 
-Watch — run it as a background command; it blocks until a verdict:
+Run it as a background command; it blocks until a verdict:
 
   pr-watch.py <PR> --phase ci --expected-head <SHA>
-  pr-watch.py <PR> --phase review --expected-head <SHA>
+  pr-watch.py <PR> --phase queue --expected-head <SHA>
 
-  Progress goes to stderr, one line per state change. stdout carries exactly
-  one terminal JSON verdict. The watch is pinned to the expected head: if the
-  PR head moves it ends `stale` instead of following the new head, and a
-  DIRTY/CONFLICTING merge state ends it `conflicting`.
+Progress goes to stderr, one line per state change. stdout carries exactly one
+terminal JSON verdict. The watch is pinned to the expected head: if the PR head
+moves it ends `stale` instead of following the new head, and a DIRTY/CONFLICTING
+merge state on an open PR ends it `conflicting`.
 
-  ci      passed | failed | stale | conflicting | timed_out | undetermined.
-          A failed gate saves the failed-step log to
-          tmp/gh-monitor/failure-<run>.md and returns it as `failure_artifact`.
-  review  passed (approved, 0 unresolved threads) | action_required (approved
-          with unresolved threads, or changes requested) | stale |
-          conflicting | timed_out | undetermined. `not reviewed` and
-          `stale review` keep waiting.
+`ci` outcomes: passed | failed | stale | conflicting | timed_out | undetermined.
+`passed` means CI Gate passed and, on a PR that is not a draft, the `Claude
+Review` check passed too (a draft skips Claude Review, so only CI Gate is
+awaited). Claude Review's findings are review threads the owning agent still
+adjudicates. A failed check saves the failed-step log to
+tmp/gh-monitor/failure-<run>.md and returns it as `failure_artifact`. `UI
+Approval` is not awaited: it can wait on Tim indefinitely.
 
-Readiness snapshot:
-
-  pr-watch.py <PR> --check-ready
-
-  Mergeable + CI Gate green + review threads resolved. The review label is
-  reported but is NOT part of the verdict: this answers "is this PR worth
-  Tim's review right now?", so requiring the review to have already happened
-  would be circular. merge-pr.sh's `reviewed` gate refuses to merge an
-  unreviewed head.
+`queue` outcomes: merged | removed | not_queued | stale | conflicting |
+timed_out | undetermined. Run it after `gh pr merge` put the PR in the merge
+queue, or armed auto-merge, which enqueues the PR once its checks pass.
+`merged` carries the merge commit. `removed` means the PR left the queue
+without merging; the failing `merge_group` run for the PR's queue branch, when
+there is one, supplies `detail_url`, `failing_jobs`, and the same failure
+artifact the ci phase writes.
 
 A cancelled CI Gate is superseded, not failed: pushing a second commit cancels
 the in-flight run via concurrency groups. (PP-r63o) A gh API error (rate-limit
 403, network drop, auth failure) is not a failure either — it means we could
 not find out. (PP-qkl8)
 
-Exit 0: passed, or (--check-ready) ready.
-Exit 1: failed, stale, conflicting, action_required, or (--check-ready) not ready.
+Exit 0: passed or merged.
+Exit 1: failed, removed, not_queued, stale, or conflicting.
 Exit 2: timed_out or undetermined — neither a pass nor a failure. Usage errors
         also exit 2, with nothing on stdout.
 """
@@ -49,7 +47,7 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,27 +55,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from gh_cli import run_gh  # noqa: E402
 
-REPO_OWNER = "timothyfroehlich"
+REPO_OWNER = "minamaya"
 REPO_NAME = "PinPoint"
-READY_LABEL = "ready-for-review"
 CI_GATE_NAME = "CI Gate"
-
-# --- Review state ---------------------------------------------------------------
-# Read from scripts/workflow/_pr-gates.sh (`_review_summary`), never mirrored here.
-# This watcher only reports the label; merge-pr.sh is the enforcement point.
-GATES_SCRIPT = Path(__file__).resolve().parent / "_pr-gates.sh"
-REVIEW_LABELS = ("approved", "changes requested", "stale review", "not reviewed")
-REVIEW_HINT = (
-    "after current-head CI succeeds, run /code-review at the level "
-    "claude-review-level.sh prints, fix or decline every finding, re-review each new "
-    "head until a round is clean, then run record-claude-review.sh {pr}; merging "
-    "without a review takes Tim's explicit --force"
-)
-REVIEW_REQUESTED_HINT = (
-    "the manual Codex review for this head was already requested; wait for exact-head "
-    "evidence and do not request the same head again; a new head requires replacement "
-    "CI and one new request"
-)
+CLAUDE_REVIEW_NAME = "Claude Review"
 
 LOG_DIR = "tmp/gh-monitor"
 WATCH_POLL_SECONDS = 30
@@ -95,10 +76,12 @@ CONFLICT_STATES = ("DIRTY", "CONFLICTING")
 EXIT_UNDETERMINED = 2
 EXIT_CODES = {
     "passed": 0,
+    "merged": 0,
     "failed": 1,
+    "removed": 1,
+    "not_queued": 1,
     "stale": 1,
     "conflicting": 1,
-    "action_required": 1,
     "timed_out": EXIT_UNDETERMINED,
     "undetermined": EXIT_UNDETERMINED,
 }
@@ -157,234 +140,20 @@ def _is_failing(conclusion: str | None) -> bool:
     return not _is_passing(conclusion) and not _is_superseded(conclusion)
 
 
-# ---------------------------------------------------------------------------
-# Readiness audit
-# ---------------------------------------------------------------------------
-
-
-def get_review_threads(pr: int) -> list[dict]:
-    """Fetch every review thread for a PR, paginating via GraphQL cursor.
-
-    The `after:` argument is omitted on the first page because GraphQL rejects
-    empty strings for that input. Subsequent pages inline the cursor literally.
-    """
-    threads: list[dict] = []
-    cursor: str | None = None
-    while True:
-        after_arg = f', after: "{cursor}"' if cursor else ""
-        query = f"""
-        query {{
-          repository(owner: "{REPO_OWNER}", name: "{REPO_NAME}") {{
-            pullRequest(number: {pr}) {{
-              reviewThreads(first: 100{after_arg}) {{
-                pageInfo {{ hasNextPage endCursor }}
-                nodes {{ isResolved }}
-              }}
-            }}
-          }}
-        }}"""
-        data = json.loads(gh("api", "graphql", "-f", f"query={query}"))
-        rt = data["data"]["repository"]["pullRequest"]["reviewThreads"]
-        threads.extend(rt["nodes"])
-        if not rt["pageInfo"]["hasNextPage"]:
-            return threads
-        cursor = rt["pageInfo"]["endCursor"]
-
-
-def review_summary(pr: int, *, timeout: float | None = None) -> dict:
-    """The review summary for a PR, computed by the bash gate.
-
-    `_review_summary` in scripts/workflow/_pr-gates.sh is the single implementation
-    of review evidence — two checkers (Claude review record, Codex evidence) and a
-    four-word label. This watcher and the dashboard read its JSON
-    instead of mirroring the logic, so no Python copy can drift from the merge gate.
-
-    `timeout` bounds the gate's `gh` calls; the review-phase watcher passes what is
-    left of its own deadline so a hung request cannot outlive the watch.
-    """
-    try:
-        result = subprocess.run(
-            [
-                "bash",
-                "-c",
-                'set -euo pipefail; source "$1"; _review_summary "$2"',
-                "_",
-                str(GATES_SCRIPT),
-                str(pr),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"_review_summary timed out after {timeout:.0f}s") from exc
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"_review_summary failed (exit {result.returncode}): {result.stderr.strip()}"
-        )
-    summary = json.loads(result.stdout)
-    if not isinstance(summary, dict) or "label" not in summary:
-        raise RuntimeError("_review_summary returned malformed JSON")
-    return summary
-
-
-def _checker_lines(summary: dict) -> str:
-    head = str(summary.get("head") or "")[:7]
-    names = {"claude": "Claude review", "codex": "Codex"}
-    parts: list[str] = []
-    for key, name in names.items():
-        record = (summary.get("checkers") or {}).get(key) or {}
-        verdict = record.get("verdict")
-        if verdict == "covers":
-            parts.append(f"{name}: covers head {head}")
-        elif verdict == "changes_requested":
-            parts.append(f"{name}: requested changes on head {head}")
-        elif verdict == "stale":
-            parts.append(
-                f"{name}: newest evidence names {str(record.get('sha') or '')[:7]}, head is {head}"
-            )
-        else:
-            parts.append(f"{name}: none")
-    return "; ".join(parts)
-
-
-def review_state(pr: int) -> tuple[str, str]:
-    """Return (label, detail) for the current head.
-
-    Labels are the gate's four words: approved, changes requested, stale review,
-    not reviewed.
-    """
-    summary = review_summary(pr)
-    label = str(summary.get("label") or "not reviewed")
-    head = str(summary.get("head") or "")[:7]
-    if label == "approved":
-        coverage = summary.get("coverage") or {}
-        who = {
-            "claude": "Claude review record",
-            "codex": "Codex evidence",
-        }.get(str(coverage.get("checker")), "review")
-        return label, f"{who} covers head {head}"
-    lines = _checker_lines(summary)
-    if summary.get("codex_request_pending"):
-        return label, f"{lines}; {REVIEW_REQUESTED_HINT}"
-    return label, f"{lines}; {REVIEW_HINT.format(pr=pr)}"
-
-
-def _unresolved_threads(threads: list[dict]) -> int:
-    """Count unresolved review threads, from any author.
-
-    Author-agnostic since PP-4ric: the old Copilot-login filter would match
-    nothing now that Copilot is retired, silently turning every thread check
-    into a pass. Threads come from Tim or another agent, and AGENTS.md §5
-    requires each to be fixed or declined-and-resolved either way.
-    """
-    return sum(1 for t in threads if not t["isResolved"])
-
-
-def _select_ci_gate(rollup: list[dict]) -> dict | None:
+def _select_ci_gate(rollup: list[dict], name: str = CI_GATE_NAME) -> dict | None:
     """Select the authoritative CI Gate from one current-head rollup.
 
     GitHub scopes statusCheckRollup to the PR's current head commit, but that
-    commit can still carry MORE THAN ONE `CI Gate` entry — a re-run, or a run
+    commit can still carry MORE THAN ONE entry for a check — a re-run, or a run
     cancelled by a concurrency group, leaves its superseded check behind next to
     the live one. Select the entry with the most recent start time. Completion
     is only a fallback because an older run can finish cancelling after its
     replacement has already completed. (PP-r63o)
     """
-    gates = [c for c in rollup if c.get("name") == CI_GATE_NAME]
+    gates = [c for c in rollup if c.get("name") == name]
     if not gates:
         return None
     return max(gates, key=lambda c: c.get("startedAt") or c.get("completedAt") or "")
-
-
-def _ci_gate_state(pr: int) -> tuple[str, str]:
-    """Return (status, conclusion) for the CI Gate check, or ("", "") if absent."""
-    data = json.loads(gh("pr", "view", str(pr), "--json", "statusCheckRollup"))
-    gate = _select_ci_gate(data.get("statusCheckRollup") or [])
-    if gate is None:
-        return "", ""
-    return gate.get("status", ""), gate.get("conclusion", "")
-
-
-def _fetch_merge_state(pr: int) -> tuple[str, set[str]]:
-    """Fetch (mergeStateStatus, labels). Retries once if state is UNKNOWN.
-
-    GitHub computes merge state lazily — the first probe often returns UNKNOWN
-    and the same query a moment later returns the real value.
-    """
-    for attempt in range(2):
-        data = json.loads(
-            gh("pr", "view", str(pr), "--json", "mergeStateStatus,labels")
-        )
-        merge_state = data["mergeStateStatus"]
-        labels = {lbl["name"] for lbl in data["labels"]}
-        if merge_state != "UNKNOWN" or attempt == 1:
-            return merge_state, labels
-        time.sleep(2)
-    return "UNKNOWN", set()
-
-
-def run_audit(pr: int) -> bool:
-    """Print a pass/fail report for review-readiness. Return True if all pass."""
-    merge_state, labels = _fetch_merge_state(pr)
-    ci_status, ci_conclusion = _ci_gate_state(pr)
-    unresolved = _unresolved_threads(get_review_threads(pr))
-
-    bad_merge = merge_state in ("DIRTY", "CONFLICTING", "BEHIND")
-    merge_detail = f"mergeStateStatus={merge_state}"
-
-    if not ci_status:
-        ci_check = (False, "CI Gate check not found")
-    elif ci_status != "COMPLETED":
-        ci_check = (False, f"in progress (status={ci_status})")
-    elif _is_superseded(ci_conclusion):
-        # Not a failure, but not a green gate either — the PR genuinely isn't
-        # ready until a replacement run posts one. Say why, so the reader
-        # pushes/re-runs rather than hunting for a broken test. (PP-r63o)
-        ci_check = (False, "cancelled (superseded) — needs a re-run or a new push")
-    else:
-        ci_check = (
-            _is_passing(ci_conclusion),
-            f"conclusion={ci_conclusion or 'unknown'}",
-        )
-
-    # ready-for-review is informational — orchestrator applies it after the
-    # audit passes, so its absence isn't a failure.
-    label_detail = (
-        "applied" if READY_LABEL in labels else "not applied (orchestrator applies)"
-    )
-
-    # Reported, but NOT part of the verdict. This mode answers "can this head leave
-    # draft and become eligible for a manual review request?"; gating on review here
-    # would make the check
-    # circular and permanently red. merge-pr.sh's `reviewed` gate refuses to merge an
-    # unreviewed head. A stale review is worth seeing here anyway: it means the PR
-    # looks reviewed and is not.
-    try:
-        state, review_detail = review_state(pr)
-    except (RuntimeError, ValueError, KeyError) as exc:
-        state, review_detail = "unknown", f"could not determine ({exc})"
-
-    checks = [
-        (not bad_merge, "mergeable", merge_detail),
-        (ci_check[0], "ci-gate", ci_check[1]),
-        (True, "review", f"{state}: {review_detail}"),
-        (
-            unresolved == 0,
-            "threads-resolved",
-            "all resolved"
-            if unresolved == 0
-            else f"{unresolved} unresolved (use MCP pull_request_read to inspect threads)",
-        ),
-        (True, "ready-label", label_detail),
-    ]
-
-    all_ok = all(ok for ok, _, _ in checks)
-    print(f"Readiness audit for PR #{pr}: {'PASS' if all_ok else 'FAIL'}")
-    for ok, label, detail in checks:
-        print(f"  {'✓' if ok else '✗'} {label}: {detail}")
-    return all_ok
 
 
 # ---------------------------------------------------------------------------
@@ -425,7 +194,7 @@ def write_failure_artifact(run_id: int) -> str:
 def _failed_ci_run_id(head_sha: str, details_url: str = "") -> int | None:
     """Return the newest confirmed-failing CI workflow run for ``head_sha``.
 
-    This lookup happens only after the aggregate CI Gate is red. The ordinary
+    This lookup happens only after CI Gate or Claude Review is red. The ordinary
     watch path never enumerates workflow runs. Prefer the run ID already
     embedded in the selected gate's URL; the fallback filters a commit-scoped
     list after retrieval so duplicate workflow names cannot make `gh` abort.
@@ -472,66 +241,75 @@ class Verdict:
     outcome: str
     observed_head: str = ""
     ci_gate: str = "UNKNOWN"
-    review_state: str = "not reviewed"
-    unresolved_threads: int = 0
+    # The head's Claude Review conclusion (or status), or SKIPPED_DRAFT on a draft.
+    claude_review: str = "UNKNOWN"
+    # Unresolved review threads when the watch passes; None when not counted.
+    unresolved_threads: int | None = None
     merge_state: str = "UNKNOWN"
     detail_url: str | None = None
     failure_artifact: str | None = None
 
 
-def _verdict(outcome: str, detail: str, **fields) -> Verdict:
+def _verdict(outcome: str, detail: str, *, cls: type = Verdict, **fields):
+    """Log why the watch ended and build its verdict as the phase's dataclass."""
     emit(detail)
-    return Verdict(outcome, **fields)
+    return cls(outcome, **fields)
 
 
-def _current_phase_ci_snapshot(pr: int) -> tuple[str, dict | None, str]:
-    """Fetch head, authoritative CI Gate, and merge state in one API query.
+def _current_phase_ci_snapshot(
+    pr: int,
+) -> tuple[str, dict | None, dict | None, bool, str]:
+    """Fetch head, CI Gate, Claude Review, draft state, and merge state in one query.
 
     Keeping them in one response is the exact-head boundary: a push cannot
     interleave between separate head and check reads. GitHub reports
     mergeStateStatus UNKNOWN while it recomputes mergeability (after any push
-    to main); that is "no conflict seen yet", not an error — the merge gate
-    re-checks conflicts before merging.
+    to main); that is "no conflict seen yet", not an error — GitHub
+    re-checks conflicts at merge time.
     """
     raw = gh(
         "pr",
         "view",
         str(pr),
         "--json",
-        "headRefOid,statusCheckRollup,mergeStateStatus",
+        "headRefOid,statusCheckRollup,mergeStateStatus,isDraft",
     )
     data = json.loads(raw)
     if not isinstance(data, dict):
         raise RuntimeError("GitHub returned invalid PR metadata")
     head_sha = str(data.get("headRefOid") or "")
-    gate = _select_ci_gate(data.get("statusCheckRollup") or [])
+    rollup = data.get("statusCheckRollup") or []
+    gate = _select_ci_gate(rollup)
+    # Only the Claude Review workflow's own job counts, not a check another app
+    # posts under the same name (those carry no workflowName).
+    review = _select_ci_gate(
+        [c for c in rollup if c.get("workflowName") == CLAUDE_REVIEW_NAME],
+        CLAUDE_REVIEW_NAME,
+    )
     merge_state = str(data.get("mergeStateStatus") or "UNKNOWN")
-    return head_sha, gate, merge_state
-
-
-def _current_head_merge_snapshot(pr: int) -> tuple[str, str]:
-    """Fetch head and merge state atomically (UNKNOWN means not yet computed)."""
-    raw = gh("pr", "view", str(pr), "--json", "headRefOid,mergeStateStatus")
-    data = json.loads(raw)
-    if not isinstance(data, dict):
-        raise RuntimeError("GitHub returned invalid PR metadata")
-    head_sha = str(data.get("headRefOid") or "")
-    merge_state = str(data.get("mergeStateStatus") or "UNKNOWN")
-    return head_sha, merge_state
+    return head_sha, gate, review, bool(data.get("isDraft")), merge_state
 
 
 def _head_problem(
-    head_sha: str, merge_state: str, expected_head: str, watch: str
-) -> Verdict | None:
+    head_sha: str,
+    merge_state: str,
+    expected_head: str,
+    watch: str,
+    *,
+    cls: type = Verdict,
+):
     """End a watch whose pinned head is unknown, moved, or conflicted."""
     if not head_sha:
         return _verdict(
-            "undetermined", f"⚠  Could not determine {watch} state — PR head was empty."
+            "undetermined",
+            f"⚠  Could not determine {watch} state — PR head was empty.",
+            cls=cls,
         )
     if head_sha != expected_head:
         return _verdict(
             "stale",
             f"PR head moved {expected_head[:7]} → {head_sha[:7]} — {watch} watch is stale",
+            cls=cls,
             observed_head=head_sha,
             merge_state=merge_state,
         )
@@ -539,9 +317,65 @@ def _head_problem(
         return _verdict(
             "conflicting",
             f"PR merge state is {merge_state} — conflict must be resolved",
+            cls=cls,
             observed_head=head_sha,
             merge_state=merge_state,
         )
+    return None
+
+
+def _graphql_pull_request(fields: str, pr: int) -> dict:
+    """Fetch `fields` of one pull request in a single GraphQL query.
+
+    Raises RuntimeError (gh failed, or no such PR), json.JSONDecodeError,
+    KeyError, or TypeError when GitHub's answer is unusable.
+    """
+    query = (
+        "query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name)"
+        f"{{pullRequest(number:$pr){{{fields}}}}}}}"
+    )
+    raw = gh(
+        "api",
+        "graphql",
+        "-f",
+        f"query={query}",
+        "-F",
+        f"owner={REPO_OWNER}",
+        "-F",
+        f"name={REPO_NAME}",
+        "-F",
+        f"pr={pr}",
+    )
+    pull = json.loads(raw)["data"]["repository"]["pullRequest"]
+    if not isinstance(pull, dict):
+        raise RuntimeError(f"GitHub returned no pull request #{pr}")
+    return pull
+
+
+def _unresolved_threads(pr: int) -> int | None:
+    """Count the PR's unresolved review threads; None when GitHub cannot say."""
+    try:
+        threads = _graphql_pull_request(
+            "reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved}}", pr
+        )["reviewThreads"]
+        if threads["pageInfo"]["hasNextPage"]:
+            return None
+        return sum(1 for t in threads["nodes"] if not t["isResolved"])
+    except (RuntimeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        emit(f"Review threads unavailable: {exc}")
+        return None
+
+
+def _failure_artifact(head_sha: str, details_url: str) -> str | None:
+    """Write the failed run's log to disk; None when it cannot be found."""
+    try:
+        run_id = _failed_ci_run_id(head_sha, details_url)
+        if run_id is not None:
+            artifact = write_failure_artifact(run_id)
+            emit(f"Failure details: {artifact}")
+            return artifact
+    except (RuntimeError, json.JSONDecodeError, OSError, ValueError) as exc:
+        emit(f"Failure logs unavailable: {exc}")
     return None
 
 
@@ -552,15 +386,18 @@ def _watch_phase_ci(
     timeout_sec: float = WATCH_TIMEOUT_SECONDS,
     poll_sec: float = WATCH_POLL_SECONDS,
 ) -> Verdict:
-    """Watch the CI Gate for one pinned head, one GitHub query per interval."""
+    """Watch CI Gate and Claude Review for one pinned head, one query per interval."""
     deadline = time.monotonic() + timeout_sec
     superseded_deadline: float | None = None
     last_signature: tuple[str, str] | None = None
+    last_review_signature: tuple[str, str] | None = None
     seen: dict = {}
 
     while time.monotonic() < deadline:
         try:
-            head_sha, gate, merge_state = _current_phase_ci_snapshot(pr)
+            head_sha, gate, review, is_draft, merge_state = _current_phase_ci_snapshot(
+                pr
+            )
         except (RuntimeError, json.JSONDecodeError) as exc:
             return _verdict(
                 "undetermined",
@@ -574,9 +411,15 @@ def _watch_phase_ci(
         status = (gate or {}).get("status") or ""
         conclusion = (gate or {}).get("conclusion") or ""
         details_url = (gate or {}).get("detailsUrl") or ""
+        review_status = (review or {}).get("status") or ""
+        review_conclusion = (review or {}).get("conclusion") or ""
+        review_url = (review or {}).get("detailsUrl") or ""
         seen = {
             "observed_head": head_sha,
             "ci_gate": conclusion or status or "UNKNOWN",
+            "claude_review": "SKIPPED_DRAFT"
+            if is_draft
+            else (review_conclusion or review_status or "UNKNOWN"),
             "merge_state": merge_state,
             "detail_url": details_url or None,
         }
@@ -587,28 +430,59 @@ def _watch_phase_ci(
             )
             last_signature = (status, conclusion)
 
+        # Claude Review can finish before CI Gate; a red review ends the watch
+        # without waiting for CI.
+        if (
+            not is_draft
+            and review_status == "COMPLETED"
+            and _is_failing(review_conclusion)
+        ):
+            emit(
+                f"Claude Review failed on {head_sha[:7]} (conclusion={review_conclusion})"
+            )
+            return Verdict(
+                "failed",
+                failure_artifact=_failure_artifact(head_sha, review_url),
+                **{**seen, "detail_url": review_url or None},
+            )
+
         if status == "COMPLETED":
             if _is_passing(conclusion):
-                return _verdict(
-                    "passed",
-                    f"CI Gate passed on {head_sha[:7]} (conclusion={conclusion}) ✓",
-                    **seen,
-                )
-            if not _is_superseded(conclusion):
+                if is_draft or (
+                    review_status == "COMPLETED"
+                    and _is_passing(review_conclusion)
+                    # A job-level skip only happens on a draft; on a ready PR
+                    # it is a leftover from the draft, so wait for the review.
+                    and review_conclusion.upper() != "SKIPPED"
+                ):
+                    threads = _unresolved_threads(pr)
+                    if threads:
+                        emit(f"{threads} unresolved review thread(s) to adjudicate")
+                    return _verdict(
+                        "passed",
+                        f"CI Gate passed on {head_sha[:7]} (conclusion={conclusion})"
+                        + ("" if is_draft else "; Claude Review passed")
+                        + " ✓",
+                        unresolved_threads=threads,
+                        **seen,
+                    )
+                if (review_status, review_conclusion) != last_review_signature:
+                    emit(
+                        f"CI Gate passed; Claude Review {review_status.lower() or 'not yet posted'}"
+                        + (f" ({review_conclusion})" if review_conclusion else "")
+                    )
+                    last_review_signature = (review_status, review_conclusion)
+            elif not _is_superseded(conclusion):
                 emit(
                     f"CI Gate failed on {head_sha[:7]} "
                     f"(conclusion={conclusion or 'unknown'})"
                 )
-                artifact: str | None = None
-                try:
-                    run_id = _failed_ci_run_id(head_sha, details_url)
-                    if run_id is not None:
-                        artifact = write_failure_artifact(run_id)
-                        emit(f"Failure details: {artifact}")
-                except (RuntimeError, json.JSONDecodeError, OSError, ValueError) as exc:
-                    emit(f"Failure logs unavailable: {exc}")
-                return Verdict("failed", failure_artifact=artifact, **seen)
-            if superseded_deadline is None:
+                return Verdict(
+                    "failed",
+                    failure_artifact=_failure_artifact(head_sha, details_url),
+                    **seen,
+                )
+            elif superseded_deadline is None:
                 superseded_deadline = time.monotonic() + SUPERSEDED_GATE_GRACE
                 emit("CI Gate cancelled (superseded) — waiting for a replacement run")
             elif time.monotonic() >= superseded_deadline:
@@ -629,102 +503,349 @@ def _watch_phase_ci(
     )
 
 
-def _watch_phase_review(
+# ---------------------------------------------------------------------------
+# Merge-queue watch
+# ---------------------------------------------------------------------------
+#
+# The queue builds a `gh-readonly-queue/<base>/pr-<n>-<sha>` commit and runs the
+# required checks on it as a `merge_group` event; it then merges the PR or
+# drops it from the queue, leaving it open. While queued, a PR has a
+# mergeQueueEntry and no autoMergeRequest; armed auto-merge waiting for the PR's
+# own checks is the reverse; a merged or dropped PR has neither.
+
+QUEUE_BRANCH_PREFIX = "gh-readonly-queue/"
+
+# Merging is two writes on GitHub's side: the entry disappears, then the state
+# flips to MERGED, with a gap of unknown length between them. A read in that
+# gap shows an open PR with no entry, which is also what a dropped PR looks
+# like. A failing merge_group run settles it as a removal at once; otherwise the
+# watch re-reads every QUEUE_ABSENT_REREAD_SECONDS for up to
+# QUEUE_ABSENT_SETTLE_SECONDS (clamped to the timeout), until the PR shows
+# MERGED or re-enters the queue.
+QUEUE_ABSENT_REREAD_SECONDS = 10
+QUEUE_ABSENT_SETTLE_SECONDS = 60
+
+# The branch-prefix fallback scans this many recent merge_group runs; a busy
+# queue spends three runs (one per required workflow) on every group.
+QUEUE_RUN_SCAN_LIMIT = 200
+
+# One query per interval carries everything a queue verdict needs. The entry's
+# headCommit is the merge-group commit its merge_group runs are built on.
+_QUEUE_FIELDS = (
+    "state headRefOid mergeStateStatus mergeCommit{oid} "
+    "autoMergeRequest{enabledAt} "
+    "mergeQueueEntry{state position enqueuedAt headCommit{oid}}"
+)
+
+
+@dataclass
+class QueueVerdict:
+    """How a queue watch ended; main() wraps it in the terminal JSON envelope."""
+
+    outcome: str
+    observed_head: str = ""
+    # OPEN, MERGED, or CLOSED.
+    pr_state: str = "UNKNOWN"
+    # The last observed queue entry state (QUEUED, AWAITING_CHECKS, MERGEABLE,
+    # UNMERGEABLE, LOCKED), AUTO_MERGE_ARMED while waiting to be enqueued, or
+    # NOT_QUEUED.
+    queue_state: str = "UNKNOWN"
+    queue_position: int | None = None
+    merge_state: str = "UNKNOWN"
+    merge_commit: str | None = None
+    failing_jobs: list[str] = field(default_factory=list)
+    # The merge-group commit the failing run was built on. It differs from the
+    # last group commit a poll saw when the branch scan found the run.
+    failing_group_commit: str | None = None
+    detail_url: str | None = None
+    failure_artifact: str | None = None
+
+
+_QUEUE_RUN_FIELDS = (
+    "databaseId,status,conclusion,headBranch,headSha,workflowName,createdAt,url"
+)
+
+
+def _newest_failing_group_run(runs: list[dict]) -> dict | None:
+    """Among red runs, the newest failing commit's run, preferring CI.
+
+    A queue that rebuilds a group (a PR ahead of it dropped out) leaves
+    cancelled runs on the older commits, so the newest failing commit is the
+    one that removed the PR; CI carries CI Gate, the queue's real gate.
+    """
+    failed = [
+        run
+        for run in runs
+        if run.get("status") == "completed" and _is_failing(run.get("conclusion"))
+    ]
+    if not failed:
+        return None
+    newest_sha = max(failed, key=lambda run: int(run.get("databaseId") or 0))["headSha"]
+    return max(
+        (run for run in failed if run["headSha"] == newest_sha),
+        key=lambda run: (
+            run.get("workflowName") == "CI",
+            int(run.get("databaseId") or 0),
+        ),
+    )
+
+
+def _failed_queue_run(pr: int, since: str, group_sha: str | None) -> dict | None:
+    """Return the failing merge_group run that removed ``pr`` from the queue.
+
+    Called once, after the removal is confirmed. With the merge-group commit
+    seen while the PR was queued, look up that commit's runs directly: exact,
+    and independent of how busy the queue is. Without one (the PR left the
+    queue before a poll caught its group), or when that commit has no red run
+    (the queue rebuilt the group after the last poll and the new commit
+    failed), scan recent merge_group runs for the PR's queue branch created
+    since this attempt was enqueued.
+    """
+    if group_sha:
+        raw = gh(
+            "run",
+            "list",
+            "--commit",
+            group_sha,
+            "--event",
+            "merge_group",
+            "--limit",
+            "20",
+            "--json",
+            _QUEUE_RUN_FIELDS,
+        )
+        run = _newest_failing_group_run(
+            [run for run in json.loads(raw) if run.get("headSha") == group_sha]
+        )
+        if run is not None:
+            return run
+        emit(
+            f"No failing merge_group run on {group_sha[:7]}; scanning the queue branch"
+        )
+    raw = gh(
+        "run",
+        "list",
+        "--event",
+        "merge_group",
+        "--limit",
+        str(QUEUE_RUN_SCAN_LIMIT),
+        "--json",
+        _QUEUE_RUN_FIELDS,
+    )
+    marker = f"/pr-{pr}-"
+    return _newest_failing_group_run(
+        [
+            run
+            for run in json.loads(raw)
+            if str(run.get("headBranch") or "").startswith(QUEUE_BRANCH_PREFIX)
+            and marker in str(run.get("headBranch"))
+            and str(run.get("createdAt") or "") >= since
+        ]
+    )
+
+
+def _queue_failure(pr: int, since: str, group_sha: str | None) -> dict:
+    """The removed PR's failing run as verdict fields.
+
+    detail_url, failing_group_commit, failing_jobs, failure_artifact. Whatever
+    was found before an error is kept; nothing found is an empty dict, which is
+    the case for a conflict, a manual dequeue, or a closed PR.
+    """
+    found: dict = {}
+    try:
+        run = _failed_queue_run(pr, since, group_sha)
+        if run is None:
+            emit("No failing merge_group run found for this PR's queue branch")
+            return found
+        run_id = int(run["databaseId"])
+        found["detail_url"] = (
+            run.get("url") or f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
+        )
+        found["failing_group_commit"] = run.get("headSha")
+        if found["failing_group_commit"] != group_sha:
+            # Not proven to be the group that dropped the PR: the newest red
+            # group on its queue branch since this attempt was enqueued.
+            emit(
+                f"Failing run on {str(run.get('headSha'))[:7]} came from the "
+                "queue-branch scan, not the last-seen group commit "
+                f"({(group_sha or 'none seen')[:10]})"
+            )
+        jobs = json.loads(gh("run", "view", str(run_id), "--json", "jobs"))["jobs"]
+        found["failing_jobs"] = [
+            str(job.get("name"))
+            for job in jobs
+            if job.get("status") == "completed" and _is_failing(job.get("conclusion"))
+        ]
+        emit(
+            f"merge_group run failed: {found['detail_url']} "
+            f"({', '.join(found['failing_jobs']) or 'no failed job listed'})"
+        )
+        found["failure_artifact"] = write_failure_artifact(run_id)
+        emit(f"Failure details: {found['failure_artifact']}")
+    except (
+        RuntimeError,
+        json.JSONDecodeError,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        emit(f"Queue failure details unavailable: {exc}")
+    return found
+
+
+def _watch_phase_queue(
     pr: int,
     expected_head: str,
     *,
     timeout_sec: float = WATCH_TIMEOUT_SECONDS,
     poll_sec: float = WATCH_POLL_SECONDS,
-) -> Verdict:
-    """Watch review coverage and threads for one pinned head.
-
-    passed: the gate label is `approved` with 0 unresolved threads.
-    action_required: `approved` with unresolved threads, or `changes requested`.
-    `not reviewed` and `stale review` keep waiting until the deadline.
-    """
+) -> QueueVerdict:
+    """Watch one pinned head through the merge queue, one query per interval."""
     deadline = time.monotonic() + timeout_sec
-    last_label: str | None = None
+    # Per-attempt state, taken from the latest entry (or armed auto-merge) so a
+    # drop and re-enqueue starts a new attempt: when it was enqueued (or armed),
+    # and the merge-group commit its runs are built on. `since` stays None until
+    # the PR is first seen headed into the queue.
+    since: str | None = None
+    group_sha: str | None = None
+    # The settle window (see QUEUE_ABSENT_SETTLE_SECONDS): when the current run
+    # of reads with no entry and no auto-merge began, and the attempt's
+    # failing-run lookup: made on the first absent read so a red run ends the
+    # watch at once, and once more just before an empty-handed `removed`.
+    # None while the PR is queued.
+    absent_since: float | None = None
+    failure: dict | None = None
+    # Set when the budget runs out mid-settle: one last read past the deadline
+    # decides, instead of discarding an absence the watch already saw.
+    final_read = False
+    last_signature: tuple | None = None
     seen: dict = {}
 
-    def pinned_problem() -> Verdict | None:
-        head_sha, merge_state = _current_head_merge_snapshot(pr)
-        seen["merge_state"] = merge_state
-        return _head_problem(head_sha, merge_state, expected_head, "review")
-
-    def read_evidence() -> dict:
-        # One gate call answers coverage, label, and unresolved threads together,
-        # bounded by whatever is left of the watch deadline.
-        return review_summary(pr, timeout=max(1.0, deadline - time.monotonic()))
-
-    while time.monotonic() < deadline:
-        summary: dict = {}
+    while time.monotonic() < deadline or final_read:
         try:
-            # `_review_summary` reads the live head itself, so each evidence read
-            # is bracketed by pinned-head checks.
-            problem = pinned_problem()
-            if problem is None:
-                summary = read_evidence()
-                problem = pinned_problem()
-            if problem is None and summary.get("label") in (
-                "approved",
-                "changes requested",
-            ):
-                # Revalidate before a terminal verdict: a thread can open
-                # between the first read and the verdict.
-                summary = read_evidence()
-                problem = pinned_problem()
-            if problem is None and summary and summary.get("head") != expected_head:
-                # The gate read its own head; evidence for another commit
-                # (a push and revert between reads, replica lag) is not ours.
-                problem = _head_problem(
-                    str(summary.get("head") or ""),
-                    seen.get("merge_state", "UNKNOWN"),
-                    expected_head,
-                    "review",
-                )
-        except (RuntimeError, json.JSONDecodeError) as exc:
+            pull = _graphql_pull_request(_QUEUE_FIELDS, pr)
+            entry = pull.get("mergeQueueEntry") or {}
+            auto_merge = pull.get("autoMergeRequest") or {}
+            merge_commit = (pull.get("mergeCommit") or {}).get("oid")
+        except (
+            RuntimeError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ) as exc:
             return _verdict(
-                "undetermined", f"⚠  Could not determine review state — {exc}", **seen
+                "undetermined",
+                "⚠  Could not determine merge-queue state — "
+                f"the GitHub API was unreachable ({exc}).",
+                cls=QueueVerdict,
+                **seen,
             )
+        state = str(pull.get("state") or "UNKNOWN")
+        head_sha = str(pull.get("headRefOid") or "")
+        merge_state = str(pull.get("mergeStateStatus") or "UNKNOWN")
+        seen = {
+            "observed_head": head_sha,
+            "pr_state": state,
+            "queue_state": entry.get("state")
+            or ("AUTO_MERGE_ARMED" if auto_merge else "NOT_QUEUED"),
+            "queue_position": entry.get("position"),
+            "merge_state": merge_state,
+        }
+        # A conflict only matters while the PR can still merge.
+        problem = _head_problem(
+            head_sha,
+            merge_state if state == "OPEN" else "UNKNOWN",
+            expected_head,
+            "queue",
+            cls=QueueVerdict,
+        )
         if problem is not None:
             return problem
 
-        label = str(summary.get("label") or "not reviewed")
-        unresolved = int(summary.get("unresolved_threads") or 0)
-        seen.update(
-            observed_head=expected_head,
-            review_state=label,
-            unresolved_threads=unresolved,
-        )
-        head = expected_head[:7]
-        if label == "approved" and unresolved == 0:
+        if state == "MERGED":
             return _verdict(
-                "passed",
-                f"Review coverage complete on {head} ({label}) with 0 unresolved threads ✓",
+                "merged",
+                f"PR #{pr} merged as {(merge_commit or 'unknown')[:7]} ✓",
+                cls=QueueVerdict,
+                merge_commit=merge_commit,
                 **seen,
             )
-        if label == "approved":
-            return _verdict(
-                "action_required",
-                f"Review coverage present on {head} ({label}), "
-                f"but {unresolved} unresolved thread(s) require action",
-                **seen,
+        if entry or auto_merge:
+            if final_read:
+                # Back in the queue at the deadline: no verdict yet.
+                break
+            absent_since, failure = None, None
+            attempt = str(entry.get("enqueuedAt") or auto_merge.get("enabledAt") or "")
+            if attempt != since:
+                # A new attempt (first sighting, armed → enqueued, or a
+                # re-enqueue): an earlier attempt's group commit is not this one's.
+                since, group_sha = attempt, None
+            group_sha = (entry.get("headCommit") or {}).get("oid") or group_sha
+            signature = (seen["queue_state"], seen["queue_position"])
+            if signature != last_signature:
+                emit(
+                    f"Queued at position {entry.get('position')} ({str(entry.get('state')).lower()})"
+                    if entry
+                    else "Auto-merge armed — waiting for GitHub to enqueue the PR"
+                )
+                last_signature = signature
+        else:
+            now = time.monotonic()
+            looked_up_now = False
+            if absent_since is None:
+                absent_since = now
+                last_signature = None
+                emit(f"PR #{pr} is {state.lower()} with no queue entry")
+            if since is not None and failure is None:
+                # A red merge_group run for this attempt is a real failure:
+                # nothing left to settle.
+                failure, looked_up_now = _queue_failure(pr, since, group_sha), True
+                if failure.get("detail_url"):
+                    emit(f"PR #{pr} left the merge queue without merging")
+                    return QueueVerdict("removed", **seen, **failure)
+            if final_read or now - absent_since >= QUEUE_ABSENT_SETTLE_SECONDS:
+                if since is None:
+                    # Not queued when the watch began, with no auto-merge armed
+                    # either, through the whole settle window. That is
+                    # `not_queued` (exit 1, act on it), not undetermined (exit
+                    # 2): GitHub answered, and nothing will merge this PR on its
+                    # own. Exit 2 means "could not find out; re-run the watch",
+                    # and re-running here can never change the answer. The
+                    # caller acts: enqueue it with `gh pr merge`, or, if it was
+                    # dropped before the watch started, read why on the PR page.
+                    return _verdict(
+                        "not_queued",
+                        f"PR #{pr} is {state.lower()} and not in the merge queue",
+                        cls=QueueVerdict,
+                        **seen,
+                    )
+                if not looked_up_now:
+                    # The run can go red after the first lookup came back
+                    # empty: look once more before deciding.
+                    failure = _queue_failure(pr, since, group_sha)
+                emit(f"PR #{pr} left the merge queue without merging ({state.lower()})")
+                return QueueVerdict("removed", **seen, **(failure or {}))
+            # Clamped to the settle window and to the budget, so the watch never
+            # sleeps past the timeout; once the budget is spent, the next read
+            # is the final one.
+            time.sleep(
+                min(
+                    QUEUE_ABSENT_REREAD_SECONDS,
+                    absent_since + QUEUE_ABSENT_SETTLE_SECONDS - now,
+                    max(deadline - now, 0),
+                )
             )
-        if label == "changes requested":
-            return _verdict(
-                "action_required",
-                f"Changes requested on {head} ({_checker_lines(summary)})",
-                **seen,
-            )
-        if label != last_label:
-            emit(f"Review pending on {head}: {label}")
-            last_label = label
+            final_read = time.monotonic() >= deadline
+            continue
 
-        time.sleep(poll_sec)
+        time.sleep(min(poll_sec, max(deadline - time.monotonic(), 0)))
 
     return _verdict(
         "timed_out",
-        f"⚠  Could not determine review state — no terminal verdict within {timeout_sec}s.",
+        f"⚠  Could not determine merge-queue state — no terminal verdict within {timeout_sec}s.",
+        cls=QueueVerdict,
         **seen,
     )
 
@@ -747,36 +868,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("pr", type=int, help="pull request number")
-    parser.add_argument("--phase", choices=("ci", "review"), help="phase to wait on")
+    parser.add_argument(
+        "--phase", choices=("ci", "queue"), required=True, help="phase to wait on"
+    )
     parser.add_argument(
         "--expected-head",
         type=_full_sha,
         metavar="SHA",
+        required=True,
         help="full head SHA the watch is pinned to",
     )
-    parser.add_argument(
-        "--check-ready",
-        action="store_true",
-        help="print a review-readiness snapshot and exit",
-    )
-    args = parser.parse_args(argv)
-    if args.check_ready and (args.phase or args.expected_head):
-        parser.error("--check-ready does not take --phase or --expected-head")
-    if not args.check_ready and not (args.phase and args.expected_head):
-        parser.error("a watch needs both --phase and --expected-head")
-    return args
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    if args.check_ready:
-        return 0 if run_audit(args.pr) else 1
-
-    watch = _watch_phase_ci if args.phase == "ci" else _watch_phase_review
+    watch = _watch_phase_queue if args.phase == "queue" else _watch_phase_ci
     verdict = watch(args.pr, args.expected_head)
     artifact = verdict.failure_artifact
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": REPOSITORY,
         "pr": args.pr,
         "phase": args.phase,

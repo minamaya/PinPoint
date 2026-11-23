@@ -1,15 +1,9 @@
 import type React from "react";
-import { createClient } from "~/lib/supabase/server";
 import { db } from "~/server/db";
-import {
-  notifications,
-  userProfiles,
-  issues,
-  machines,
-} from "~/server/db/schema";
+import { notifications, issues, machines } from "~/server/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { type EnrichedNotification } from "~/components/notifications/NotificationList";
-import { ensureUserProfile } from "~/lib/auth/profile";
+import { getHealedViewer } from "~/lib/auth/viewer";
 import { AppHeader } from "./AppHeader";
 import { BottomTabBar } from "./BottomTabBar";
 import changelogMeta from "@content/changelog-meta.json";
@@ -19,8 +13,6 @@ import {
   reportModePath,
   resolveDefaultReportMode,
 } from "~/lib/report/default-mode";
-import type { ReportMode } from "~/lib/types/user";
-import { LIST_PAGER_SLOT_ID } from "~/components/list-view/pager-slot";
 import { QuickSearchProvider } from "./QuickSearch";
 
 export async function MainLayout({
@@ -37,24 +29,15 @@ export async function MainLayout({
     changelogMeta.totalEntries - changelogSeen
   );
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Shares the request's getUser() and profile read with the page
+  // (getViewer), and heals a missing profile row.
+  const { userId, profile: userProfile } = await getHealedViewer();
 
   let enrichedNotifications: EnrichedNotification[] = [];
-  let userProfile:
-    | {
-        name: string;
-        role: "guest" | "member" | "technician" | "admin";
-        mobileReportMode: ReportMode;
-        desktopReportMode: ReportMode;
-      }
-    | undefined;
 
-  if (user) {
+  if (userId) {
     const userNotifications = await db.query.notifications.findMany({
-      where: eq(notifications.userId, user.id),
+      where: eq(notifications.userId, userId),
       orderBy: [desc(notifications.createdAt)],
       limit: 20,
     });
@@ -117,36 +100,10 @@ export async function MainLayout({
         issueNumber,
       };
     });
-
-    userProfile = await db.query.userProfiles.findFirst({
-      where: eq(userProfiles.id, user.id),
-      columns: {
-        name: true,
-        role: true,
-        mobileReportMode: true,
-        desktopReportMode: true,
-      },
-    });
-
-    if (!userProfile) {
-      // Auto-heal profile if missing (e.g. after DB reset)
-      await ensureUserProfile(user);
-
-      // Refetch profile after healing
-      userProfile = await db.query.userProfiles.findFirst({
-        where: eq(userProfiles.id, user.id),
-        columns: {
-          name: true,
-          role: true,
-          mobileReportMode: true,
-          desktopReportMode: true,
-        },
-      });
-    }
   }
 
   const canMultiple =
-    Boolean(user) &&
+    Boolean(userId) &&
     checkPermission("issues.report.quick", getAccessLevel(userProfile?.role));
   const mobileReportHref = reportModePath(
     resolveDefaultReportMode(
@@ -168,10 +125,10 @@ export async function MainLayout({
       <div className="flex h-full flex-col bg-background text-foreground">
         {/* Unified AppHeader — always rendered, adapts at md: breakpoint */}
         <AppHeader
-          isAuthenticated={!!user}
+          isAuthenticated={!!userId}
           userName={userProfile?.name ?? "User"}
           role={userProfile?.role}
-          userId={user?.id}
+          userId={userId}
           notifications={enrichedNotifications}
           newChangelogCount={newChangelogCount}
           reportHref={desktopReportHref}
@@ -179,7 +136,8 @@ export async function MainLayout({
 
         {/* Main Content */}
         {/* scroll-pt-14: reserves space for the 56px sticky AppHeader so
-            browser scroll-into-view doesn't place interactive elements under it.
+            browser scroll-into-view doesn't place interactive elements under it
+            (a pinned phone List Header sets its own; globals.css).
             Mobile scroll-pb: the same for the fixed bottom tab bar, plus a
             floating action's clearance when a page shows one (WCAG 2.4.11;
             globals.css defines it).
@@ -192,13 +150,12 @@ export async function MainLayout({
           tabIndex={-1}
           className="relative flex-1 overflow-y-auto scroll-pt-14 max-md:scroll-pb-[calc(56px+env(safe-area-inset-bottom)+8px+var(--floating-action-clearance,0px))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
-          {/* Extra bottom padding on mobile so content isn't hidden behind the fixed tab bar */}
-          <div className="@container px-4 sm:px-8 lg:px-10 pb-[calc(88px+env(safe-area-inset-bottom))] [&:has([data-machine-scan-hub])]:pb-0 md:pb-0">
+          {/* Extra bottom padding on mobile so content isn't hidden behind the
+              fixed tab bar. A List View's phone pager ends the page, so there
+              it is exactly the tab bar's height (list-views §7.8). */}
+          <div className="@container px-4 sm:px-8 lg:px-10 pb-[calc(88px+env(safe-area-inset-bottom))] [&:has([data-machine-scan-hub])]:pb-0 max-md:[&:has([data-list-phone-pager])]:pb-[calc(57px+env(safe-area-inset-bottom))] md:pb-0">
             {children}
           </div>
-          {/* A List View's phone pager renders here, outside the size
-              container above (list-views §7.8; see LIST_PAGER_SLOT_ID). */}
-          <div id={LIST_PAGER_SLOT_ID} />
         </main>
 
         {/* Fixed bottom tab bar — mobile only (md:hidden is applied inside the component) */}

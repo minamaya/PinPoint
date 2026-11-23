@@ -138,7 +138,11 @@ def paths_filter(ci_workflow: dict) -> PathsFilterSimulator:
 def test_recent_non_website_prs_bypass_tests(
     paths_filter: PathsFilterSimulator,
 ) -> None:
-    """Regression test against real file lists from recent PRs that took forever."""
+    """Regression test against file lists from recent PRs that took forever.
+
+    Each list is trimmed to the files that still exist; every path class the
+    original lists exercised is still represented across them.
+    """
     recent_prs: dict[str, list[str]] = {
         "PR #2073 (perf: pytest-xdist)": [
             "pytest.ini",
@@ -149,23 +153,17 @@ def test_recent_non_website_prs_bypass_tests(
             "scripts/tests/test_pytest_output_policy.py",
         ],
         "PR #2070 tooling subset (without TS unit tests)": [
-            ".agents/hooks.json",
             ".agents/skills/pinpoint-pr-workflow/SKILL.md",
-            ".claude/hooks/block-direct-pr-watch.cjs",
             ".claude/hooks/verify-guard-stack.cjs",
             ".claude/settings.json",
-            ".codex/agents/pr-lifecycle-watcher.toml",
             ".codex/config.toml",
             ".codex/hooks.json",
             "scripts/tests/test_node_hook_paths.py",
-            "scripts/tests/test_pr_watcher_agents.py",
         ],
         "PR #2058 (chore: scope permissions)": [
             ".codex/rules/pinpoint.rules",
-            "scripts/tests/test_codex_gh.py",
             "scripts/tests/test_codex_git.py",
             "scripts/workflow/AGENTS.md",
-            "scripts/workflow/codex-gh.sh",
             "scripts/workflow/codex-git.sh",
         ],
         "PR #2055 (fix: hide pytest locals)": [
@@ -176,11 +174,8 @@ def test_recent_non_website_prs_bypass_tests(
         "PR #2053 (feat: delegate PR watcher)": [
             ".agents/skills/pinpoint-pr-workflow/SKILL.md",
             "scripts/tests/test_pr_dashboard.py",
-            "scripts/tests/test_pr_gates.py",
             "scripts/tests/test_pr_watch.py",
             "scripts/workflow/AGENTS.md",
-            "scripts/workflow/_pr-gates.sh",
-            "scripts/workflow/codex-reaction-witness.sh",
             "scripts/workflow/pr-dashboard.py",
             "scripts/workflow/pr-watch.py",
         ],
@@ -219,7 +214,8 @@ def test_package_json_prs_trigger_tests(
 
     Before PP-9jar, `!package.json` in the has_code filter let a package.json-only
     PR skip typecheck/lint/test/build/E2E entirely while ci-gate still went green.
-    These are real file lists from PRs that used to bypass and now must not.
+    These are file lists from PRs that used to bypass and now must not, trimmed to
+    the files that still exist.
     """
     package_json_prs: dict[str, list[str]] = {
         "PR #2068 (feat: separate check:python)": [
@@ -244,7 +240,6 @@ def test_package_json_prs_trigger_tests(
             "package.json",
             "pytest.ini",
             "scripts/quiet-run.py",
-            "scripts/workflow/preflight-locked.sh",
         ],
     }
     for pr_name, files in package_json_prs.items():
@@ -302,10 +297,7 @@ def test_ts_unit_tests_trigger_ci_tests(
     paths_filter: PathsFilterSimulator,
 ) -> None:
     """TypeScript/Vitest unit tests under src/test/unit/** must trigger the path-filtered CI jobs."""
-    pr_2070_ts_tests = [
-        "src/test/unit/hooks/block-direct-pr-watch.test.ts",
-        "src/test/unit/hooks/verify-guard-stack.test.ts",
-    ]
+    pr_2070_ts_tests = ["src/test/unit/hooks/verify-guard-stack.test.ts"]
     has_code, _ = paths_filter.evaluate(pr_2070_ts_tests)
     assert has_code, (
         "TypeScript unit test changes must trigger CI tests (has_code=True)"
@@ -382,11 +374,12 @@ def test_dependency_updates_trigger_deps_filter(
     assert has_deps, f"Dependency file {file_path} was not flagged as deps=True"
 
 
-def test_setup_job_gates_on_code_or_deps(ci_workflow: dict) -> None:
-    """The setup job must gate on both code and deps."""
-    setup_if = ci_workflow["jobs"]["setup"]["if"]
-    assert "needs.changes.outputs.code == 'true'" in setup_if
-    assert "needs.changes.outputs.deps == 'true'" in setup_if
+def test_integration_job_gates_on_code_or_deps(ci_workflow: dict) -> None:
+    """Integration (which also runs pnpm audit) gates on code or deps, on every event."""
+    integration_if = ci_workflow["jobs"]["test-integration"]["if"]
+    assert "needs.changes.outputs.code == 'true'" in integration_if
+    assert "needs.changes.outputs.deps == 'true'" in integration_if
+    assert "event_name" not in integration_if
 
 
 def test_push_change_detection_reaches_back_to_the_last_passing_main_run(
@@ -409,8 +402,8 @@ def test_push_change_detection_reaches_back_to_the_last_passing_main_run(
         s for s in changes["steps"] if "actions/checkout@" in s.get("uses", "")
     )
     assert checkout["with"]["fetch-depth"] == (
-        "${{ github.event_name == 'push' && '0' || '1' }}"
-    ), "push runs need full history to diff past `before`"
+        "${{ github.event_name != 'pull_request' && '0' || '1' }}"
+    ), "push and merge-queue runs diff with git and need full history"
 
     base = steps["base"]
     assert base["if"] == "github.event_name == 'push'"
@@ -443,3 +436,50 @@ def test_mixed_changes_trigger_tests(paths_filter: PathsFilterSimulator) -> None
 
     has_code, _ = paths_filter.evaluate(mixed_files)
     assert has_code, "Mixed PR containing website code was not flagged as has_code=True"
+
+
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+
+
+def _triggers(workflow: dict) -> dict:
+    # PyYAML (YAML 1.1) reads the bare key `on` as the boolean True.
+    return workflow.get("on", workflow.get(True)) or {}
+
+
+@pytest.mark.parametrize(
+    "workflow_file", ["ci.yml", "claude-review.yaml", "ui-approval.yaml"]
+)
+def test_required_check_workflows_run_on_the_merge_queue(workflow_file: str) -> None:
+    """Every workflow behind a required check reports on merge_group events.
+
+    The ruleset requires CI Gate, Claude Review and UI Approval on the merge
+    queue's commit as well as on the PR head. A workflow without the trigger
+    never reports there, and the queue waits until its timeout drops the PR.
+    """
+    workflow = yaml.safe_load((WORKFLOWS_DIR / workflow_file).read_text("utf-8"))
+    merge_group = _triggers(workflow).get("merge_group")
+    assert merge_group == {"types": ["checks_requested"]}, (
+        f"{workflow_file} must trigger on merge_group checks_requested"
+    )
+
+
+def test_every_pr_job_also_runs_in_the_merge_queue(ci_workflow: dict) -> None:
+    """A job gated to pull_request events must be allowed on merge_group too.
+
+    CI Gate passes a skipped job. A job whose `if` admits pull_request but not
+    merge_group would skip on the queue's commit and the queue would merge
+    untested combinations as green.
+    """
+    for name, job in ci_workflow["jobs"].items():
+        condition = str(job.get("if", ""))
+        if "'pull_request'" in condition:
+            assert "'merge_group'" in condition, (
+                f"job {name} runs on pull_request but skips merge_group"
+            )
+
+
+def test_e2e_jobs_run_in_the_merge_queue(ci_workflow: dict) -> None:
+    """Smoke and Full E2E are named explicitly, so a rename cannot hide a skip."""
+    for name in ("test-e2e-smoke", "test-e2e-full-chromium"):
+        condition = str(ci_workflow["jobs"][name]["if"])
+        assert "github.event_name == 'merge_group'" in condition, name

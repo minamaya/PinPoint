@@ -1,15 +1,9 @@
 "use client";
 
 import type React from "react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import {
-  ChevronRight,
-  ChevronDown,
-  MoreVertical,
-  Plus,
-  Trophy,
-} from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trophy } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -53,6 +47,7 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { Button } from "~/components/ui/button";
+import { ItemActionsMenu } from "~/components/list-view/ItemActionsMenu";
 import { cn } from "~/lib/utils";
 import { docToPlainText, type ProseMirrorDoc } from "~/lib/tiptap/types";
 import { InlineEditableText } from "~/components/machines/settings/InlineEditableText";
@@ -76,8 +71,8 @@ interface SettingsSetCardProps {
   set: SettingsSetData;
   isExpanded: boolean;
   /** Per-set permission to edit the set's contents (machine-settings spec
-   *  §2.2–§2.3). Governs whether always-live field inputs, section kebabs/grips,
-   *  and "Add section" render. The ⋮ menu's other items carry their own rights
+   *  §2.2–§2.3). Governs whether always-live field inputs, section ⋯ menus and grips,
+   *  and "Add section" render. The ⋯ menu's other items carry their own rights
    *  on `set` (canCurate, canMakeCommunity, canDelete). */
   canEdit: boolean;
   /** The last editor IS the machine owner — the audit line carries the same
@@ -105,6 +100,9 @@ interface SettingsSetCardProps {
   /** Called after the set-name blur so the parent can flush the auto-save
    *  debounce (plain-text blur path — Task 6 Step 9). */
   onNameBlur: () => void;
+  /** Set when this set's save is blocked on its missing name: shown under the
+   *  name field. */
+  nameError: string | undefined;
   onDuplicate: () => void;
   onDelete: () => void;
   onUpdateDescription: (value: ProseMirrorDoc | null) => void;
@@ -269,6 +267,7 @@ export function SettingsSetCard({
   onMakeCommunity,
   onRename,
   onNameBlur,
+  nameError,
   onDuplicate,
   onDelete,
   onUpdateDescription,
@@ -316,8 +315,6 @@ export function SettingsSetCard({
   // Set-level delete confirms via AlertDialog (design bible §17).
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // "Edit tags…" hands focus to the picker, not back to the ⋮ trigger.
-  const openingPickerRef = useRef(false);
 
   // Render one section's body. `canEdit` is passed through — all fields are
   // always-live for permitted users (PP-43q3 pivot).
@@ -513,6 +510,8 @@ export function SettingsSetCard({
           onValueChange={onRename}
           canEdit={canEdit}
           required
+          error={nameError}
+          requiredMessage="Name required"
           placeholder="Name this set"
           ariaLabel="set name"
           inputClassName="h-7 text-sm font-semibold"
@@ -564,7 +563,6 @@ export function SettingsSetCard({
               type="button"
               onClick={onToggleExpand}
               aria-expanded={isExpanded}
-              aria-label={`${set.name || "Unnamed"} settings set`}
               className={cn(
                 "-mx-1 flex max-w-full items-center gap-2.5 rounded px-1 text-left transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:shrink-0 motion-reduce:transition-none",
                 // Custom tag links follow the name, so the button stops there.
@@ -580,7 +578,7 @@ export function SettingsSetCard({
           )}
           {!canEdit && customTagChips}
 
-          {/* Set-level ⋮ menu — shown when the viewer has any action on it.
+          {/* Set-level ⋯ menu — shown when the viewer has any action on it.
               The tag picker opens beside it on desktop. */}
           {hasMenu && (
             <SettingsTagPicker
@@ -599,64 +597,58 @@ export function SettingsSetCard({
               onCreate={onCreateTag}
             >
               <span className="ml-auto flex shrink-0 items-center">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7 shrink-0 text-muted-foreground max-md:size-11"
-                      aria-label="More options for this set"
-                    >
-                      <MoreVertical className="size-4" aria-hidden="true" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    onCloseAutoFocus={(event) => {
-                      if (openingPickerRef.current) {
-                        openingPickerRef.current = false;
-                        event.preventDefault();
-                      }
-                    }}
-                  >
-                    {/* These act on a persisted row, so they're disabled until
-                        an unsaved (temp-id) set is first saved. */}
-                    {set.canCurate && (
-                      <DropdownMenuItem
-                        disabled={isNew}
-                        onSelect={() => {
-                          openingPickerRef.current = true;
-                          setPickerOpen(true);
-                        }}
-                      >
-                        Edit tags…
-                      </DropdownMenuItem>
-                    )}
-                    {set.canMakeCommunity && (
-                      <DropdownMenuItem
-                        disabled={isNew}
-                        onSelect={onMakeCommunity}
-                      >
-                        Make community set
-                      </DropdownMenuItem>
-                    )}
-                    {set.canCurate && (
-                      <DropdownMenuItem disabled={isNew} onSelect={onDuplicate}>
-                        Duplicate
-                      </DropdownMenuItem>
-                    )}
-                    {set.canDelete && (
-                      <DropdownMenuItem
-                        className="text-destructive-text focus:text-destructive-text"
-                        onSelect={() => {
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        Delete
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* The entries other than Delete act on a persisted row, so
+                    they're disabled until an unsaved (temp-id) set is first
+                    saved. Edit tags opens the picker, which takes focus. */}
+                <ItemActionsMenu
+                  label="Set actions"
+                  description={set.name || "Unnamed set"}
+                  sections={[
+                    [
+                      ...(set.canCurate
+                        ? [
+                            {
+                              key: "edit-tags",
+                              label: "Edit tags…",
+                              disabled: isNew,
+                              keepsFocus: true,
+                              onSelect: () => setPickerOpen(true),
+                            },
+                          ]
+                        : []),
+                      ...(set.canMakeCommunity
+                        ? [
+                            {
+                              key: "make-community",
+                              label: "Make community set",
+                              disabled: isNew,
+                              onSelect: onMakeCommunity,
+                            },
+                          ]
+                        : []),
+                      ...(set.canCurate
+                        ? [
+                            {
+                              key: "duplicate",
+                              label: "Duplicate",
+                              disabled: isNew,
+                              onSelect: onDuplicate,
+                            },
+                          ]
+                        : []),
+                    ],
+                    set.canDelete
+                      ? [
+                          {
+                            key: "delete",
+                            label: "Delete",
+                            destructive: true,
+                            onSelect: () => setDeleteDialogOpen(true),
+                          },
+                        ]
+                      : [],
+                  ]}
+                />
               </span>
             </SettingsTagPicker>
           )}

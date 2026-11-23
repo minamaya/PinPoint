@@ -99,10 +99,10 @@ test.describe("Machine Details Redesign", () => {
   });
 
   test("Service tab exports machine issues to CSV", async ({ page }) => {
-    // Export now lives inside the issues section header's ⋯ menu.
+    // Export lives inside the issues card's ⋯ "Issue list actions" menu.
     await page.goto(`/m/${seededMachines.addamsFamily.initials}/maintenance`);
 
-    await page.getByRole("button", { name: "Issue options" }).click();
+    await page.getByRole("button", { name: "Issue list actions" }).click();
     const exportItem = page.getByRole("menuitem", {
       name: /Export all issues/i,
     });
