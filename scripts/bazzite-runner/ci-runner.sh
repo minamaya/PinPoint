@@ -47,7 +47,10 @@ case "${1:-status}" in
   deploy)
     here="$(cd "$(dirname "$0")" && pwd)"
     ssh "$host" 'mkdir -p ~/gh-runner/host'
-    scp -q "$here"/* "$host:gh-runner/host/"
+    # Files only: running the tests leaves a __pycache__ directory here.
+    files=()
+    for f in "$here"/*; do [ -f "$f" ] && files+=("$f"); done
+    scp -q "${files[@]}" "$host:gh-runner/host/"
     if ssh "$host" 'test -w /etc/ghrunner/app'; then
       scp -q "$here/supervisor.py" "$host:/etc/ghrunner/app/supervisor.py"
     else
