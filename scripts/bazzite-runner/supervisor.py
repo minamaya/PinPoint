@@ -28,6 +28,7 @@ Stopping:
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -86,7 +87,13 @@ last_lease: dict[str, tuple[str, float]] = {}  # variable -> (value written, whe
 # Runners whose VM exited while GitHub still had a job on them: name -> {run_id, runner_id, since}
 dead: dict[str, dict] = {}
 rerun_when_done: set[int] = set()  # PR runs force-cancelled because a VM died mid-job
-VM_LOGS = STATE / "vm-logs"  # serial logs of VMs that exited early or mid-job
+# Serial logs of VMs that exited early or mid-job. install.sh makes the directory
+# ghrunner:froeht 2750, so froeht can read them over ssh without sudo.
+LOG_DIR = Path(os.environ.get("GH_RUNNER_LOG_DIR", "/var/log/ghrunner"))
+VM_LOGS = LOG_DIR / "vm-logs"
+# A JIT config is one long base64 string; nothing on the console should carry
+# one, but a copy readable by froeht must not either.
+SECRET_LIKE = re.compile(rb"[A-Za-z0-9+/=_-]{120,}")
 VM_LOGS_KEPT = 20
 DEAD_GRACE_S = 30  # a finished job can take a few seconds to free its runner
 DEAD_RETRY_S = 120  # then check again this often (each check is two API calls)
@@ -556,8 +563,15 @@ def reap(force: bool = False) -> None:
 def keep_serial_log(vm) -> None:
     """Keep the console of a VM that died early or mid-job; its directory is deleted."""
     try:
-        VM_LOGS.mkdir(mode=0o700, exist_ok=True)
-        shutil.copyfile(vm["dir"] / "serial.log", VM_LOGS / f"{vm['name']}.log")
+        if not VM_LOGS.is_dir():
+            VM_LOGS.mkdir()
+            VM_LOGS.chmod(0o2750)  # the umask is 077; froeht's group reads these
+        text = SECRET_LIKE.sub(b"[redacted]", (vm["dir"] / "serial.log").read_bytes())
+        dest = VM_LOGS / f"{vm['name']}.log"
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+        with os.fdopen(fd, "wb") as f:
+            os.fchmod(f.fileno(), 0o640)
+            f.write(text)
         for old in sorted(VM_LOGS.iterdir(), key=lambda p: p.stat().st_mtime)[
             :-VM_LOGS_KEPT
         ]:
