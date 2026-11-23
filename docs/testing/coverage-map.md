@@ -127,21 +127,21 @@ a blank Full-E2E cell is often correct by design) is in the
 
 ## Admin
 
-| Feature surface                    | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                     |
-| ---------------------------------- | :--: | :---------: | :---: | :------: | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| User management (promote / remove) |      |      ✓      |       |    ✓     | `admin/user-management.test.ts`, `e2e/full/admin-users.spec.ts`, `e2e/full/admin-remove-invited-user.spec.ts`                                            |
-| Discord integration config         |  ✓   |      ✓      |   ✓   |          | `settings/connected-accounts/test-discord-dm-action.test.ts`, `admin/discord-integration-actions.test.ts`, `e2e/smoke/admin-discord-integration.spec.ts` |
-| PinballMap integration config      |  ✓   |      ✓      |       |          | `admin/integrations/pinballmap/read-model.test.ts`, `admin/pinballmap-integration-actions.test.ts`                                                       |
-| Region-alerts config               |  ✓   |      ✓      |       |          | `lib/pinballmap/region-alert-message.test.ts`, `admin/pinballmap-region-alerts-config.test.ts`                                                           |
+| Feature surface                    | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                        |
+| ---------------------------------- | :--: | :---------: | :---: | :------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User management (promote / remove) |  ✓   |      ✓      |       |    ✓     | `admin/users/user-role-select.test.tsx`, `admin/users/remove-invited-user-button.test.tsx`, `admin/user-management.test.ts`, `e2e/full/admin-users.spec.ts` |
+| Discord integration config         |  ✓   |      ✓      |   ✓   |          | `settings/connected-accounts/test-discord-dm-action.test.ts`, `admin/discord-integration-actions.test.ts`, `e2e/smoke/admin-discord-integration.spec.ts`    |
+| PinballMap integration config      |  ✓   |      ✓      |       |          | `admin/integrations/pinballmap/read-model.test.ts`, `admin/pinballmap-integration-actions.test.ts`                                                          |
+| Region-alerts config               |  ✓   |      ✓      |       |          | `lib/pinballmap/region-alert-message.test.ts`, `admin/pinballmap-region-alerts-config.test.ts`                                                              |
 
 ## Profiles & people
 
-| Feature surface                       | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                            |
-| ------------------------------------- | :--: | :---------: | :---: | :------: | ------------------------------------------------------------------------------------------------------------------------------- |
-| Profile view / edit                   |  ✓   |      ✓      |   ✓   |    ✓     | `u/[id]/profile-editor.test.tsx`, `profile-update-action.test.ts`, `e2e/smoke/profile.spec.ts`, `e2e/full/profile-edit.spec.ts` |
-| Profile feed & stats                  |  ✓   |      ✓      |       |          | `test/unit/components/profiles/profile-stat-grid.test.tsx`, `profile-feed-queries.test.ts`                                      |
-| Person hover card / person-card route |  ✓   |      ✓      |       |          | `components/people/PersonHoverCard.test.tsx`, `person-card-route.test.ts`                                                       |
-| Username / account settings           |  ✓   |      ✓      |       |    ✓     | `settings/account-email.test.tsx`, `email-case.test.ts`, `e2e/full/username-account-settings.spec.ts`                           |
+| Feature surface                       | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                   |
+| ------------------------------------- | :--: | :---------: | :---: | :------: | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Profile view / edit                   |  ✓   |      ✓      |   ✓   |    ✓     | `u/[id]/profile-editor.test.tsx`, `profile-update-action.test.ts`, `e2e/smoke/settings-loads.spec.ts`, `e2e/full/profile-edit.spec.ts` |
+| Profile feed & stats                  |  ✓   |      ✓      |       |          | `test/unit/components/profiles/profile-stat-grid.test.tsx`, `profile-feed-queries.test.ts`                                             |
+| Person hover card / person-card route |  ✓   |      ✓      |       |          | `components/people/PersonHoverCard.test.tsx`, `person-card-route.test.ts`                                                              |
+| Username / account settings           |  ✓   |      ✓      |       |    ✓     | `settings/account-email.test.tsx`, `email-case.test.ts`, `e2e/full/username-account-settings.spec.ts`                                  |
 
 ## Settings
 
@@ -215,8 +215,6 @@ confirm the surface's bug class has a cheaper owner:
 - **Machine create / edit form** has no Full-E2E row; creation is exercised
   only indirectly (e.g. `machine-with-invite.spec.ts`). Class B/C are correctly
   owned by integration + RTL, so this is likely fine.
-- **Admin user management** has no unit row — expected, since it is class B/E
-  (integration-owned), with Full-E2E for the journey.
 - **Reporting default mode** and **Resource-URL deep links** are unit-only;
   both are pure logic (class G), so that is the cheapest correct layer.
 - **Settings shell** is smoke-only (class D "renders"); the individual setting
