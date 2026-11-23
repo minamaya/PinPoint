@@ -7,6 +7,7 @@ import { Button } from "~/components/ui/button";
 import { CollectionFields } from "~/components/collections/CollectionFields";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -14,7 +15,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { createCollectionAction } from "~/app/(app)/c/collections/actions";
-import type { ProseMirrorDoc } from "~/lib/tiptap/types";
+import { docIsEmpty, type ProseMirrorDoc } from "~/lib/tiptap/types";
 
 interface Props {
   /** Opens from the page's New collection action (design-bible §26.1). */
@@ -54,6 +55,8 @@ export function CreateCollectionDialog({
     }
   }, [open]);
 
+  const dirty = name !== "" || !docIsEmpty(description) || selected.length > 0;
+
   function create(): void {
     setError(null);
     startTransition(async () => {
@@ -71,13 +74,10 @@ export function CreateCollectionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
       <DialogContent
         className="sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
-        // A stray backdrop click shouldn't discard an in-progress collection —
-        // only Cancel / the X / Esc close it (unsaved-form dismissal guidance).
-        onInteractOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>New collection</DialogTitle>
@@ -104,13 +104,11 @@ export function CreateCollectionDialog({
         )}
 
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Cancel
-          </Button>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
           <Button
             type="button"
             onClick={create}

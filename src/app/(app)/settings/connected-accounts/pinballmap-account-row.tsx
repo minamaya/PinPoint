@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -25,6 +26,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { useFormDirty } from "~/hooks/use-form-dirty";
 import { PasswordInput } from "~/components/ui/password-input";
 import {
   linkPinballMapAccountAction,
@@ -146,13 +148,14 @@ function LinkDialog({
   // uncontrolled form after its action runs, and the member should only have
   // to retype the password.
   const [login, setLogin] = useState("");
+  const { dirty, formProps } = useFormDirty();
 
   useEffect(() => {
     if (state?.ok) onOpenChange(false);
   }, [state, onOpenChange]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={dirty}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -163,6 +166,7 @@ function LinkDialog({
         </DialogHeader>
         <form
           action={formAction}
+          {...formProps}
           className="space-y-4"
           data-testid="pinballmap-link-form"
         >
@@ -216,15 +220,11 @@ function LinkDialog({
             </p>
           ) : null}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                onOpenChange(false);
-              }}
-            >
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" disabled={pending}>
               {pending ? "Linking…" : "Link account"}
             </Button>

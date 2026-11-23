@@ -190,4 +190,21 @@ describe("MergeTagDialog", () => {
     await userEvent.selectOptions(select, "Kid-friendly · 3 machines");
     expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("confirms before Escape discards a chosen tag, and closes at once when clean", async () => {
+    const onOpenChange = vi.fn();
+    render(<MergeTagDialog open onOpenChange={onOpenChange} merge={merge} />);
+    await userEvent.keyboard("{Escape}");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+
+    onOpenChange.mockClear();
+    await userEvent.selectOptions(
+      screen.getByLabelText("Merge into"),
+      "topper"
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByText("Discard changes?")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
 });

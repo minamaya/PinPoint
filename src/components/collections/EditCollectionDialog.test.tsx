@@ -132,6 +132,10 @@ describe("EditCollectionDialog", () => {
     await userEvent.clear(editor);
     await userEvent.type(editor, "Abandoned draft");
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // The edit is unsaved, so Cancel asks before discarding it.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Discard" })
+    );
 
     // Reopen: the editor and the payload start from the saved description.
     await userEvent.click(screen.getByTestId("collection-edit-trigger"));

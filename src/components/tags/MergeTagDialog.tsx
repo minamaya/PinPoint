@@ -1,11 +1,12 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -72,14 +73,25 @@ export function MergeTagDialog({
   merge,
   onCloseAutoFocus,
 }: MergeTagDialogProps): React.JSX.Element {
+  const [choice, setChoice] = useState("");
+
+  // Each open starts with nothing chosen.
+  useEffect(() => {
+    if (open) setChoice("");
+  }, [open]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={choice !== ""}>
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        {/* Mounts with the content, so each open starts with nothing chosen. */}
-        <MergeTagForm merge={merge} onClose={() => onOpenChange(false)} />
+        <MergeTagForm
+          merge={merge}
+          choice={choice}
+          onChoiceChange={setChoice}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -87,14 +99,17 @@ export function MergeTagDialog({
 
 function MergeTagForm({
   merge,
+  choice,
+  onChoiceChange,
   onClose,
 }: {
   merge: TagMerge;
+  choice: string;
+  onChoiceChange: (choice: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [choice, setChoice] = useState("");
   const [refused, setRefused] = useState<Block | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -108,7 +123,7 @@ function MergeTagForm({
     (picked === undefined ? null : blockFor(picked.target, picked.group));
 
   function pick(value: string): void {
-    setChoice(value);
+    onChoiceChange(value);
     setRefused(null);
     setError(null);
   }
@@ -189,9 +204,11 @@ function MergeTagForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button
           type="submit"
           variant="destructive"

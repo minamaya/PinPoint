@@ -1,12 +1,13 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -37,27 +38,40 @@ export function NewSettingsTagDialog({
   onOpenChange,
   onCloseAutoFocus,
 }: NewSettingsTagDialogProps): React.JSX.Element {
+  const [name, setName] = useState("");
+
+  // Each open starts clean.
+  useEffect(() => {
+    if (open) setName("");
+  }, [open]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={name !== ""}>
       <DialogContent
         className="sm:max-w-sm"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        {/* Mounts with the content, so each open starts clean. */}
-        <NewSettingsTagForm onClose={() => onOpenChange(false)} />
+        <NewSettingsTagForm
+          name={name}
+          onNameChange={setName}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
 function NewSettingsTagForm({
+  name,
+  onNameChange,
   onClose,
 }: {
+  name: string;
+  onNameChange: (name: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const length = tagNameLength(normalizeTagName(name));
@@ -98,7 +112,7 @@ function NewSettingsTagForm({
           id={`${id}-name`}
           value={name}
           onChange={(event) => {
-            setName(event.target.value);
+            onNameChange(event.target.value);
             setError(null);
           }}
           required
@@ -129,14 +143,11 @@ function NewSettingsTagForm({
         ) : null}
       </div>
       <DialogFooter>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onClose}
-          className="max-md:h-11"
-        >
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline" className="max-md:h-11">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button
           type="submit"
           loading={pending}

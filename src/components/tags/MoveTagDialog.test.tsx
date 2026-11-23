@@ -146,4 +146,21 @@ describe("MoveTagDialog", () => {
     await userEvent.selectOptions(select, "No type");
     expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("confirms before Escape discards a chosen type, and closes at once when clean", async () => {
+    const onOpenChange = vi.fn();
+    render(<MoveTagDialog open onOpenChange={onOpenChange} move={move} />);
+    await userEvent.keyboard("{Escape}");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+
+    onOpenChange.mockClear();
+    await userEvent.selectOptions(
+      screen.getByLabelText("Tag type"),
+      "features"
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByText("Discard changes?")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
 });
