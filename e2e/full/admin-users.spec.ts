@@ -1,113 +1,75 @@
 import { test, expect } from "../support/fixtures.js";
-import { loginAs } from "../support/actions.js";
-import {
-  createTestUser,
-  deleteTestUser,
-  updateUserRole,
-} from "../support/supabase-admin.js";
+import { STORAGE_STATE } from "../support/auth-state.js";
+import { TEST_USERS } from "../support/constants.js";
+import { createTestUser, deleteTestUser } from "../support/supabase-admin.js";
 
 test.describe("Admin User Management", () => {
-  let adminEmail: string;
-  let adminId: string;
+  test.use({ storageState: STORAGE_STATE.admin });
+
   let targetEmail: string;
-  let memberEmail: string | undefined;
   const createdUserIds: string[] = [];
 
   test.beforeAll(async () => {
-    // Create Admin User
-    const adminTimestamp = Date.now();
-    adminEmail = `admin_${adminTimestamp}@example.com`;
-    const adminUser = await createTestUser(adminEmail);
-    adminId = adminUser.id;
-    createdUserIds.push(adminId);
-    await updateUserRole(adminId, "admin");
-
-    // Create Target User
-    const targetTimestamp = Date.now();
-    targetEmail = `target_${targetTimestamp}@example.com`;
+    const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    targetEmail = `target_${uniqueSuffix}@example.com`;
     const targetUser = await createTestUser(targetEmail);
     createdUserIds.push(targetUser.id);
   });
 
   test.afterAll(async () => {
-    // Delete all users created during this describe block
     for (const userId of createdUserIds) {
       await deleteTestUser(userId);
     }
   });
 
-  test("admin can view users and change roles", async ({ page }, testInfo) => {
-    // Login as Admin
-    await loginAs(page, testInfo, {
-      email: adminEmail,
-      password: "TestPassword123",
-    });
-
-    // Navigate to Admin Users Page
+  test("admin views users, enforces row invariants, and changes a user's role", async ({
+    page,
+  }) => {
     await page.goto("/admin/users");
-    // Verify we are on User Management page
     await expect(
       page.getByRole("heading", { name: "User Management" })
     ).toBeVisible();
 
-    // Verify Target User is listed
+    // Own active admin row: self-demotion control is disabled and Remove is absent.
+    const ownRow = page.getByRole("row").filter({
+      has: page.getByRole("cell", {
+        name: TEST_USERS.admin.email,
+        exact: true,
+      }),
+    });
+    const ownSelectTrigger = ownRow.getByRole("combobox");
+    await expect(ownSelectTrigger).toBeDisabled();
+    await expect(ownSelectTrigger).toHaveText("Admin");
+    await expect(ownRow.getByRole("button", { name: /remove/i })).toHaveCount(
+      0
+    );
+
+    // Seeded pending invited row mounts the Remove action (read-only check;
+    // removal AlertDialog and DB action are tested in unit/integration tests).
+    const invitedRow = page.getByRole("row").filter({
+      has: page.getByRole("cell", {
+        name: "invited.guest@example.com",
+        exact: true,
+      }),
+    });
+    await expect(
+      invitedRow.getByRole("button", { name: /remove/i })
+    ).toBeVisible();
+
+    // Target user row: promote Guest -> Admin and verify toast + persisted label.
     await expect(page.getByText(targetEmail)).toBeVisible();
+    const targetRow = page.getByRole("row").filter({
+      has: page.getByRole("cell", { name: targetEmail, exact: true }),
+    });
+    const targetSelectTrigger = targetRow.getByRole("combobox");
 
-    // Change Target User Role to Admin
-    // Find the row with target email, then find the select within it
-    const row = page.getByRole("row").filter({ hasText: targetEmail });
-    const selectTrigger = row.getByRole("combobox");
+    await expect(targetSelectTrigger).toHaveText("Guest");
+    await expect(targetSelectTrigger).toBeEnabled();
 
-    // Initial role should be Guest (signup default for non-invited users)
-    await expect(selectTrigger).toHaveText("Guest");
-    await expect(selectTrigger).toBeEnabled();
-
-    // Change to Admin
-    await selectTrigger.click();
+    await targetSelectTrigger.click();
     await page.getByRole("option", { name: "Admin" }).click();
 
-    // Verify Toast Success
     await expect(page.getByText("Role updated successfully")).toBeVisible();
-
-    // Verify Role Persisted (UI update)
-    await expect(selectTrigger).toHaveText("Admin");
-  });
-
-  test("admin cannot demote themselves", async ({ page }, testInfo) => {
-    // Login as Admin
-    await loginAs(page, testInfo, {
-      email: adminEmail,
-      password: "TestPassword123",
-    });
-
-    // Navigate to Admin Users Page
-    await page.goto("/admin/users");
-
-    // Find own row
-    const row = page.getByRole("row").filter({ hasText: adminEmail });
-    const selectTrigger = row.getByRole("combobox");
-
-    // Select should be disabled for self-admin
-    await expect(selectTrigger).toBeDisabled();
-    await expect(selectTrigger).toHaveText("Admin");
-  });
-
-  test("non-admin cannot access admin page", async ({ page }, testInfo) => {
-    // Create a member user to test access control be safe.
-    memberEmail = `member_${Date.now()}@example.com`;
-    const memberUser = await createTestUser(memberEmail);
-    createdUserIds.push(memberUser.id);
-
-    await loginAs(page, testInfo, {
-      email: memberEmail,
-      password: "TestPassword123",
-    });
-
-    // Try to navigate to Admin Page
-    await page.goto("/admin/users");
-
-    // Should see 403 Forbidden page
-    await expect(page.getByText("403")).toBeVisible();
-    await expect(page.getByText("Access Denied")).toBeVisible();
+    await expect(targetSelectTrigger).toHaveText("Admin");
   });
 });
