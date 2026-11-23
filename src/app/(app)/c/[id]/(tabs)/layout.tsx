@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { MachineGroupShell } from "~/components/collections/MachineGroupShell";
 import { CollectionPageActions } from "~/components/collections/CollectionPageActions";
-import { COLLECTIONS_CRUMB } from "~/components/collections/GroupBreadcrumb";
 import { PageExportProvider } from "~/components/list-view";
 import { ClampedDescription } from "~/components/collections/ClampedDescription";
 import { RichTextDisplay } from "~/components/editor/RichTextDisplay";
@@ -54,8 +53,8 @@ export default async function CollectionLayout({
   // title alone (collections-and-tags 4.8).
   const breadcrumb =
     viewer.userId !== undefined && (!data.viaViewToken || data.viewerCanEdit)
-      ? [COLLECTIONS_CRUMB]
-      : [];
+      ? ({ section: "collections" } as const)
+      : null;
 
   // "Edit collection" is shown to the owner AND editor collaborators; "Share"
   // and the owner-only Delete stay on the manage gate. The all-machines fetch
