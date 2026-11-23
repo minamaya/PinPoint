@@ -210,6 +210,24 @@ describe("loadIssueView", () => {
     expect(result.state.page).toBe(1);
     expect(result.rows).toHaveLength(3);
   });
+
+  it("offers every non-removed owned machine in myMachines and filters to them when selected (issues-list §4.5)", async () => {
+    const db = await getTestDb();
+    await db
+      .insert(machines)
+      .values(
+        createTestMachine({ initials: "CC", name: "Charlie", ownerId: VIEWER })
+      );
+    await db.insert(issues).values(createTestIssue("CC", { issueNumber: 1 }));
+
+    const preset = await load("");
+    expect(preset.myMachines.toSorted()).toEqual(["AA", "CC"]);
+
+    const filtered = await load(
+      `machine=${preset.myMachines.join(",")}&sort=id&dir=asc`
+    );
+    expect(ids(filtered)).toEqual(["AA-01", "AA-02", "CC-01"]);
+  });
 });
 
 /**

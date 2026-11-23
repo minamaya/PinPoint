@@ -12,6 +12,8 @@ import {
   userProfiles,
 } from "~/server/db/schema";
 import { loadIssueListPage } from "~/lib/issues/list-page";
+import { STATUS_GROUPS } from "~/lib/issues/status";
+import { ISSUE_PRIORITY_VALUES, ISSUE_SEVERITY_VALUES } from "~/lib/types";
 
 vi.mock("~/server/db", async () => {
   const { getTestDb } = await import("~/test/setup/pglite");
@@ -116,6 +118,41 @@ describe("issue list Summary Widget counts", () => {
       major: 0,
       unplayable: 1,
     });
+  });
+
+  it("matches each non-zero segment count to the filtered default-view total (issue-widgets §2.2)", async () => {
+    await seed();
+    const { summary } = await loadIssueListPage({}, { isAdmin: false });
+
+    for (const group of ["new", "in_progress"] as const) {
+      const count = summary.byStatusGroup[group];
+      expect(count).toBeGreaterThan(0);
+      const filtered = await loadIssueListPage(
+        { status: [...STATUS_GROUPS[group]] },
+        { isAdmin: false }
+      );
+      expect(filtered.totalCount).toBe(count);
+    }
+
+    for (const severity of ISSUE_SEVERITY_VALUES) {
+      const count = summary.bySeverity[severity];
+      if (count === 0) continue;
+      const filtered = await loadIssueListPage(
+        { severity: [severity] },
+        { isAdmin: false }
+      );
+      expect(filtered.totalCount).toBe(count);
+    }
+
+    for (const priority of ISSUE_PRIORITY_VALUES) {
+      const count = summary.byPriority[priority];
+      if (count === 0) continue;
+      const filtered = await loadIssueListPage(
+        { priority: [priority] },
+        { isAdmin: false }
+      );
+      expect(filtered.totalCount).toBe(count);
+    }
   });
 });
 

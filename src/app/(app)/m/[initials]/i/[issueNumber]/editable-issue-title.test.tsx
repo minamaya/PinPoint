@@ -322,6 +322,83 @@ describe("EditableIssueTitle", () => {
     }
   });
 
+  it("omits Move on desktop and in the phone More menu when move is absent, while keeping Edit title", async () => {
+    const user = userEvent.setup();
+    render(
+      <EditableIssueTitle issueId="issue-1" title="Original Title" canEdit />
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Edit title" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Move to another machine" })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId("issue-actions-menu-trigger"));
+    expect(
+      await screen.findByRole("menuitem", { name: "Edit title" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Move to another machine" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the Move dialog from the desktop Move button and from the phone More menu", async () => {
+    const user = userEvent.setup();
+    const move = {
+      currentInitials: "AFM",
+      machines: [
+        { initials: "AFM", name: "Attack from Mars" },
+        { initials: "HD", name: "Humpty Dumpty" },
+      ],
+    };
+    const { unmount } = render(
+      <EditableIssueTitle
+        issueId="issue-1"
+        title="Original Title"
+        canEdit={false}
+        move={move}
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Edit title" })
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Move to another machine" })
+    );
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: "Move issue to another machine",
+      })
+    ).toBeInTheDocument();
+    unmount();
+
+    const restoreViewport = mockMobileViewport(true);
+    try {
+      render(
+        <EditableIssueTitle
+          issueId="issue-1"
+          title="Original Title"
+          canEdit
+          move={move}
+        />
+      );
+      await user.click(screen.getByRole("button", { name: "More" }));
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Move to another machine" })
+      );
+      expect(
+        await screen.findByRole("alertdialog", {
+          name: "Move issue to another machine",
+        })
+      ).toBeInTheDocument();
+    } finally {
+      restoreViewport();
+    }
+  });
+
   describe("on a phone", () => {
     let restoreViewport: () => void;
     beforeEach(() => {

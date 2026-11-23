@@ -201,11 +201,12 @@ describe("Issue rows", () => {
     ).toHaveTextContent(/^11 comment$/);
   });
 
-  it("is read-only: no buttons", () => {
+  it("is read-only: no buttons or comboboxes", () => {
     renderRows([makeIssue({ commentCount: 2 })]);
     const row = within(screen.getByRole("listitem"));
 
     expect(row.queryByRole("button")).toBeNull();
+    expect(row.queryByRole("combobox")).toBeNull();
     // Two links: the issue (the whole row) and the machine.
     expect(row.getAllByRole("link")).toHaveLength(2);
   });
