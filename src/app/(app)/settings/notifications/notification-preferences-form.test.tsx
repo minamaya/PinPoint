@@ -92,10 +92,17 @@ describe("NotificationPreferencesForm", () => {
   });
 
   it("hides Discord column when integration is not enabled", () => {
-    render(<NotificationPreferencesForm preferences={defaultPreferences} />);
+    const { container } = render(
+      <NotificationPreferencesForm preferences={defaultPreferences} />
+    );
     expect(
       screen.queryByLabelText("Discord Notifications")
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('button[id^="discord"]').length).toBe(0);
+    expect(
+      container.querySelectorAll('button[id^="inAppNotify"]').length
+    ).toBeGreaterThan(0);
   });
 
   it("renders Discord column when integration is enabled and user is linked", () => {
