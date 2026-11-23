@@ -22,7 +22,7 @@
 - **Applied View** — the account's Saved View the current View Configuration came from, or else the Built-in View whose search, filters, and sorting it has. A List View that has left every Built-in View this way has no Applied View.
 - **Edited** — the state of a List View whose Applied View is one of the account's Saved Views and whose current View Configuration differs from it.
 - **Primary Filter** — a filter a host shows inline beside search. **Secondary Filter** — a filter a host shows only under More filters.
-- **List Header** — the bar at the top of the list box. On desktop it holds the view tabs and Saved View controls, sort, compact pager, and View options; on phones it holds the view menu, search, and Filters (§7.3).
+- **List Header** — the bar at the top of the list box. On desktop it holds the view tabs and Saved View controls, sort, compact pager, and Display; on phones it holds the view menu, search, and Filters (§7.3).
 - **Collapse Order** — the ordered steps by which one List View page design fits narrower screens (§8).
 - **Page actions** — the buttons a page shows for actions on the whole page rather than on one row, ending with ⋯, a menu holding the page's other actions.
 
@@ -73,8 +73,8 @@
 - **5.2** When the List View is Edited, its Saved View's tab shows Edited, and the List Header offers Save and Discard changes. When it has no Applied View, the List Header offers Save view to signed-in accounts.
 - **5.3** Save offers Save changes and Save as new. Save view saves the current View Configuration as a new Saved View.
 - **5.4** Discard changes returns to the Applied View's configuration at page 1.
-- **5.5** The List Header shows the sort control, a compact pager (range, previous, next), and View options. Export, when a host offers it, is a page action in ⋯ (§3.7), never in the List Header.
-- **5.6** View options holds page size only. No List Host offers columns or a choice of displayed fields.
+- **5.5** The List Header shows the sort control, a compact pager (range, previous, next), and Display, an icon button with the sliders icon at every width. Export, when a host offers it, is a page action in ⋯ (§3.7), never in the List Header.
+- **5.6** Display holds page size, and Sort once the List Header folds it in (8.17). No List Host offers columns or a choice of displayed fields.
 - **5.7** Page sizes are 25, 50, and 100; 25 is the default everywhere.
 - **5.8** View tabs are quiet pills with the Applied View's pill filled, so they never read as a page's own tabs.
 
@@ -122,7 +122,7 @@
 - **8.14** Summary Widgets that do not fit side by side drop whole from the right (widgets §2.7).
 - **8.15** When the Primary Filters do not fit beside search, they move into More filters from the right, one at a time, in the host's order.
 - **8.16** When the List Header's view tabs do not fit, tabs move into More views from the right; the Applied View's tab always stays visible.
-- **8.17** When only the Applied View's tab is left and the List Header is still crowded, the compact pager drops its range text, then disappears. The pager below the list remains, and shows the result range even when there is only one page.
+- **8.17** When only the Applied View's tab is left and the List Header is still crowded, the compact pager drops its range text, then disappears. The pager below the list remains, and shows the result range even when there is only one page. Then Sort moves into Display, above page size.
 - **8.18** Next, Discard changes shortens to Discard.
 - **8.19** Last, the Applied View's tab name truncates.
 - **8.20** _Retired 2026-11-15._ No List Host has a table (machine-views §5.2), so nothing scrolls sideways. Number kept so older citations don't dangle.
@@ -178,7 +178,7 @@
 
 ## 12. Accessibility
 
-- **12.1** Filter dropdowns, More filters, More views, Save, View options, and the page actions, including ⋯, are keyboard-operable; opening one moves focus into it, and closing it returns focus to its button.
+- **12.1** Filter dropdowns, More filters, More views, Save, Display, and the page actions, including ⋯, are keyboard-operable; opening one moves focus into it, and closing it returns focus to its button.
 - **12.2** Phone sheets trap focus while open, close on Escape, and return focus to the control that opened them.
 - **12.3** The Saved View tabs are a navigation landmark named "Saved views", and the current tab is exposed as current.
 - **12.4** The result count is announced politely after the results change.
@@ -189,7 +189,9 @@
 
 ## Known divergences (code vs spec)
 
-_None — the current implementation matches this spec._
+| Requirement | Divergence | Resolution |
+| :-- | :-- | :-- |
+| §1, 5.5, 5.6, 8.17, 12.1 | The List Header's page-size control is named View options with its own icon, and Sort never moves into it. | PP-jb9v.21 |
 
 ---
 
@@ -197,6 +199,7 @@ _None — the current implementation matches this spec._
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | View options is renamed Display, an icon button with the sliders icon at every width (§1, 5.5, 5.6, 12.1); when the List Header is crowded and the compact pager is gone, Sort moves into Display (8.17). |
 | 2026-11-23 | 8.9 retired: the breadcrumb always sits above the title (collections-and-tags 4.9), so it no longer moves; 8.8's example names the description step instead. |
 | 2026-11-21 | 3.8, 8.11: icon-only page actions are borderless; labeled ones stay outlined. 8.12: on Collection and Tag pages only Share folds, since Print moved into ⋯ (collections-and-tags 4.16). 3.7: an action that would be ⋯'s only entry shows as its own button while there is room. 3.10, 8.11–8.13: ⋯ reads "More" instead of "Actions". 12.1: page actions and ⋯ are keyboard-operable. |
 | 2026-11-15 | No List Host has columns, a table, or displayed fields: View options holds page size only (§5.6), View Configurations, Page Presets, and Built-in Views carry no fields (§1), and Saved Views stored with fields ignore them (§10.14); retired keeping the page on a field change (§4.8), the sideways-scrolling table step (§8.20), and sort headers (§9.8). Every host uses two-line rows (§2.4) on one row structure shared by machine and issue rows (§6.4); the machine row drop step applies at every width (§8.21). |
