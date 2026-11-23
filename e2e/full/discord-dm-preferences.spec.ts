@@ -15,55 +15,6 @@ test.describe("Discord DM preferences", () => {
 
   test.beforeAll(async () => {
     const ts = Date.now();
-    memberEmail = `member_discord_dm_${ts}@example.com`;
-    const user = await createTestUser(memberEmail);
-    memberId = user.id;
-    await updateUserRole(memberId, "member");
-  });
-
-  test.afterAll(async () => {
-    await deleteTestUser(memberId);
-    // Belt-and-suspenders: ensure global state isn't dirty for other suites.
-    await unconfigureDiscordIntegrationForTest().catch(() => {
-      // Tolerable if singleton row state already matches.
-    });
-  });
-
-  test("Discord column is hidden when integration is unconfigured", async ({
-    page,
-  }, testInfo) => {
-    await loginAs(page, testInfo, {
-      email: memberEmail,
-      password: "TestPassword123",
-    });
-    await page.goto("/settings");
-
-    // Notification Preferences section should render the email/in-app columns
-    // but NOT the Discord column when getDiscordConfig() returns null.
-    await expect(
-      page.getByRole("heading", { name: "Notification Preferences" })
-    ).toBeVisible();
-    await expect(page.getByLabel("Email Notifications")).toBeVisible();
-    await expect(page.getByLabel("In-App Notifications")).toBeVisible();
-
-    // Discord switch must NOT be present in this state.
-    await expect(page.getByLabel("Discord Notifications")).not.toBeAttached();
-  });
-
-  // "Linked user without a configured integration still sees no Discord column"
-  // deleted (row 24): this block duplicates "Discord column is hidden when
-  // integration is unconfigured" — both assert `not.toBeAttached()` when
-  // getDiscordConfig() returns null. The integration column visibility is driven
-  // entirely by the integration config, not the user's linked state, so the linked
-  // variant adds no additional coverage.
-});
-
-test.describe("Discord DM preferences (integration configured)", () => {
-  let memberEmail: string;
-  let memberId: string;
-
-  test.beforeAll(async () => {
-    const ts = Date.now();
     memberEmail = `member_discord_dm_enabled_${ts}@example.com`;
     const user = await createTestUser(memberEmail);
     memberId = user.id;
@@ -82,43 +33,28 @@ test.describe("Discord DM preferences (integration configured)", () => {
     await deleteTestUser(memberId);
   });
 
-  test("Unlinked user sees Discord column with Link CTA and disabled main switch", async ({
+  test("reflects Discord link state and persists per-event preference toggle across reload", async ({
     page,
   }, testInfo) => {
-    // discord_user_id stays null for this test — the column should render
-    // (the integration is configured) but the main switch is disabled with
-    // a Link CTA pointing at Connected Accounts.
     await loginAs(page, testInfo, {
       email: memberEmail,
       password: "TestPassword123",
     });
     await page.goto("/settings");
 
+    // Unlinked state: column renders, main switch disabled, Link CTA visible.
     const discordMainSwitch = page.getByLabel("Discord Notifications");
     await expect(discordMainSwitch).toBeVisible();
     await expect(discordMainSwitch).toBeDisabled();
-
-    // The "Link Discord" anchor sits in the same MainSwitchItem as the CTA.
     await expect(
       page.getByRole("link", { name: "Link Discord" })
     ).toBeVisible();
-  });
 
-  test("Linked user toggles Discord per-event preference and value persists across reload", async ({
-    page,
-  }, testInfo) => {
+    // Link Discord in DB, reload, toggle per-event preference off, and confirm persistence.
     await setUserDiscordId(memberId, "test-discord-id-toggle");
-
     try {
-      await loginAs(page, testInfo, {
-        email: memberEmail,
-        password: "TestPassword123",
-      });
-      await page.goto("/settings");
+      await page.reload();
 
-      // Issue Assignment row, Discord column. Default is true (mirrors email
-      // default per buildDefaultPrefs in dispatch.ts), so the switch starts
-      // checked. Toggle it off, save, reload — value must round-trip.
       const discordAssignSwitch = page.locator("#discordNotifyOnAssigned");
       await expect(discordAssignSwitch).toBeVisible();
       await expect(discordAssignSwitch).toBeChecked();
@@ -127,8 +63,6 @@ test.describe("Discord DM preferences (integration configured)", () => {
       await expect(discordAssignSwitch).not.toBeChecked();
 
       await page.getByRole("button", { name: "Save Preferences" }).click();
-      // Server action completes when the success affordance flips on. The
-      // button text changes to "Saved!" for ~3s on success.
       await expect(page.getByRole("button", { name: "Saved!" })).toBeVisible();
 
       await page.reload();

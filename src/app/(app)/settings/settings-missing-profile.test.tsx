@@ -62,8 +62,9 @@ vi.mock("~/server/db", async () => {
 
 // UI components — not exercised in the missing-profile path (notFound throws
 // before rendering), but must be resolvable at import time.
+const mockIsDiscordIntegrationConfigured = vi.fn().mockResolvedValue(false);
 vi.mock("~/lib/discord/config", () => ({
-  isDiscordIntegrationConfigured: vi.fn().mockResolvedValue(false),
+  isDiscordIntegrationConfigured: () => mockIsDiscordIntegrationConfigured(),
 }));
 vi.mock(
   "~/app/(app)/settings/connected-accounts/connected-accounts-section",
@@ -111,6 +112,7 @@ describe("SettingsPage — authenticated user with missing profile (PP-etip)", (
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDiscordIntegrationConfigured.mockResolvedValue(false);
   });
 
   it("calls notFound() and reportError — does NOT redirect to login", async () => {
@@ -207,6 +209,38 @@ describe("SettingsPage — authenticated user with missing profile (PP-etip)", (
       expect(mockNotificationPreferencesForm).toHaveBeenCalledWith(
         expect.objectContaining({
           isInternalAccount: false,
+          discordIntegrationEnabled: false,
+          userHasDiscord: false,
+        })
+      );
+    });
+
+    it("passes discordIntegrationEnabled={true} and userHasDiscord={true} when configured and linked", async () => {
+      const userId = randomUUID();
+      const standardEmail = `discord-linked-${userId}@example.com`;
+      mockIsDiscordIntegrationConfigured.mockResolvedValueOnce(true);
+
+      const db = await getTestDb();
+      await db.insert(authUsers).values({ id: userId, email: standardEmail });
+      await db.insert(userProfiles).values(
+        createTestUser({
+          id: userId,
+          email: standardEmail,
+          discordUserId: "12345",
+        })
+      );
+
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: userId, email: standardEmail } },
+      });
+
+      render(await SettingsPage());
+
+      expect(mockNotificationPreferencesForm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isInternalAccount: false,
+          discordIntegrationEnabled: true,
+          userHasDiscord: true,
         })
       );
     });
