@@ -83,6 +83,14 @@ stopping = False
 vms: dict[int, dict] = {}  # job id -> {proc, dir, runner_id, run_id, started, name}
 admitted: dict[int, float] = {}  # run id -> when its first VM started
 last_lease: dict[str, tuple[str, float]] = {}  # variable -> (value written, when)
+# Runners whose VM exited while GitHub still had a job on them: name -> {run_id, runner_id, since}
+dead: dict[str, dict] = {}
+rerun_when_done: set[int] = set()  # PR runs force-cancelled because a VM died mid-job
+VM_LOGS = STATE / "vm-logs"  # serial logs of VMs that exited early or mid-job
+VM_LOGS_KEPT = 20
+DEAD_GRACE_S = 30  # a finished job can take a few seconds to free its runner
+DEAD_RETRY_S = 120  # then check again this often (each check is two API calls)
+DEAD_GIVE_UP_S = 30 * 60
 
 
 def log(msg: str) -> None:
@@ -287,12 +295,21 @@ def cancel(run_id: int) -> None:
         log(f"cancel {run_id}: {err}")
 
 
-def delete_runner(runner_id: int) -> None:
+def delete_runner(runner_id: int) -> bool:
+    """True once the runner is gone. False while GitHub still has a job on it
+    (HTTP 422) or when GitHub could not say (any other error)."""
     try:
         api("DELETE", f"{runners_path()}/{runner_id}")
     except urllib.error.HTTPError as err:
-        if err.code != 404:  # an ephemeral runner removes itself after its job
+        if err.code == 404:  # an ephemeral runner removes itself after its job
+            return True
+        if err.code != 422:
             log(f"delete runner {runner_id}: HTTP {err.code}")
+        return False
+    except (urllib.error.URLError, OSError) as err:
+        log(f"delete runner {runner_id}: {err}")
+        return False
+    return True
 
 
 def idle_and_unneeded(vm) -> bool:
@@ -334,8 +351,14 @@ runcmd:
 """
 
 
+def runner_name(run_id: int, job_id: int, now: float) -> str:
+    """Unique per spawn: a dead VM's runner can stay registered after its job id
+    is queued again, and GitHub refuses a second runner with the same name (409)."""
+    return f"{NAME_PREFIX}{run_id}-{job_id}-{int(now):x}"
+
+
 def spawn(run, job) -> None:
-    name = f"{NAME_PREFIX}{run['id']}-{job['id']}"
+    name = runner_name(run["id"], job["id"], time.time())
     label = job["labels"][0]
     vcpus, mem = size_for(label)
     resp = api(
@@ -343,83 +366,90 @@ def spawn(run, job) -> None:
         f"{runners_path()}/generate-jitconfig",
         {"name": name, "runner_group_id": RUNNER_GROUP_ID, "labels": [label]},
     )
-    # The JIT config registers a runner for this repository, so only ghrunner may
-    # read it: in user-data, in the seed ISO, and in the overlay once the VM boots.
-    d = JOBS / str(job["id"])
-    d.mkdir(mode=0o700, parents=True)
-    fd = os.open(d / "user-data", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(user_data(resp["encoded_jit_config"]))
-    (d / "meta-data").write_text(f"instance-id: {name}\nlocal-hostname: {name}\n")
-    subprocess.run(
-        [
-            XORRISO,
-            "-as",
-            "mkisofs",
-            "-quiet",
-            "-V",
-            "cidata",
-            "-J",
-            "-R",
-            "-o",
-            str(d / "seed.iso"),
-            str(d / "user-data"),
-            str(d / "meta-data"),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    (d / "user-data").unlink()  # the JIT config now lives only in the seed
-    subprocess.run(
-        [
-            QEMU_IMG,
-            "create",
-            "-q",
-            "-f",
-            "qcow2",
-            "-b",
-            str(GOLDEN),
-            "-F",
-            "qcow2",
-            str(d / "disk.qcow2"),
-        ],
-        check=True,
-    )
-    proc = subprocess.Popen(
-        [
-            QEMU,
-            "-machine",
-            "q35,accel=kvm",
-            "-cpu",
-            "host",
-            "-smp",
-            vcpus,
-            "-m",
-            mem,
-            # The overlay is thrown away after the job, so skip host flushes.
-            "-drive",
-            f"file={d / 'disk.qcow2'},if=virtio,discard=unmap,cache=unsafe",
-            "-drive",
-            f"file={d / 'seed.iso'},media=cdrom,readonly=on",
-            # No gateway mapping: the guest cannot address the host's loopback.
-            # Its own address is 10.88.0.2, not a copy of the host's LAN address, so
-            # the host's LAN IP is a remote address the firewall can block.
-            # IPv4 only; the host firewall blocks private and tailnet ranges for ghrunner.
-            "-netdev",
-            "passt,id=n0,param=--no-map-gw,param=--ipv4-only,"
-            "param=--address,param=10.88.0.2,param=--netmask,param=24,"
-            "param=--gateway,param=10.88.0.1,param=--dns,param=1.1.1.1",
-            "-device",
-            "virtio-net-pci,netdev=n0",
-            "-display",
-            "none",
-            "-serial",
-            f"file:{d / 'serial.log'}",
-            "-no-reboot",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=open(d / "qemu.log", "w"),
-    )
+    try:
+        # The JIT config registers a runner for this repository, so only ghrunner may
+        # read it: in user-data, in the seed ISO, and in the overlay once the VM boots.
+        d = JOBS / str(job["id"])
+        d.mkdir(mode=0o700, parents=True)
+        fd = os.open(d / "user-data", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(user_data(resp["encoded_jit_config"]))
+        (d / "meta-data").write_text(f"instance-id: {name}\nlocal-hostname: {name}\n")
+        subprocess.run(
+            [
+                XORRISO,
+                "-as",
+                "mkisofs",
+                "-quiet",
+                "-V",
+                "cidata",
+                "-J",
+                "-R",
+                "-o",
+                str(d / "seed.iso"),
+                str(d / "user-data"),
+                str(d / "meta-data"),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        (d / "user-data").unlink()  # the JIT config now lives only in the seed
+        subprocess.run(
+            [
+                QEMU_IMG,
+                "create",
+                "-q",
+                "-f",
+                "qcow2",
+                "-b",
+                str(GOLDEN),
+                "-F",
+                "qcow2",
+                str(d / "disk.qcow2"),
+            ],
+            check=True,
+        )
+        proc = subprocess.Popen(
+            [
+                QEMU,
+                "-machine",
+                "q35,accel=kvm",
+                "-cpu",
+                "host",
+                "-smp",
+                vcpus,
+                "-m",
+                mem,
+                # The overlay is thrown away after the job, so skip host flushes.
+                "-drive",
+                f"file={d / 'disk.qcow2'},if=virtio,discard=unmap,cache=unsafe",
+                "-drive",
+                f"file={d / 'seed.iso'},media=cdrom,readonly=on",
+                # No gateway mapping: the guest cannot address the host's loopback.
+                # Its own address is 10.88.0.2, not a copy of the host's LAN address, so
+                # the host's LAN IP is a remote address the firewall can block.
+                # IPv4 only; the host firewall blocks private and tailnet ranges for ghrunner.
+                "-netdev",
+                "passt,id=n0,param=--no-map-gw,param=--ipv4-only,"
+                "param=--address,param=10.88.0.2,param=--netmask,param=24,"
+                "param=--gateway,param=10.88.0.1,param=--dns,param=1.1.1.1",
+                "-device",
+                "virtio-net-pci,netdev=n0",
+                "-display",
+                "none",
+                "-serial",
+                f"file:{d / 'serial.log'}",
+                "-no-reboot",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=open(d / "qemu.log", "w"),
+        )
+    except Exception:
+        # Leave nothing registered or on disk for a VM that never started.
+        # delete_runner catches its own errors, so the original one is re-raised.
+        delete_runner(resp["runner"]["id"])
+        shutil.rmtree(JOBS / str(job["id"]), ignore_errors=True)
+        raise
     vms[job["id"]] = {
         "proc": proc,
         "dir": d,
@@ -448,13 +478,112 @@ def reap(force: bool = False) -> None:
         if vm["proc"].poll() is None:
             continue
         vm["proc"].wait()
-        delete_runner(vm["runner_id"])
+        freed = delete_runner(vm["runner_id"])
+        lived = time.time() - vm["started"]
+        # A timeout kill with its job still assigned leaves the job stuck like a
+        # crash does, so it is recovered too. An orphan kill needs an idle runner,
+        # and a forced kill is shutdown_now's, which cancels the runs itself.
+        if not freed and not (force or orphaned):
+            # GitHub still has a job on this runner, which no VM is running now.
+            dead[vm["name"]] = {
+                "run_id": vm["run_id"],
+                "runner_id": vm["runner_id"],
+                "since": time.time(),
+                "next": time.time() + DEAD_GRACE_S,
+            }
+        if not freed or lived < 120:
+            keep_serial_log(vm)
         shutil.rmtree(vm["dir"], ignore_errors=True)
         del vms[job_id]
         why = (
-            " (timeout)" if expired else " (job finished elsewhere)" if orphaned else ""
+            " (timeout)"
+            if expired
+            else " (job finished elsewhere)"
+            if orphaned
+            else f" (exited after {lived:.0f}s with a job still assigned)"
+            if not freed
+            else ""
         )
         log(f"reaped {vm['name']}{why}")
+
+
+def keep_serial_log(vm) -> None:
+    """Keep the console of a VM that died early or mid-job; its directory is deleted."""
+    try:
+        VM_LOGS.mkdir(mode=0o700, exist_ok=True)
+        shutil.copyfile(vm["dir"] / "serial.log", VM_LOGS / f"{vm['name']}.log")
+        for old in sorted(VM_LOGS.iterdir(), key=lambda p: p.stat().st_mtime)[
+            :-VM_LOGS_KEPT
+        ]:
+            old.unlink()
+    except OSError as err:
+        log(f"keeping serial log of {vm['name']}: {err}")
+
+
+def stuck_on(job_list, name: str) -> bool:
+    """A job of the run is still in progress on a runner whose VM is gone."""
+    return any(
+        j["status"] == "in_progress" and j.get("runner_name") == name for j in job_list
+    )
+
+
+def recover_dead() -> None:
+    """Cancel a run whose job is stuck on a dead VM, and re-run it if it is a PR run.
+
+    GitHub waits a long time before failing a job whose runner vanished, and a
+    merge-queue run cannot pass with one, so cancelling only frees the queue
+    sooner. The re-run goes to ubuntu-latest (ci.yml routes re-runs there).
+    """
+    now = time.time()
+    for name, info in list(dead.items()):
+        if now < info["next"]:
+            continue
+        info["next"] = now + DEAD_RETRY_S
+        if now - info["since"] > DEAD_GIVE_UP_S:
+            log(f"{name}: GitHub never released its runner; giving up on it")
+            del dead[name]
+            continue
+        try:
+            recover_one(name, info)
+        except Exception as err:  # noqa: BLE001 - retried after DEAD_RETRY_S
+            log(f"recovering {name}: {err}")
+    for run_id in list(rerun_when_done):
+        try:
+            if not run_completed(run_id):
+                continue
+            api("POST", f"/repos/{FULL}/actions/runs/{run_id}/rerun-failed-jobs")
+            log(f"re-ran {run_id} on GitHub-hosted runners")
+        except urllib.error.HTTPError as err:
+            if err.code >= 500 or err.code == 429:
+                log(f"re-run {run_id}: HTTP {err.code}; retrying")
+                continue
+            # 403/422: GitHub will not re-run it; retrying would never succeed.
+            log(f"re-run {run_id}: HTTP {err.code}; giving up on it")
+        except (urllib.error.URLError, OSError) as err:
+            log(f"re-run {run_id}: {err}")
+            continue
+        rerun_when_done.discard(run_id)
+
+
+def recover_one(name: str, info: dict) -> None:
+    run_id = info["run_id"]
+    if delete_runner(info["runner_id"]):
+        del dead[name]  # GitHub released it: the job had finished after all
+        return
+    jobs = api("GET", f"/repos/{FULL}/actions/runs/{run_id}/jobs?per_page=100")
+    if not stuck_on(jobs["jobs"], name):
+        return  # not yet released; retried later
+    run = api("GET", f"/repos/{FULL}/actions/runs/{run_id}")
+    api("POST", f"/repos/{FULL}/actions/runs/{run_id}/force-cancel")
+    if is_queue_run(run):
+        log(
+            f"{name} died mid-job; force-cancelled merge-queue run {run_id}, its PR left the queue"
+        )
+    else:
+        log(
+            f"{name} died mid-job; force-cancelled run {run_id}, re-running it on GitHub"
+        )
+        rerun_when_done.add(run_id)
 
 
 def forget_finished_runs() -> None:
@@ -501,7 +630,10 @@ def serve_once(full: bool) -> list:
     for run, job in serve_order(ours):
         if len(vms) >= MAX_VMS:
             break
-        spawn(run, job)
+        try:
+            spawn(run, job)
+        except Exception as err:  # noqa: BLE001 - one job's failure must not stop the rest
+            log(f"spawn for run {run['id']} / {job['name']} failed: {err}")
     return ours
 
 
@@ -594,6 +726,10 @@ def main() -> int:
             set_lease("", PR_LEASE_VAR)
             set_lease(busy_value(datetime.now(timezone.utc)))
             log("draining: finishing the runs already here")
+        try:
+            recover_dead()
+        except Exception as err:  # noqa: BLE001 - retried next poll; serving goes on
+            log(f"recovering dead runners: {err}")
         try:
             reap()
             forget_finished_runs()
