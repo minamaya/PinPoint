@@ -343,9 +343,13 @@ def spawn(run, job) -> None:
         f"{runners_path()}/generate-jitconfig",
         {"name": name, "runner_group_id": RUNNER_GROUP_ID, "labels": [label]},
     )
+    # The JIT config registers a runner for this repository, so only ghrunner may
+    # read it: in user-data, in the seed ISO, and in the overlay once the VM boots.
     d = JOBS / str(job["id"])
-    d.mkdir(parents=True)
-    (d / "user-data").write_text(user_data(resp["encoded_jit_config"]))
+    d.mkdir(mode=0o700, parents=True)
+    fd = os.open(d / "user-data", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(user_data(resp["encoded_jit_config"]))
     (d / "meta-data").write_text(f"instance-id: {name}\nlocal-hostname: {name}\n")
     subprocess.run(
         [
@@ -467,7 +471,7 @@ def forget_finished_runs() -> None:
 def cleanup_stale() -> None:
     """Remove VMs and offline runners left by a previous supervisor."""
     shutil.rmtree(JOBS, ignore_errors=True)
-    JOBS.mkdir(parents=True)
+    JOBS.mkdir(mode=0o700, parents=True)
     for runner in api("GET", f"{runners_path()}?per_page=100")["runners"]:
         if runner["name"].startswith(NAME_PREFIX) and not runner["busy"]:
             delete_runner(runner["id"])
@@ -567,6 +571,7 @@ def on_term(*_):
 
 
 def main() -> int:
+    os.umask(0o077)  # seed ISOs, overlays and logs too; the unit sets UMask= as well
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
     if not GOLDEN.exists():

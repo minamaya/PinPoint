@@ -11,6 +11,9 @@ EnvironmentFile=-/etc/ghrunner/app/env
 LoadCredential=token:/etc/ghrunner/token
 ExecStart=/usr/bin/python3 -u /etc/ghrunner/app/supervisor.py
 StateDirectory=ghrunner
+# Job directories hold each VM's JIT runner config: owner-only (PP-m39ur).
+StateDirectoryMode=0700
+UMask=0077
 KillMode=mixed
 TimeoutStopSec=180
 # Not enabled at boot: `ci-runner on|off` starts and stops it.
