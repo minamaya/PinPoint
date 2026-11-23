@@ -43,7 +43,10 @@ async function addByInitials(page: Page, initials: string): Promise<void> {
   ).not.toHaveAttribute("aria-busy", "true");
   // The machine rows are list items at every width. Scoped to the "Add
   // machines" section so they can't collide with the print-run list's items.
-  const entry = machineViewRow(page, initials);
+  const entry = machineViewRow(
+    page.getByRole("region", { name: "Add machines" }),
+    initials
+  );
   await entry.getByRole("button", { name: /^Add / }).click();
   await expect(entry.getByText("Added")).toBeVisible();
 }

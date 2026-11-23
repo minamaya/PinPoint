@@ -1,6 +1,15 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { SettingsSheetsBuilder } from "~/components/machines/settings/SettingsSheetsBuilder";
 import { loadPrintRunMachinesAction } from "~/app/(app)/m/settings-sheets/actions";
@@ -41,17 +50,6 @@ vi.mock("~/app/(app)/m/settings-sheets/actions", () => ({
   loadPrintRunMachinesAction: vi.fn(),
 }));
 
-window.matchMedia = vi.fn().mockImplementation(() => ({
-  matches: false,
-  media: "",
-  onchange: null,
-  addListener: vi.fn(),
-  removeListener: vi.fn(),
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  dispatchEvent: vi.fn(),
-}));
-
 function memoryStorage(): Storage {
   const values = new Map<string, string>();
   return {
@@ -66,14 +64,30 @@ function memoryStorage(): Storage {
   };
 }
 
-Object.defineProperty(window, "localStorage", {
-  configurable: true,
-  value: memoryStorage(),
-});
-Object.defineProperty(window, "sessionStorage", {
-  configurable: true,
-  value: memoryStorage(),
-});
+const originalMatchMedia = Object.getOwnPropertyDescriptor(
+  window,
+  "matchMedia"
+);
+const originalLocalStorage = Object.getOwnPropertyDescriptor(
+  window,
+  "localStorage"
+);
+const originalSessionStorage = Object.getOwnPropertyDescriptor(
+  window,
+  "sessionStorage"
+);
+
+function restoreDescriptor(
+  target: object,
+  key: PropertyKey,
+  descriptor: PropertyDescriptor | undefined
+): void {
+  if (descriptor) {
+    Object.defineProperty(target, key, descriptor);
+  } else {
+    Reflect.deleteProperty(target, key);
+  }
+}
 
 const HD_ID = "11111111-1111-4111-8111-111111111111";
 const HOUSE_ID = "22222222-2222-4222-8222-222222222222";
@@ -204,6 +218,37 @@ const SAVED_VIEWS: MachineViewSavedViews = {
 };
 
 describe("SettingsSheetsBuilder", () => {
+  beforeAll(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: "",
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: memoryStorage(),
+    });
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: memoryStorage(),
+    });
+  });
+
+  afterAll(() => {
+    restoreDescriptor(window, "matchMedia", originalMatchMedia);
+    restoreDescriptor(window, "localStorage", originalLocalStorage);
+    restoreDescriptor(window, "sessionStorage", originalSessionStorage);
+  });
+
   beforeEach(() => {
     window.sessionStorage.clear();
     vi.mocked(loadPrintRunMachinesAction).mockResolvedValue({

@@ -2113,8 +2113,8 @@ describe("SettingsTab — audit line credits the machine owner", () => {
   });
 });
 
-describe("SettingsTab — lane 11 migrated coverage", () => {
-  it("(c) read-only viewer with no sets sees empty-state text and no New set button", () => {
+describe("SettingsTab — empty-state gating & section deletion", () => {
+  it("read-only viewer with no sets sees empty-state text and no New set button", () => {
     render(
       <SettingsTab
         canCreate={false}

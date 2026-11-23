@@ -80,9 +80,34 @@ test.describe("Apron card tab as an editor", () => {
     await description.fill(LONG_TEXT);
 
     // The preview measures the combined text region (§3.5); the card can
-    // still be saved.
+    // still be saved, and Export gates download/print behind the override
+    // after measuring real fonts in the browser (§9.4–§9.5).
     await expect(page.getByText("Doesn't fit on the card")).toBeVisible();
     await expect(save).toBeEnabled();
+    await save.click();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByText("Saved", { exact: true }).first()
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const exportDialog = page.getByRole("dialog", {
+      name: "Export apron card",
+    });
+    await expect(exportDialog.getByText("Doesn't fit")).toBeVisible();
+    const exportPdf = exportDialog.getByRole("button", {
+      name: "Download PDF",
+    });
+    await expect(exportPdf).toBeDisabled();
+    await exportDialog.getByLabel("Export with text cut off").check();
+    await expect(exportPdf).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Export" }).click();
+    await expect(
+      exportDialog.getByLabel("Export with text cut off")
+    ).not.toBeChecked();
+    await expect(exportPdf).toBeDisabled();
+    await page.keyboard.press("Escape");
 
     await description.fill("Shoot the ramps to light the lock.");
     await expect(page.getByText("Doesn't fit on the card")).toHaveCount(0);
@@ -109,7 +134,10 @@ test.describe("Apron card tab as an editor", () => {
     await expect(page.getByRole("group", { name: "Credits" })).toHaveCount(0);
 
     await save.click();
-    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByText("Saved", { exact: true }).first()
+    ).toBeVisible();
 
     await page.reload();
     const picker = page.getByRole("combobox", { name: "Saved card" });
@@ -138,7 +166,10 @@ test.describe("Apron card tab as an editor", () => {
       .getByRole("button", { name: "Delete card" })
       .click();
     await save.click();
-    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByText("Saved", { exact: true }).first()
+    ).toBeVisible();
 
     await page.reload();
     await picker.click();
@@ -203,20 +234,26 @@ test.describe("Print apron cards", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
   let fits: { id: string; initials: string; name: string };
+  let overflows: { id: string; initials: string; name: string };
 
   test.beforeEach(async () => {
     const ownerId = await getProfileIdByEmail(TEST_USERS.admin.email);
     fits = await createTestMachine(ownerId);
+    overflows = await createTestMachine(ownerId);
     await seedSavedApronCard(fits.id, {
       description: "Shoot the ramps to light the lock.",
     });
+    await seedSavedApronCard(overflows.id, { description: LONG_TEXT });
   });
 
   test.afterEach(async () => {
     await deleteTestMachine(fits.id).catch(() => undefined);
+    await deleteTestMachine(overflows.id).catch(() => undefined);
   });
 
-  test("downloads a size's print file", async ({ page }) => {
+  test("downloads a size's print file and needs the override for a card that does not fit", async ({
+    page,
+  }) => {
     await page.goto("/m");
     // The entry's name gains the queue count while the member has cards
     // queued (apron-cards §13.4), which a parallel test may do.
@@ -236,6 +273,14 @@ test.describe("Print apron cards", () => {
     const download = page.waitForEvent("download");
     await run.getByRole("button", { name: "Download 1 PDF" }).click();
     expect((await download).suggestedFilename()).toBe("apron-cards-stern.pdf");
+
+    // A card that does not fit is offered only with the override (§12.3).
+    await search.fill(overflows.name);
+    const tooLong = page.getByRole("checkbox", { name: overflows.name });
+    await expect(page.getByText("Doesn't fit")).toBeVisible();
+    await expect(tooLong).toBeDisabled();
+    await run.getByLabel("Include cards that don't fit").check();
+    await expect(tooLong).toBeEnabled();
   });
 
   test("queues a card from Export and marks it printed", async ({ page }) => {

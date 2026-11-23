@@ -1,4 +1,5 @@
 import {
+  afterAll,
   afterEach,
   beforeAll,
   beforeEach,
@@ -98,22 +99,71 @@ const EXTRA_CARD: SavedApronCard = {
 };
 
 const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+const originalMatchMedia = Object.getOwnPropertyDescriptor(
+  window,
+  "matchMedia"
+);
+const originalHasPointerCapture = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "hasPointerCapture"
+);
+const originalSetPointerCapture = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "setPointerCapture"
+);
+const originalReleasePointerCapture = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "releasePointerCapture"
+);
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  "scrollIntoView"
+);
+
+function restoreDescriptor(
+  target: object,
+  key: PropertyKey,
+  descriptor: PropertyDescriptor | undefined
+): void {
+  if (descriptor) {
+    Object.defineProperty(target, key, descriptor);
+  } else {
+    Reflect.deleteProperty(target, key);
+  }
+}
 
 describe("ApronCardTab", () => {
   beforeAll(() => {
     if (!HTMLElement.prototype.hasPointerCapture) {
-      HTMLElement.prototype.hasPointerCapture = () => false;
+      Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+        configurable: true,
+        writable: true,
+        value: () => false,
+      });
     }
     if (!HTMLElement.prototype.setPointerCapture) {
-      HTMLElement.prototype.setPointerCapture = () => {};
+      Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+        configurable: true,
+        writable: true,
+        value: () => {},
+      });
     }
     if (!HTMLElement.prototype.releasePointerCapture) {
-      HTMLElement.prototype.releasePointerCapture = () => {};
+      Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+        configurable: true,
+        writable: true,
+        value: () => {},
+      });
     }
     if (!Element.prototype.scrollIntoView) {
-      Element.prototype.scrollIntoView = () => {};
+      Object.defineProperty(Element.prototype, "scrollIntoView", {
+        configurable: true,
+        writable: true,
+        value: () => {},
+      });
     }
     Object.defineProperty(window, "matchMedia", {
+      configurable: true,
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
         matches: false,
@@ -126,6 +176,30 @@ describe("ApronCardTab", () => {
         dispatchEvent: vi.fn(),
       })),
     });
+  });
+
+  afterAll(() => {
+    restoreDescriptor(window, "matchMedia", originalMatchMedia);
+    restoreDescriptor(
+      HTMLElement.prototype,
+      "hasPointerCapture",
+      originalHasPointerCapture
+    );
+    restoreDescriptor(
+      HTMLElement.prototype,
+      "setPointerCapture",
+      originalSetPointerCapture
+    );
+    restoreDescriptor(
+      HTMLElement.prototype,
+      "releasePointerCapture",
+      originalReleasePointerCapture
+    );
+    restoreDescriptor(
+      Element.prototype,
+      "scrollIntoView",
+      originalScrollIntoView
+    );
   });
 
   beforeEach(() => {
@@ -141,9 +215,7 @@ describe("ApronCardTab", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    if (originalFonts) {
-      Object.defineProperty(document, "fonts", originalFonts);
-    }
+    restoreDescriptor(document, "fonts", originalFonts);
   });
 
   it("renders Preview and Export only when canEdit is false", () => {

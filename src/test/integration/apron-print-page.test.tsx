@@ -7,7 +7,7 @@
  */
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import { machineApronCards, machines, userProfiles } from "~/server/db/schema";
@@ -43,6 +43,8 @@ vi.mock("~/components/machines/apron/fonts", () => ({
   },
 }));
 
+const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+
 describe("ApronCardPrintPage (PGlite)", () => {
   setupTestDb();
 
@@ -57,6 +59,14 @@ describe("ApronCardPrintPage (PGlite)", () => {
     await db.insert(userProfiles).values(createTestUser({ id, role }));
     return id;
   }
+
+  afterEach(() => {
+    if (originalFonts) {
+      Object.defineProperty(document, "fonts", originalFonts);
+    } else {
+      Reflect.deleteProperty(document, "fonts");
+    }
+  });
 
   beforeEach(async () => {
     vi.clearAllMocks();

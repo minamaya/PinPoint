@@ -79,6 +79,8 @@ describe("ApronCardExportDialog", () => {
     vi.restoreAllMocks();
     if (originalFonts) {
       Object.defineProperty(document, "fonts", originalFonts);
+    } else {
+      Reflect.deleteProperty(document, "fonts");
     }
   });
 

@@ -2,12 +2,22 @@
 /**
  * Integration Test: MachineTimelinePage RSC & ?tag= filtering (PP-nffph.13)
  *
- * Worker-scoped PGlite (CORE-TEST-001). Verifies URL ?tag= parsing, invalid
- * tag fallback to DEFAULT_TIMELINE_TAGS, and database timeline row filtering.
+ * Worker-scoped PGlite (CORE-TEST-001). Verifies URL ?tag= parsing through
+ * the real MachineTimelineActionsRow / MachineTimelineFilter / MultiSelect
+ * control, invalid-tag fallback to DEFAULT_TIMELINE_TAGS, and DB row filtering.
  */
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { randomUUID } from "node:crypto";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import { machines, userProfiles } from "~/server/db/schema";
@@ -16,10 +26,7 @@ import {
   createMachineComment,
   createMachineTimelineEvent,
 } from "~/lib/timeline/machine-events";
-import {
-  DEFAULT_TIMELINE_TAGS,
-  type TimelineTag,
-} from "~/lib/timeline/machine-tags";
+import { DEFAULT_TIMELINE_TAGS } from "~/lib/timeline/machine-tags";
 import type { ProseMirrorDoc } from "~/lib/tiptap/types";
 import MachineTimelinePage from "~/app/(app)/m/[initials]/(tabs)/timeline/page";
 
@@ -57,22 +64,58 @@ vi.mock("~/components/editor/RichTextDisplay", () => ({
   },
 }));
 
-const capturedTags = vi.fn<(tags: readonly TimelineTag[]) => void>();
-vi.mock("~/components/machines/timeline/MachineTimelineActionsRow", () => ({
-  MachineTimelineActionsRow: ({
-    currentTags,
-  }: {
-    currentTags: TimelineTag[];
-  }) => {
-    capturedTags(currentTags);
-    return <div data-testid="timeline-actions-row" />;
-  },
-}));
-
 const PARAMS = Promise.resolve({ initials: "GZ" });
+
+const originalResizeObserver = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "ResizeObserver"
+);
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  "scrollIntoView"
+);
 
 describe("MachineTimelinePage (PGlite)", () => {
   setupTestDb();
+
+  beforeAll(() => {
+    class MockResizeObserver {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    }
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      writable: true,
+      value: MockResizeObserver,
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+  });
+
+  afterAll(() => {
+    if (originalResizeObserver) {
+      Object.defineProperty(
+        globalThis,
+        "ResizeObserver",
+        originalResizeObserver
+      );
+    } else {
+      Reflect.deleteProperty(globalThis, "ResizeObserver");
+    }
+    if (originalScrollIntoView) {
+      Object.defineProperty(
+        Element.prototype,
+        "scrollIntoView",
+        originalScrollIntoView
+      );
+    } else {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -124,7 +167,8 @@ describe("MachineTimelinePage (PGlite)", () => {
     });
   });
 
-  it("applies ?tag=maintenance to both MachineTimelineActionsRow and rendered DB rows", async () => {
+  it("wires ?tag=maintenance into the real filter control (badge + checked option) and filters DB rows", async () => {
+    const user = userEvent.setup();
     render(
       await MachineTimelinePage({
         params: PARAMS,
@@ -132,34 +176,47 @@ describe("MachineTimelinePage (PGlite)", () => {
       })
     );
 
-    expect(capturedTags).toHaveBeenCalledWith(["maintenance"]);
+    const trigger = screen.getByRole("combobox", { name: /filter by tag/i });
+    expect(trigger).toHaveTextContent(/^Tags\s*1$/);
+    await user.click(trigger);
+    const option = await screen.findByRole("option", { name: /maintenance/i });
+    expect(within(option).getByRole("checkbox")).toBeChecked();
+
     expect(screen.getByText("Maintenance note body")).toBeInTheDocument();
     expect(screen.queryByText("Playfield waxed")).toBeNull();
     expect(screen.queryByText(/Hidden tweak/)).toBeNull();
   });
 
   it("excludes settings_edit by default and falls back to DEFAULT_TIMELINE_TAGS on invalid ?tag=", async () => {
+    const defaultCountPattern = new RegExp(
+      `^Tags\\s*${DEFAULT_TIMELINE_TAGS.length}$`
+    );
     const { unmount } = render(
       await MachineTimelinePage({
         params: PARAMS,
         searchParams: Promise.resolve({}),
       })
     );
-    expect(capturedTags).toHaveBeenLastCalledWith(DEFAULT_TIMELINE_TAGS);
+    const defaultTrigger = screen.getByRole("combobox", {
+      name: /filter by tag/i,
+    });
+    expect(defaultTrigger).toHaveTextContent(defaultCountPattern);
     expect(screen.getByText("Maintenance note body")).toBeInTheDocument();
     expect(screen.getByText("Playfield waxed")).toBeInTheDocument();
     expect(screen.queryByText(/Hidden tweak/)).toBeNull();
     unmount();
 
-    capturedTags.mockClear();
     render(
       await MachineTimelinePage({
         params: PARAMS,
         searchParams: Promise.resolve({ tag: "bogus" }),
       })
     );
-    expect(capturedTags).toHaveBeenLastCalledWith(DEFAULT_TIMELINE_TAGS);
+    expect(
+      screen.getByRole("combobox", { name: /filter by tag/i })
+    ).toHaveTextContent(defaultCountPattern);
     expect(screen.getByText("Maintenance note body")).toBeInTheDocument();
     expect(screen.getByText("Playfield waxed")).toBeInTheDocument();
+    expect(screen.queryByText(/Hidden tweak/)).toBeNull();
   });
 });

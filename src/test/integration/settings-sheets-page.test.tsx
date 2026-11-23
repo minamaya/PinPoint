@@ -3,13 +3,22 @@
  * Integration Test: Settings sheets RSC + print route boundaries (PP-nffph.13)
  *
  * Worker-scoped PGlite (CORE-TEST-001). Verifies:
- *   1. TagLayout computes settingsSheetsHref excluding off-floor machines
+ *   1. TagLayout renders the real TagPageActions with Print settings sheets href
+ *      excluding off-floor machines
  *   2. PrintSettingsSheetsPage seeds ?m= initialRun with only on-the-floor machines
  *   3. SettingsSheetPrintPage resolves ?m=&to=tag:...&set= into SettingsSheetDocument
  */
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { randomUUID } from "node:crypto";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import {
@@ -40,6 +49,9 @@ vi.mock("~/lib/supabase/server", () => ({
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
   redirect: vi.fn(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/c/tags/location/front-room",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -58,13 +70,6 @@ vi.mock("~/components/machines/settings/SettingsSheetsBuilder", () => ({
   SettingsSheetsBuilder: (p: BuilderProps) => mockBuilder(p),
 }));
 
-const mockTagPageActions = vi.fn<
-  (p: { settingsSheetsHref?: string }) => React.ReactElement
->(() => <div data-testid="tag-page-actions" />);
-vi.mock("~/components/tags/TagPageActions", () => ({
-  TagPageActions: (p: { settingsSheetsHref?: string }) => mockTagPageActions(p),
-}));
-
 vi.mock("~/components/collections/MachineGroupShell", () => ({
   MachineGroupShell: ({
     actions,
@@ -80,11 +85,11 @@ vi.mock("~/components/collections/MachineGroupShell", () => ({
   ),
 }));
 
-vi.mock("~/components/list-view", () => ({
-  PageExportProvider: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}));
+const originalMatchMedia = Object.getOwnPropertyDescriptor(
+  window,
+  "matchMedia"
+);
+const originalPrint = Object.getOwnPropertyDescriptor(window, "print");
 
 describe("Settings sheets pages (PGlite)", () => {
   setupTestDb();
@@ -94,9 +99,43 @@ describe("Settings sheets pages (PGlite)", () => {
   let hdId: string;
   let finalsId: string;
 
+  beforeAll(() => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    Object.defineProperty(window, "print", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+  });
+
+  afterAll(() => {
+    if (originalMatchMedia) {
+      Object.defineProperty(window, "matchMedia", originalMatchMedia);
+    } else {
+      Reflect.deleteProperty(window, "matchMedia");
+    }
+    if (originalPrint) {
+      Object.defineProperty(window, "print", originalPrint);
+    } else {
+      Reflect.deleteProperty(window, "print");
+    }
+  });
+
   beforeEach(async () => {
     vi.clearAllMocks();
-    window.print = vi.fn();
     const db = await getTestDb();
     const userId = randomUUID();
     await db.insert(userProfiles).values(createTestUser({ id: userId }));
@@ -213,15 +252,17 @@ describe("Settings sheets pages (PGlite)", () => {
     ]);
   });
 
-  it("excludes off-floor machines in TagLayout settingsSheetsHref and ?m= PrintSettingsSheetsPage initialRun", async () => {
-    render(
+  it("renders real TagPageActions with Print settings sheets href excluding off-floor machines and seeds ?m=", async () => {
+    const tagView = render(
       await TagLayout({
         params: Promise.resolve({ type: "location", slug: "front-room" }),
         children: <div />,
       })
     );
-    const tagProps = mockTagPageActions.mock.calls[0]?.[0];
-    expect(tagProps?.settingsSheetsHref).toBe("/m/settings-sheets?m=AFM");
+    expect(
+      screen.getByRole("link", { name: "Print settings sheets" })
+    ).toHaveAttribute("href", "/m/settings-sheets?m=AFM");
+    tagView.unmount();
 
     render(
       await PrintSettingsSheetsPage({

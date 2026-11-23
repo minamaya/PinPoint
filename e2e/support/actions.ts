@@ -456,8 +456,7 @@ export async function openListSearch(
 }
 
 /**
- * Locate every row in a `MachineView` list (`Machines list` region).
- * Shared helper for `PP-xm1.1`; Lane 10 adopts it in `machines-public-access`.
+ * Locate every row in a `MachineView` list (`Machines list`).
  */
 export function machineViewRows(scope: Page | Locator): Locator {
   return scope
@@ -470,8 +469,9 @@ export function machineViewRow(
   scope: Page | Locator,
   match: string | RegExp
 ): Locator {
+  const rootPage = "page" in scope ? scope.page() : scope;
   return machineViewRows(scope).filter({
-    has: scope.getByText(match, { exact: typeof match === "string" }),
+    has: rootPage.getByText(match, { exact: typeof match === "string" }),
   });
 }
 
