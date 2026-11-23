@@ -37,7 +37,6 @@ import {
   type SectionNavItem,
 } from "~/components/layout/SectionNav";
 import { SectionAnchor } from "~/components/machines/machine-form/SectionAnchor";
-import { PinnedActionBarSpacer } from "~/components/machines/machine-form/MachineFormActionBar";
 import { MACHINE_FORM_SECTION_IDS } from "~/components/machines/machine-form/sections";
 import { PBM_ADD_FAILED_PARAM } from "~/lib/pinballmap/create-flow";
 
@@ -413,7 +412,6 @@ export default async function MachineEditPage({
               </div>
             </PinballmapDirtyGate>
           </section>
-          <PinnedActionBarSpacer />
         </div>
       </SectionNavLayout>
     </DetailsDirtyProvider>
