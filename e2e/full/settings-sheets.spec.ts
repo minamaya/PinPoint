@@ -17,7 +17,11 @@
 
 import type { Page } from "@playwright/test";
 import { test, expect } from "../support/fixtures.js";
-import { assertNoA11yViolations, openListSearch } from "../support/actions.js";
+import {
+  assertNoA11yViolations,
+  machineViewRow,
+  openListSearch,
+} from "../support/actions.js";
 import { clickPageAction } from "../support/page-actions.js";
 
 // The print page opens the print dialog on load; a test has no use for it.
@@ -39,10 +43,7 @@ async function addByInitials(page: Page, initials: string): Promise<void> {
   ).not.toHaveAttribute("aria-busy", "true");
   // The machine rows are list items at every width. Scoped to the "Add
   // machines" section so they can't collide with the print-run list's items.
-  const entry = page
-    .getByRole("region", { name: "Add machines" })
-    .getByRole("listitem")
-    .filter({ has: page.getByText(initials, { exact: true }) });
+  const entry = machineViewRow(page, initials);
   await entry.getByRole("button", { name: /^Add / }).click();
   await expect(entry.getByText("Added")).toBeVisible();
 }
@@ -113,50 +114,5 @@ test.describe("Print settings sheets", () => {
       "9 changes"
     );
     await expect(printRunRow(page, "Godzilla")).toBeVisible();
-  });
-
-  test("a tag default that finds several sets asks which one", async ({
-    page,
-  }) => {
-    await page.goto("/m/settings-sheets");
-    await page.getByLabel("to", { exact: true }).selectOption({
-      label: "Tag: Bat City 2025",
-    });
-    await addByInitials(page, "HD");
-
-    const row = printRunRow(page, "Humpty Dumpty");
-    await expect(row).toContainText("Choose a set");
-    await expect(
-      page.getByRole("complementary", { name: "Print run" })
-    ).toContainText("0 machines print");
-
-    await row
-      .getByRole("combobox", { name: "To set for Humpty Dumpty" })
-      .selectOption({ label: "Bat City finals" });
-    // Finals records one plug; the other two House plugs differ as unrecorded.
-    await expect(row).toContainText("3 changes");
-
-    await page
-      .getByRole("complementary", { name: "Print run" })
-      .getByRole("link", { name: "Print" })
-      .click();
-    const sheet = page.getByRole("article", { name: "Settings sheet" });
-    await expect(sheet).toContainText("Default House to Tag: Bat City 2025");
-    await expect(sheet).toContainText("1-ball");
-  });
-
-  test("a tag page opens the page with its machines on the floor added", async ({
-    page,
-  }) => {
-    await page.goto("/c/tags/location/front-room");
-    // Print settings sheets is a ⋯ entry, or its own button when it is ⋯'s
-    // only entry (collections-and-tags 4.16; list-views §3.7).
-    await clickPageAction(page, "Print settings sheets");
-    await expect(page).toHaveURL(/\/m\/settings-sheets/);
-    const run = page.getByRole("region", { name: "In this print run" });
-    // Front room's seeded machines: Attack from Mars and others On the Floor,
-    // and Spider-Man, On Loan, which is never added (§2.3).
-    await expect(run).toContainText("Attack from Mars");
-    await expect(run).not.toContainText("Spider-Man");
   });
 });

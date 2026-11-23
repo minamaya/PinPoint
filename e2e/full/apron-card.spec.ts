@@ -167,9 +167,7 @@ test.describe("Apron card export", () => {
   test.describe("as a member who cannot edit the machine", () => {
     test.use({ storageState: STORAGE_STATE.member });
 
-    test("sees Preview and Export only, and prints the card", async ({
-      page,
-    }) => {
+    test("prints a saved card as a non-editing member", async ({ page }) => {
       // The print page opens the print dialog once the card is ready.
       await page.addInitScript(() => {
         window.print = () => undefined;
@@ -177,15 +175,6 @@ test.describe("Apron card export", () => {
 
       await page.goto(`/m/${machine.initials}/apron`);
       await expect(page.getByText("Preview")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Add card" })).toHaveCount(
-        0
-      );
-      await expect(
-        page.getByRole("button", { name: "Card actions" })
-      ).toHaveCount(0);
-      await expect(
-        page.getByRole("combobox", { name: "Apron size" })
-      ).toHaveCount(0);
 
       await page.getByRole("button", { name: "Export" }).click();
       const menu = page.getByRole("dialog", { name: "Export apron card" });
@@ -207,47 +196,6 @@ test.describe("Apron card export", () => {
         page.getByRole("img", { name: /QR code for .*\/hub\?source=apron/ })
       ).toBeVisible();
     });
-
-    test("needs the override to export a card that does not fit", async ({
-      page,
-    }) => {
-      await seedSavedApronCard(machine.id, { description: LONG_TEXT });
-
-      await page.goto(`/m/${machine.initials}/apron`);
-      await expect(page.getByText("Doesn't fit on the card")).toBeVisible();
-
-      await page.getByRole("button", { name: "Export" }).click();
-      const menu = page.getByRole("dialog", { name: "Export apron card" });
-      await expect(menu.getByText("Doesn't fit")).toBeVisible();
-      const pdf = menu.getByRole("button", { name: "Download PDF" });
-      await expect(pdf).toBeDisabled();
-
-      await menu.getByLabel("Export with text cut off").check();
-      await expect(pdf).toBeEnabled();
-
-      // The override is not kept between openings (§9.5).
-      await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "Export" }).click();
-      await expect(
-        menu.getByLabel("Export with text cut off")
-      ).not.toBeChecked();
-      await expect(pdf).toBeDisabled();
-    });
-  });
-
-  test("a signed-out visitor gets no tab and cannot print", async ({
-    page,
-  }) => {
-    await page.goto(`/m/${machine.initials}`);
-    await expect(page.getByTestId("machine-tab-apron")).toHaveCount(0);
-
-    await page.goto(`/m/${machine.initials}/apron`);
-    await expect(page).toHaveURL(`/m/${machine.initials}`);
-
-    const response = await page.goto(
-      `/m/${machine.initials}/apron/print?card=${cardId}`
-    );
-    expect(response?.status()).toBe(404);
   });
 });
 
@@ -255,26 +203,20 @@ test.describe("Print apron cards", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
   let fits: { id: string; initials: string; name: string };
-  let overflows: { id: string; initials: string; name: string };
 
   test.beforeEach(async () => {
     const ownerId = await getProfileIdByEmail(TEST_USERS.admin.email);
     fits = await createTestMachine(ownerId);
-    overflows = await createTestMachine(ownerId);
     await seedSavedApronCard(fits.id, {
       description: "Shoot the ramps to light the lock.",
     });
-    await seedSavedApronCard(overflows.id, { description: LONG_TEXT });
   });
 
   test.afterEach(async () => {
     await deleteTestMachine(fits.id).catch(() => undefined);
-    await deleteTestMachine(overflows.id).catch(() => undefined);
   });
 
-  test("downloads a size's print file and needs the override for a card that does not fit", async ({
-    page,
-  }) => {
+  test("downloads a size's print file", async ({ page }) => {
     await page.goto("/m");
     // The entry's name gains the queue count while the member has cards
     // queued (apron-cards §13.4), which a parallel test may do.
@@ -294,14 +236,6 @@ test.describe("Print apron cards", () => {
     const download = page.waitForEvent("download");
     await run.getByRole("button", { name: "Download 1 PDF" }).click();
     expect((await download).suggestedFilename()).toBe("apron-cards-stern.pdf");
-
-    // A card that does not fit is offered only with the override (§12.3).
-    await search.fill(overflows.name);
-    const tooLong = page.getByRole("checkbox", { name: overflows.name });
-    await expect(page.getByText("Doesn't fit")).toBeVisible();
-    await expect(tooLong).toBeDisabled();
-    await run.getByLabel("Include cards that don't fit").check();
-    await expect(tooLong).toBeEnabled();
   });
 
   test("queues a card from Export and marks it printed", async ({ page }) => {

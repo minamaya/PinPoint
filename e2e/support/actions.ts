@@ -456,6 +456,26 @@ export async function openListSearch(
 }
 
 /**
+ * Locate every row in a `MachineView` list (`Machines list` region).
+ * Shared helper for `PP-xm1.1`; Lane 10 adopts it in `machines-public-access`.
+ */
+export function machineViewRows(scope: Page | Locator): Locator {
+  return scope
+    .getByRole("list", { name: "Machines list" })
+    .getByRole("listitem");
+}
+
+/** Locate the `MachineView` row whose text matches `match`. */
+export function machineViewRow(
+  scope: Page | Locator,
+  match: string | RegExp
+): Locator {
+  return machineViewRows(scope).filter({
+    has: scope.getByText(match, { exact: typeof match === "string" }),
+  });
+}
+
+/**
  * Checks (or, with `checked: false`, unchecks) options of one List View
  * filter, at any width (list-views §4, §7.5). From md up the filter is a
  * dropdown beside search, or under More when it does not fit; below md it is

@@ -2112,3 +2112,72 @@ describe("SettingsTab — audit line credits the machine owner", () => {
     expect(screen.queryByText(/owned by/i)).toBeNull();
   });
 });
+
+describe("SettingsTab — lane 11 migrated coverage", () => {
+  it("(c) read-only viewer with no sets sees empty-state text and no New set button", () => {
+    render(
+      <SettingsTab
+        canCreate={false}
+        viewerId="u2"
+        machineOwnerId="u1"
+        machineId="m1"
+        initialSets={[]}
+        settingsRequests={null}
+        settingsInstructions={null}
+        allTags={ALL_TAGS}
+        canManageTags={false}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: /new set/i })).toBeNull();
+    expect(
+      screen.getByText("No settings sets recorded yet.")
+    ).toBeInTheDocument();
+  });
+
+  it("Delete section confirms via AlertDialog and persists immediately from the working copy", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsTab
+        canCreate
+        viewerId="u1"
+        machineOwnerId="u1"
+        machineId="m1"
+        initialSets={[twoNoteSet()]}
+        settingsRequests={null}
+        settingsInstructions={null}
+        allTags={ALL_TAGS}
+        canManageTags={false}
+      />
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Expand Comp rules settings set" })
+    );
+
+    const actionsTrigger = screen.getAllByRole("button", {
+      name: "Section actions",
+    })[0];
+    if (!actionsTrigger) {
+      throw new Error("Expected a Section actions button");
+    }
+    await user.click(actionsTrigger);
+
+    const deleteItem = await screen.findByRole("menuitem", {
+      name: "Delete section",
+    });
+    await user.click(deleteItem);
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete the Post positions section?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(saveMock).toHaveBeenCalledTimes(1);
+    });
+    const payload = saveMock.mock.calls[0]?.[0];
+    expect(payload?.sections.map((section) => section.id)).toEqual(["sec-b"]);
+    expect(screen.queryByText("Post positions")).toBeNull();
+  });
+});

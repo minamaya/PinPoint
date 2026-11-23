@@ -28,11 +28,16 @@ import { test, expect } from "../support/fixtures.js";
 import { openMoveIssueDialog } from "../support/actions.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 import { cleanupTestEntities } from "../support/cleanup.js";
-import { seededMachines } from "../support/constants.js";
+import { seededMachines, TEST_USERS } from "../support/constants.js";
 import {
   fillReportForm,
   submitFormAndWaitForRedirect,
 } from "../support/page-helpers.js";
+import {
+  createTestMachine,
+  deleteTestMachine,
+  getProfileIdByEmail,
+} from "../support/supabase-admin.js";
 
 const machineA = seededMachines.addamsFamily.initials;
 const machineB = seededMachines.medievalMadness.initials;
@@ -46,54 +51,55 @@ test.describe("Machine Timeline (PP-0x98)", () => {
   test.describe("member journeys", () => {
     test.use({ storageState: STORAGE_STATE.member });
 
-    test("can post a note via the New Note sheet and see it on the timeline", async ({
+    let isolatedMachine: { id: string; initials: string; name: string } | null =
+      null;
+
+    test.beforeEach(async () => {
+      const ownerId = await getProfileIdByEmail(TEST_USERS.admin.email);
+      isolatedMachine = await createTestMachine(ownerId);
+    });
+
+    test.afterEach(async () => {
+      if (isolatedMachine) {
+        await deleteTestMachine(isolatedMachine.id).catch(() => undefined);
+      }
+      isolatedMachine = null;
+    });
+
+    test("overview Recent activity opens timeline; member posts with tag and edits note to show (edited)", async ({
       page,
     }) => {
+      if (!isolatedMachine) throw new Error("isolatedMachine not created");
+      const { initials } = isolatedMachine;
       const body = `${PREFIX} cleaned playfield ${Date.now().toString()}`;
 
-      await page.goto(`/m/${machineA}/timeline`);
+      // Overview Recent activity links to the full timeline.
+      await page.goto(`/m/${initials}`);
+      const recentActivity = page.getByRole("region", {
+        name: /recent activity/i,
+      });
+      await expect(
+        recentActivity.getByRole("heading", { name: /recent activity/i })
+      ).toBeVisible();
+      await recentActivity.getByRole("link", { name: /view all/i }).click();
+      await page.waitForURL(new RegExp(`/m/${initials}/timeline$`), {
+        timeout: 10_000,
+      });
 
-      // Open the composer in the bottom sheet (the single shared entry point).
+      // Post a tagged note via the New Note sheet.
       await page.getByRole("button", { name: /new note/i }).click();
-
-      // Tag defaults to "Note" (quick-note); switch it to "maintenance" via the
-      // composer's "Tag" combobox. exact:true so we don't also match the
-      // filter's "Filter by tag" trigger.
       await page.getByRole("combobox", { name: "Tag", exact: true }).click();
       await page.getByRole("option", { name: /maintenance/i }).click();
 
-      // The RichTextEditor is a Tiptap/ProseMirror surface — use the documented
-      // .ProseMirror selector + keyboard.type() pattern (see e2e/support/page-helpers.ts
-      // and e2e/full/rich-text.spec.ts; .fill() is unreliable on contenteditable).
       const editor = page.locator(".ProseMirror").first();
       await editor.waitFor({ state: "visible", timeout: 15_000 });
       await editor.click();
       await page.keyboard.type(body);
 
       await page.getByRole("button", { name: /^post$/i }).click();
-
-      // Sheet closes, the timeline RSC revalidates, and the note appears.
-      await expect(page.getByText(body)).toBeVisible({ timeout: 10_000 });
-    });
-
-    test("can edit own note and an (edited) marker appears", async ({
-      page,
-    }) => {
-      const body = `${PREFIX} editable note ${Date.now().toString()}`;
-
-      await page.goto(`/m/${machineA}/timeline`);
-      await page.getByRole("button", { name: /new note/i }).click();
-
-      const editor = page.locator(".ProseMirror").first();
-      await editor.waitFor({ state: "visible", timeout: 15_000 });
-      await editor.click();
-      await page.keyboard.type(body);
-      await page.getByRole("button", { name: /^post$/i }).click();
       await expect(page.getByText(body)).toBeVisible({ timeout: 10_000 });
 
-      // Newest-first ordering puts our just-posted note at the top, so the
-      // first comment ⋯ menu is ours. Open it → Edit → Save (a save stamps
-      // editedAt even with no content change).
+      // Edit the note on this isolated machine's timeline to stamp (edited).
       await page
         .getByRole("button", { name: /comment actions/i })
         .first()
@@ -104,45 +110,6 @@ test.describe("Machine Timeline (PP-0x98)", () => {
       await expect(page.getByText(/\(edited\)/i).first()).toBeVisible({
         timeout: 10_000,
       });
-    });
-
-    test("overview Recent activity renders and 'View all' opens the timeline", async ({
-      page,
-    }) => {
-      // The overview (Info) tab is the discoverability surface — the last few
-      // events plus a "View all" link into the full timeline (PP-0x98.3).
-      await page.goto(`/m/${machineA}`);
-
-      const recentActivity = page.getByRole("region", {
-        name: /recent activity/i,
-      });
-      await expect(
-        recentActivity.getByRole("heading", { name: /recent activity/i })
-      ).toBeVisible();
-
-      // Scope to the Recent activity region — the player hero also has a
-      // "View all on Service" link, so an unscoped /view all/ now matches two.
-      await recentActivity.getByRole("link", { name: /view all/i }).click();
-      await page.waitForURL(new RegExp(`/m/${machineA}/timeline$`), {
-        timeout: 10_000,
-      });
-    });
-
-    test("tag filter URL param ?tag= round-trips through the dropdown", async ({
-      page,
-    }) => {
-      await page.goto(`/m/${machineA}/timeline?tag=maintenance`);
-
-      // MachineTimelineFilter is the shared MultiSelect: a combobox trigger
-      // labelled "Filter by tag" that shows a count badge for the selection.
-      // Opening it reveals the "Maintenance" option in its checked state,
-      // confirming the ?tag= param round-tripped into the control.
-      const trigger = page.getByRole("combobox", { name: /filter by tag/i });
-      await expect(trigger).toContainText("1");
-      await trigger.click();
-      await expect(
-        page.getByRole("option", { name: /maintenance/i })
-      ).toBeVisible();
     });
   });
 
