@@ -843,6 +843,189 @@ describe("notification delivery (planNotification + dispatchNotification)", () =
     expect(result[0].userId).toBe(newOwner.id);
   });
 
+  describe("preferences & global watcher keepers (Lane 3 E2E audit)", () => {
+    it("skips the machine owner for new_issue when suppressOwnActions is true even with includeActor: true", async () => {
+      const db = await getTestDb();
+
+      const [owner] = await db
+        .insert(userProfiles)
+        .values(createTestUser({ email: "suppress-owner@test.com" }))
+        .returning();
+      const [machine] = await db
+        .insert(machines)
+        .values(createTestMachine({ initials: "SOP", ownerId: owner.id }))
+        .returning();
+      const [issue] = await db
+        .insert(issues)
+        .values(createTestIssue(machine.initials, { issueNumber: 1 }))
+        .returning();
+
+      await db.insert(notificationPreferences).values({
+        userId: owner.id,
+        emailEnabled: true,
+        inAppEnabled: true,
+        emailNotifyOnNewIssue: true,
+        inAppNotifyOnNewIssue: true,
+        suppressOwnActions: true,
+      });
+
+      await dispatchNotification(
+        await planNotification(
+          {
+            type: "new_issue",
+            resourceId: issue.id,
+            eventId: issue.id,
+            resourceType: "issue",
+            actorId: owner.id,
+            includeActor: true,
+            issueTitle: issue.title,
+            machineName: machine.name,
+          },
+          asDbOrTx(db)
+        )
+      );
+
+      expect(
+        await db.query.notifications.findMany({
+          where: eq(notifications.userId, owner.id),
+        })
+      ).toHaveLength(0);
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("delivers issue_status_changed to an issue watcher iff status-change prefs are enabled", async () => {
+      const db = await getTestDb();
+
+      const [actor] = await db
+        .insert(userProfiles)
+        .values(createTestUser({ email: "status-actor@test.com" }))
+        .returning();
+      const [enabledWatcher] = await db
+        .insert(userProfiles)
+        .values(createTestUser({ email: "status-on@test.com" }))
+        .returning();
+      const [defaultWatcher] = await db
+        .insert(userProfiles)
+        .values(createTestUser({ email: "status-default@test.com" }))
+        .returning();
+      const [machine] = await db
+        .insert(machines)
+        .values(createTestMachine({ initials: "STS" }))
+        .returning();
+      const [issue] = await db
+        .insert(issues)
+        .values(createTestIssue(machine.initials, { issueNumber: 1 }))
+        .returning();
+
+      await db.insert(issueWatchers).values([
+        { issueId: issue.id, userId: enabledWatcher.id },
+        { issueId: issue.id, userId: defaultWatcher.id },
+      ]);
+
+      await db.insert(notificationPreferences).values([
+        {
+          userId: enabledWatcher.id,
+          emailEnabled: true,
+          inAppEnabled: true,
+          emailNotifyOnStatusChange: true,
+          inAppNotifyOnStatusChange: true,
+        },
+        {
+          userId: defaultWatcher.id,
+          emailEnabled: true,
+          inAppEnabled: true,
+          emailNotifyOnStatusChange: false,
+          inAppNotifyOnStatusChange: false,
+        },
+      ]);
+
+      await dispatchNotification(
+        await planNotification(
+          {
+            type: "issue_status_changed",
+            resourceId: issue.id,
+            eventId: "status-event-1",
+            resourceType: "issue",
+            actorId: actor.id,
+            includeActor: false,
+            oldStatus: "new",
+            newStatus: "in_progress",
+            issueTitle: issue.title,
+            machineName: machine.name,
+            formattedIssueId: `${machine.initials}-01`,
+          },
+          asDbOrTx(db)
+        )
+      );
+
+      const delivered = await db.query.notifications.findMany();
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0].userId).toBe(enabledWatcher.id);
+      expect(delivered[0].type).toBe("issue_status_changed");
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+      expect(sendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: "status-on@test.com" })
+      );
+    });
+
+    it("delivers new_issue to a non-owner global watcher iff inAppWatchNewIssuesGlobal is enabled", async () => {
+      const db = await getTestDb();
+
+      const [globalWatcher] = await db
+        .insert(userProfiles)
+        .values(createTestUser({ email: "global-on@test.com" }))
+        .returning();
+      const [nonGlobalUser] = await db
+        .insert(userProfiles)
+        .values(createTestUser({ email: "global-off@test.com" }))
+        .returning();
+      const [machine] = await db
+        .insert(machines)
+        .values(createTestMachine({ initials: "GLW" }))
+        .returning();
+      const [issue] = await db
+        .insert(issues)
+        .values(createTestIssue(machine.initials, { issueNumber: 1 }))
+        .returning();
+
+      await db.insert(notificationPreferences).values([
+        {
+          userId: globalWatcher.id,
+          inAppEnabled: true,
+          emailEnabled: false,
+          inAppNotifyOnNewIssue: false,
+          inAppWatchNewIssuesGlobal: true,
+        },
+        {
+          userId: nonGlobalUser.id,
+          inAppEnabled: true,
+          emailEnabled: false,
+          inAppNotifyOnNewIssue: false,
+          inAppWatchNewIssuesGlobal: false,
+        },
+      ]);
+
+      await dispatchNotification(
+        await planNotification(
+          {
+            type: "new_issue",
+            resourceId: issue.id,
+            eventId: issue.id,
+            resourceType: "issue",
+            issueTitle: issue.title,
+            machineName: machine.name,
+          },
+          asDbOrTx(db)
+        )
+      );
+
+      const delivered = await db.query.notifications.findMany();
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0].userId).toBe(globalWatcher.id);
+      expect(delivered[0].type).toBe("new_issue");
+    });
+  });
+
   // PP-cfs: "mentioned" is excluded from the watcher fan-out and delivered
   // only via additionalRecipientIds. These tests are the integration-layer
   // replacement for the notification-bell check that was removed from
