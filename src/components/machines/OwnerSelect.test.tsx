@@ -1,27 +1,57 @@
 /**
- * RTL Unit Tests: OwnerSelect — H-class UI state assertions
+ * RTL Unit Tests: OwnerSelect
  *
  * Covers:
  * 1. Guests hidden by default, revealed via "Show guests and invited users" checkbox
  * 2. Typed search bypasses the guest filter
  * 3. Invited users also hidden by default, revealed via checkbox
+ * 4. Selected trigger label and (GUEST) badge rendering
+ * 5. CommandItem selection (hidden ownerId + onValueChange) and inline
+ *    InviteUserDialog onSuccess auto-selection (controlled & fallback state)
  *
- * These tests were downgraded from e2e/full/machine-owner-picker.spec.ts (tests
- * at lines 40, 67) per the 2026-05 audit row #28 (KEEP-reduced, H-class to RTL).
- *
- * The class-F promote-dialog tests (lines 113, 162 of the E2E spec) remain in
- * e2e/full/machine-owner-picker.spec.ts as they require a real server round-trip.
+ * Full-stack promote-on-create and inline-invite server action journeys stay in
+ * `e2e/full/machine-owner-picker.spec.ts` and `e2e/full/machine-with-invite.spec.ts`,
+ * with promote-dialog state coverage in `src/app/(app)/m/new/create-machine-form.test.tsx`.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { OwnerSelect, type OwnerSelectUser } from "./OwnerSelect";
+
+interface MockInviteDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: (userId: string, user: OwnerSelectUser) => void;
+}
 
 // InviteUserDialog makes real server action calls — stub it out to keep
 // this unit test isolated from network and Next.js server infrastructure.
 vi.mock("~/components/users/InviteUserDialog", () => ({
-  InviteUserDialog: vi.fn(() => null),
+  InviteUserDialog: (props: MockInviteDialogProps) => {
+    if (!props.open) return null;
+    return (
+      <div data-testid="mock-invite-dialog">
+        <button
+          type="button"
+          onClick={() => {
+            props.onSuccess?.("user-new-invited", {
+              id: "user-new-invited",
+              name: "Pat Invited",
+              lastName: "Invited",
+              machineCount: 0,
+              status: "invited",
+              role: "member",
+            });
+            props.onOpenChange(false);
+          }}
+        >
+          Complete mock invite
+        </button>
+      </div>
+    );
+  },
 }));
 
 // compareUnifiedUsers does not need mocking — it's pure sort logic.
@@ -171,5 +201,86 @@ describe("OwnerSelect — selected user display", () => {
     const trigger = screen.getByTestId("owner-select");
     expect(trigger).toHaveTextContent("Guest User");
     expect(trigger).toHaveTextContent("(GUEST)");
+  });
+});
+
+describe("OwnerSelect — selection and inline invite", () => {
+  it("updates the hidden ownerId input and notifies onValueChange when an item is selected", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<OwnerSelect users={ALL_USERS} onValueChange={onValueChange} />);
+
+    await user.click(screen.getByTestId("owner-select"));
+    await user.click(screen.getByText("Alice Member"));
+
+    expect(onValueChange).toHaveBeenCalledWith(MEMBER_USER.id);
+    expect(screen.getByTestId("owner-select")).toHaveTextContent(
+      "Alice Member"
+    );
+    const hiddenInput = document.querySelector<HTMLInputElement>(
+      'input[name="ownerId"]'
+    );
+    expect(hiddenInput?.value).toBe(MEMBER_USER.id);
+    // Selecting closes the popover
+    expect(
+      screen.queryByPlaceholderText("Search users...")
+    ).not.toBeInTheDocument();
+  });
+
+  it("auto-selects a newly invited user and propagates them via onUsersChange", async () => {
+    const user = userEvent.setup();
+    const onUsersChangeSpy = vi.fn();
+    const onValueChange = vi.fn();
+
+    function ControlledParent() {
+      const [users, setUsers] = useState(ALL_USERS);
+      return (
+        <OwnerSelect
+          users={users}
+          onUsersChange={(next) => {
+            onUsersChangeSpy(next);
+            setUsers(next);
+          }}
+          onValueChange={onValueChange}
+        />
+      );
+    }
+
+    render(<ControlledParent />);
+
+    await user.click(screen.getByRole("button", { name: /Invite New/i }));
+    await user.click(
+      screen.getByRole("button", { name: "Complete mock invite" })
+    );
+
+    expect(onUsersChangeSpy).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "user-new-invited",
+          name: "Pat Invited",
+          status: "invited",
+        }),
+      ])
+    );
+    expect(onValueChange).toHaveBeenCalledWith("user-new-invited");
+    expect(screen.getByTestId("owner-select")).toHaveTextContent("Pat Invited");
+    expect(screen.getByTestId("owner-select")).toHaveTextContent("(Invited)");
+    const hiddenInput = document.querySelector<HTMLInputElement>(
+      'input[name="ownerId"]'
+    );
+    expect(hiddenInput?.value).toBe("user-new-invited");
+  });
+
+  it("tracks a newly invited user locally when onUsersChange is omitted", async () => {
+    const user = userEvent.setup();
+    render(<OwnerSelect users={ALL_USERS} />);
+
+    await user.click(screen.getByRole("button", { name: /Invite New/i }));
+    await user.click(
+      screen.getByRole("button", { name: "Complete mock invite" })
+    );
+
+    expect(screen.getByTestId("owner-select")).toHaveTextContent("Pat Invited");
+    expect(screen.getByTestId("owner-select")).toHaveTextContent("(Invited)");
   });
 });

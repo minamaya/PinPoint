@@ -30,7 +30,7 @@ test.describe("Machine with Inline Invite (Smoke)", () => {
     page,
   }) => {
     const testId = Math.random().toString(36).substring(7);
-    const machineInitials = `SMK${testId.toUpperCase()}`.substring(0, 5);
+    const machineInitials = `SMK${testId.toUpperCase()}`.substring(0, 6);
     const userEmail = `smoke-invite-${testId}@example.com`;
     const userName = `Smoke User ${testId}`;
 
@@ -84,8 +84,9 @@ test.describe("Machine with Inline Invite (Smoke)", () => {
       page.getByRole("heading", { name: `Smoke Test Machine ${testId}` })
     ).toBeVisible();
 
-    // Verify the owner name is shown on the detail page (if applicable)
-    // Looking at the detail page code or previous screenshots, there might be an owner badge.
-    // For now, URL and lack of error is a good smoke signal.
+    // Verify the invited owner is shown on the machine detail page
+    const ownerCard = page.getByTestId("machine-owner-card");
+    await expect(ownerCard).toContainText(userName);
+    await expect(ownerCard).toContainText(/\(invited\)/i);
   });
 });

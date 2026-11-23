@@ -344,4 +344,32 @@ describe("QuickReportGrid", () => {
     );
     expect(screen.getByRole("link", { name: "GP-42" })).toBeInTheDocument();
   });
+
+  it("flows keyboard Tab directly from the machine picker to the problem field", async () => {
+    const user = userEvent.setup();
+    renderGrid();
+
+    const row = screen.getByTestId("quick-row");
+    const machine = within(row).getByRole("combobox", { name: /machine/i });
+    machine.focus();
+    expect(machine).toHaveFocus();
+
+    await user.tab();
+    expect(within(row).getByLabelText(/problem/i)).toHaveFocus();
+  });
+
+  it("ignores Shift+Enter and incomplete-row Enter in the problem field", async () => {
+    const user = userEvent.setup();
+    renderGrid();
+
+    const row = screen.getByTestId("quick-row");
+    const problem = within(row).getByLabelText(/problem/i);
+    await user.type(problem, "No machine yet{Enter}");
+    expect(submitRow).not.toHaveBeenCalled();
+
+    await user.click(within(row).getByRole("combobox", { name: /machine/i }));
+    await user.click(screen.getByText(/Grand Prix/));
+    await user.type(problem, "{Shift>}{Enter}{/Shift}");
+    expect(submitRow).not.toHaveBeenCalled();
+  });
 });

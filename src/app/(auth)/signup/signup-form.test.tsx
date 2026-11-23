@@ -100,4 +100,34 @@ describe("SignupForm", () => {
 
     expect(screen.getByText(/passwords match/i)).toBeInTheDocument();
   });
+
+  it("pre-fills name without locking email when initialData omits email", () => {
+    render(
+      <SignupForm initialData={{ firstName: "Jane", lastName: "Reporter" }} />
+    );
+
+    expect(screen.getByLabelText(/first name/i)).toHaveValue("Jane");
+    expect(screen.getByLabelText(/last name/i)).toHaveValue("Reporter");
+    const emailInput = screen.getByLabelText(/email/i);
+    expect(emailInput).toHaveValue("");
+    expect(emailInput).not.toHaveAttribute("readonly");
+  });
+
+  it("pre-fills name and locks email as readOnly when initialData provides email", () => {
+    render(
+      <SignupForm
+        initialData={{
+          firstName: "John",
+          lastName: "Smith",
+          email: "john@example.com",
+        }}
+      />
+    );
+
+    expect(screen.getByLabelText(/first name/i)).toHaveValue("John");
+    expect(screen.getByLabelText(/last name/i)).toHaveValue("Smith");
+    const emailInput = screen.getByLabelText(/email/i);
+    expect(emailInput).toHaveValue("john@example.com");
+    expect(emailInput).toHaveAttribute("readonly");
+  });
 });

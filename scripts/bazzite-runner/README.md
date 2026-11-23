@@ -47,6 +47,7 @@ bash scripts/bazzite-runner/ci-runner.sh off           # take no new runs, finis
 bash scripts/bazzite-runner/ci-runner.sh off --now     # stop at once; queued merge-queue PRs leave the queue
 bash scripts/bazzite-runner/ci-runner.sh prs on|off    # whether Tim's PR runs may use idle capacity
 bash scripts/bazzite-runner/ci-runner.sh status
+bash scripts/bazzite-runner/ci-runner.sh vmlogs [N]   # consoles of VMs that died early; N prints the Nth newest
 bash scripts/bazzite-runner/ci-runner.sh deploy        # copy this directory to Bazzite, install the supervisor
 bash scripts/bazzite-runner/ci-runner.sh image         # rebuild the VM image
 ```

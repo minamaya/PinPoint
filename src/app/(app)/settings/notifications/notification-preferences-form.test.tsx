@@ -92,10 +92,17 @@ describe("NotificationPreferencesForm", () => {
   });
 
   it("hides Discord column when integration is not enabled", () => {
-    render(<NotificationPreferencesForm preferences={defaultPreferences} />);
+    const { container } = render(
+      <NotificationPreferencesForm preferences={defaultPreferences} />
+    );
     expect(
       screen.queryByLabelText("Discord Notifications")
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('button[id^="discord"]').length).toBe(0);
+    expect(
+      container.querySelectorAll('button[id^="inAppNotify"]').length
+    ).toBeGreaterThan(0);
   });
 
   it("renders Discord column when integration is enabled and user is linked", () => {
@@ -180,6 +187,46 @@ describe("NotificationPreferencesForm", () => {
     expect(
       container.querySelectorAll('button[id^="inAppNotify"]').length
     ).toBeGreaterThan(0);
+  });
+
+  it("submits FormData entries for inAppNotifyOnNewIssue, suppressOwnActions, and inAppWatchNewIssuesGlobal and renders Saved!", async () => {
+    const user = userEvent.setup();
+    updatePreferencesSpy.mockResolvedValue({
+      ok: true,
+      value: { success: true },
+    });
+
+    const { container } = render(
+      <NotificationPreferencesForm preferences={defaultPreferences} />
+    );
+
+    const newIssueSwitch = container.querySelector<HTMLButtonElement>(
+      "#inAppNotifyOnNewIssue"
+    );
+    const suppressSwitch = container.querySelector<HTMLButtonElement>(
+      "#suppressOwnActions"
+    );
+    const globalWatchSwitch = container.querySelector<HTMLButtonElement>(
+      "#inAppWatchNewIssuesGlobal"
+    );
+    if (!newIssueSwitch || !suppressSwitch || !globalWatchSwitch) {
+      throw new Error("Expected preference switches to render");
+    }
+
+    await user.click(newIssueSwitch);
+    await user.click(suppressSwitch);
+    await user.click(globalWatchSwitch);
+    await user.click(screen.getByRole("button", { name: "Save Preferences" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Saved!" })
+    ).toBeInTheDocument();
+    expect(updatePreferencesSpy).toHaveBeenCalledTimes(1);
+    const submitted = updatePreferencesSpy.mock.calls[0]?.[1];
+    expect(submitted).toBeInstanceOf(FormData);
+    expect(submitted?.get("inAppNotifyOnNewIssue")).toBe("on");
+    expect(submitted?.get("suppressOwnActions")).toBe("on");
+    expect(submitted?.get("inAppWatchNewIssuesGlobal")).toBe("on");
   });
 
   describe("dirty state & guards (PP-bhd7.1)", () => {

@@ -4,7 +4,7 @@
 
 **What this document is.** The requirements for the machine scan hub: the player-facing page a machine's apron-card QR opens. No implementation detail — design records and code carry that. It describes the intended final state only; what the code does or used to do lives solely in the Known divergences table. Each requirement is numbered for citation. When code and spec disagree, either the code is wrong or this document gets amended — never silently neither.
 
-**Related records.** [machine-scan-hub-mockup.html](machine-scan-hub-mockup.html) (visual reference, locked 2026-09-18; canvas https://claude.ai/artifact/Fc7Qm1iMQ6o9MKkwvaUCg2, board "A3-Tim · View all on [iScored logo]"; unlinked state: canvas https://claude.ai/artifact/UhqRBvz9vM1yphnSXtgYZd, board "Unlinked · sentence only"; artwork band: canvas https://claude.ai/artifact/LVMtxXzPLCHucYPFwsmEr8, boards "H5 ·", locked 2026-09-24). `docs/feature-specs/apron-cards.md` (the card whose QR opens the hub), `docs/feature-specs/iscored.md` (Top Scores card, score entry link), `docs/feature-specs/reporting.md` (Quick report). Bead PP-cov9 (build tracking); `docs/feature-specs/pintips.md` (tip card); PP-o355.60 (artwork band). Scrolling hub and tip card: canvas https://claude.ai/artifact/PFvYuNrju4e2pfyrUshttN, boards "Hub A · …" and "Small phone · 1+2: card peeks, fade" (2026-09-27).
+**Related records.** [machine-scan-hub-mockup.html](machine-scan-hub-mockup.html) (visual reference, locked 2026-09-18; canvas https://claude.ai/artifact/Fc7Qm1iMQ6o9MKkwvaUCg2, board "A3-Tim · View all on [iScored logo]"; unlinked state: canvas https://claude.ai/artifact/UhqRBvz9vM1yphnSXtgYZd, board "Unlinked · sentence only"; artwork band: canvas https://claude.ai/artifact/LVMtxXzPLCHucYPFwsmEr8, boards "H5 ·", locked 2026-09-24). `docs/feature-specs/apron-cards.md` (the card whose QR opens the hub), `docs/feature-specs/iscored.md` (Top Scores card, score entry link), `docs/feature-specs/reporting.md` (Quick report). Bead PP-cov9 (build tracking); `docs/feature-specs/pintips.md` (tip card); PP-o355.60 (artwork band). Scrolling hub and tip card: canvas https://claude.ai/artifact/PFvYuNrju4e2pfyrUshttN, boards "Hub A · …" and "Small phone · 1+2: card peeks, fade" (2026-09-27). Action buttons in the page flow, Game details and Ask PinBrain: canvas https://claude.ai/artifact/Up6UZDPCn2SMKQbpCCabcz, boards "Option D · All four under the image" and "Option D · 320" (2026-11-23); bead PP-4wtr.
 
 ---
 
@@ -12,7 +12,8 @@
 
 - **Scan hub** — the page a machine's apron-card QR opens. One hub per machine, at its own URL, distinct from the machine page and its tabs. Player-facing: it exists so the person standing at the machine can post a score, report a problem, and see what others have posted — not to maintain the machine.
 - **Scan source** — the `apron` source tag the QR carries. The hub reads it and passes it on to the actions it launches, so scan traffic stays attributable.
-- **Thumb zone** — a bar pinned directly above the tab bar that holds the two action buttons. It stays in place while the hub scrolls.
+- **Thumb zone** — _Retired 2026-11-23._ The hub has no pinned bar; its action buttons sit in the page flow (§3.4).
+- **PinBrain** — the Collective's Gemini Notebook, linked from the hub (PinBrain spec §1).
 
 ## 2. Route & shell
 
@@ -23,21 +24,23 @@
 
 ## 3. Content, top to bottom
 
-- **3.1** **Identity block** — the machine's name, then manufacturer · year · owner display name on one line. The block links to the machine's Info page and carries a "Details" affordance. The owner is shown by display name only (CORE-SEC-007). When the machine has artwork (§3.6), the identity block sits over the bottom edge of the artwork band.
+- **3.1** **Identity block** — the machine's name, then manufacturer · year · owner display name on one line. The owner is shown by display name only (CORE-SEC-007). When the machine has artwork (§3.6), the identity block sits over the bottom edge of the artwork band.
 - **3.2** **Top scores card** — a reduced form of the iScored Top Scores card (iScored spec §4): the "Top scores" label, three ranked rows, a "View all on" link carrying the iScored logo, and the card's empty and unlinked states (§4.4–§4.5). In the unlinked state the card keeps its label and the iScored logo (as a plain image) and shows one sentence — no iScored game is linked to this machine — to every viewer; it never renders the Manage link. It carries no Add score control — that action is the hub's Post a score button (§3.4). The hub never shows more than three scores.
 - **3.3** **Open issues card** — the count of open issues in its label and the three newest open issues as rows (severity label, title, age), with a "See all" link to the machine's issues. With zero open issues it shows a quiet "No open issues" state.
-- **3.4** **Action buttons** — two equal-size buttons side by side in the thumb zone, icon above label: **Post a score** (left) and **Report a problem** (right).
+- **3.4** **Action buttons** — directly after the artwork band, or after the identity block when there is no band, two rows of buttons in the page flow. The first row holds two equal-size buttons, icon above label: **Post a score** (left) and **Report a problem** (right). The second row holds two equal-size outlined buttons: **Game details** (left) and **Ask PinBrain** (right).
 - **3.5** The hub shows no machine status indicator (Playable / Needs attention / Out of order) and no maintainer or owner tools.
 - **3.6** **Artwork band** — when the machine's catalog entry has game artwork, the hub opens with a full-width band showing the whole image, never cropped, with an "Image: OPDB" credit linking to the image. Without artwork there is no band.
-- **3.7** The artwork band is as tall as it can be while the top 60px of the card after Top scores stays visible above the thumb zone on first load, up to the image's own height at full width. When the band is shorter than the image, the image shrinks and a blurred copy of it fills the band's sides.
+- **3.7** The artwork band is as tall as it can be while both button rows and the top 60px of the Top scores card stay visible above the tab bar on first load, up to the image's own height at full width. When the band is shorter than the image, the image shrinks and a blurred copy of it fills the band's sides.
 - **3.8** **Tip card** — between the Top scores card and the Open issues card, the PinTips tip card (PinTips spec §3). A machine without tips shows nothing there.
 
 ## 4. Actions
 
 - **4.1** **Post a score** opens the machine's iScored score entry link (iScored spec §1) in a new tab.
-- **4.2** When the machine has no iScored link, Post a score is not rendered and Report a problem spans the full width of the thumb zone.
+- **4.2** When the machine has no iScored link, Post a score is not rendered and Report a problem spans the full width of its row.
 - **4.3** **Report a problem** opens Quick report (reporting spec §2–§3) with the machine preselected, carrying the scan source through.
 - **4.4** The hub itself submits nothing — every write happens on the destination it links to.
+- **4.5** **Game details** opens the machine's Info tab.
+- **4.6** **Ask PinBrain** opens PinBrain in a new tab.
 
 ## 5. Fit
 
@@ -45,21 +48,24 @@
 - **5.2** _Retired 2026-09-27._ Same, for the smallest supported phone. Number kept.
 - **5.3** _Retired 2026-09-27._ Permitted scrolling only below 375×667; §5.5 now permits it everywhere. Number kept.
 - **5.4** The artwork band is never shorter than 180px. Where §3.7 would make it shorter, it stays at 180px and the page scrolls.
-- **5.5** The hub scrolls when its content is taller than the space between the header and the thumb zone. The thumb zone stays pinned above the tab bar while it scrolls.
-- **5.6** Content that scrolls under the thumb zone fades out at the thumb zone's top edge.
+- **5.5** The hub scrolls when its content is taller than the space between the header and the tab bar. Nothing on the hub is pinned; the action buttons scroll with the page (design bible §3).
+- **5.6** _Retired 2026-11-23._ Faded content under the thumb zone, which no longer exists. Number kept.
 
 ## 6. Color
 
-- **6.1** Post a score uses the primary token. Report a problem uses the existing `warning` token (yellow) with dark text. No new token is introduced.
+- **6.1** Post a score uses the primary token. Report a problem uses the existing `warning` token (yellow) with dark text. No new token is introduced. Game details and Ask PinBrain use the outlined button style (design bible §26).
 
 ## Known divergences
 
-_None — the current implementation matches this spec._
+| Requirement | Divergence | Resolution |
+| :-- | :-- | :-- |
+| §3.1, §3.4, §3.7, §4.2, §4.5–§4.6, §5.5–§5.6, §6.1 | The action buttons are still pinned above the tab bar with a fade, the identity block still links to the Info page, and there is no Game details or Ask PinBrain button. | PP-4wtr |
 
 ## Changelog
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | §1 Thumb zone retired and PinBrain added. §3.1: the identity block no longer links to the Info page. §3.4: the action buttons move into the page flow after the artwork band, with a second row holding Game details and Ask PinBrain. §3.7: the band leaves both button rows and the top of Top scores visible. §4.2: Report a problem spans its row. §4.5–§4.6 added. §5.5: nothing is pinned. §5.6 retired. §6.1: the second-row buttons are outlined. |
 | 2026-10-02 | §2.2: the tab strip includes the Apron card tab. |
 | 2026-10-02 | §6.1: Report a problem stays on the `warning` token, described as yellow; the tie to the Major severity color is dropped (Major is orange under the PP-jb9v.1 state palette). |
 | 2026-09-27 | §5.1–§5.3 retired and §5.5–§5.6 added: the hub scrolls, with the action buttons pinned above the tab bar and content fading under them. §3.7: the band leaves the top 60px of the next card visible. §5.4: the band's minimum is 180px. §3.8 added: the PinTips tip card. §1 Thumb zone redefined as the pinned bar. |

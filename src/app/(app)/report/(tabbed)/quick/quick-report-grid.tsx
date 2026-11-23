@@ -281,7 +281,7 @@ export function QuickReportGrid(): React.JSX.Element {
         </div>
       )}
 
-      <div className="sticky bottom-0 mt-4 flex items-center justify-between rounded-xl border border-outline-variant bg-card p-3">
+      <div className="mt-4 flex items-center justify-between rounded-xl border border-outline-variant bg-card p-3 md:sticky md:bottom-0">
         <p className="text-sm text-muted-foreground">
           <span className="font-semibold text-foreground">{readyCount}</span>{" "}
           ready · {receipts.length} submitted

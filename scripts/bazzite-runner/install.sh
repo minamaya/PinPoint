@@ -23,6 +23,14 @@ install -m 0644 "$src/gh-runner.service" /etc/systemd/system/
 install -m 0644 "$src/50-gh-runner.rules" /etc/polkit-1/rules.d/
 
 install -d -m 0750 -o ghrunner -g ghrunner /var/lib/ghrunner
+# Saved VM consoles: written by ghrunner, readable by froeht (setgid keeps the
+# group on new files). The supervisor strips token-like strings before saving.
+install -d -m 2750 -o ghrunner -g froeht /var/log/ghrunner /var/log/ghrunner/vm-logs
+if [ -d /var/lib/ghrunner/vm-logs ]; then  # where earlier versions kept them
+  find /var/lib/ghrunner/vm-logs -name '*.log' -exec \
+    install -m 0640 -o ghrunner -g froeht -t /var/log/ghrunner/vm-logs {} +
+  rm -rf /var/lib/ghrunner/vm-logs
+fi
 # build-golden.sh, run as froeht, writes the VM image here.
 install -d -m 0755 -o froeht -g froeht /var/lib/ghrunner-images
 

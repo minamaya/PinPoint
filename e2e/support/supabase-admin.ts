@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 
@@ -373,25 +372,6 @@ export async function deleteTestSettingsTags(names: string[]) {
 }
 
 /**
- * Generate an unsubscribe token for E2E tests.
- * Uses the same HMAC-SHA256 algorithm and signing secret as
- * src/lib/notifications/unsubscribe-token.ts. The test client must
- * derive tokens using the same UNSUBSCRIBE_SIGNING_SECRET that the dev
- * server uses to verify them, otherwise verification fails.
- */
-export function generateUnsubscribeTokenForTest(userId: string): string {
-  const secret = process.env["UNSUBSCRIBE_SIGNING_SECRET"];
-  if (!secret) {
-    throw new Error(
-      "Missing UNSUBSCRIBE_SIGNING_SECRET — required for unsubscribe E2E tests. Set it in .env.local (and in CI workflow env)."
-    );
-  }
-  return createHmac("sha256", secret)
-    .update(userId + ":unsubscribe")
-    .digest("hex");
-}
-
-/**
  * Clear a rich-text field on a machine (sets it to null).
  * Useful for restoring ownerRequirements / description after tests.
  */
@@ -653,19 +633,6 @@ export async function addLmxToStoredLineup(entry: {
     .update({ snapshot_json: snapshot })
     .eq("id", "singleton");
   if (writeError) throw writeError;
-}
-
-/**
- * Stamp the stored lineup as just refreshed, so opening Confirm lineup does not
- * refresh it first (pinballmap spec 3.7). A refresh would replace the shared
- * stored lineup with the mock client's, dropping entries other workers seeded.
- */
-export async function markStoredLineupFresh() {
-  const { error } = await supabaseAdmin
-    .from("pinballmap_state")
-    .update({ last_synced_at: new Date().toISOString() })
-    .eq("id", "singleton");
-  if (error) throw error;
 }
 
 /** Undo {@link addLmxToStoredLineup}, so a run does not leak into the next. */
