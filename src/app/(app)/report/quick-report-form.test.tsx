@@ -1,10 +1,18 @@
 import React from "react";
 import { renderToString } from "react-dom/server";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { submitPublicIssueAction } from "./actions";
 import { ReportDraftProvider, useReportDraft } from "./report-draft-store";
-import { defaultEntry } from "./report-draft-schema";
+import {
+  DRAFT_VERSION,
+  REPORT_DRAFT_KEY,
+  defaultEntry,
+  emptySingle,
+  parseDraft,
+  serializeDraft,
+} from "./report-draft-schema";
 import { QuickReportForm } from "./quick-report-form";
 
 vi.mock("next/navigation", () => ({
@@ -186,6 +194,57 @@ describe("QuickReportForm", () => {
       expect(screen.getByTestId("second-title")).toHaveTextContent(
         "Other issue"
       );
+    });
+  });
+
+  it("writes machine, title, and frequency into the shared draft and updates Add details href", async () => {
+    const user = userEvent.setup();
+    renderForm(true);
+
+    await user.click(screen.getByRole("combobox", { name: "Machine" }));
+    await user.click(screen.getByTestId(`machine-option-${MACHINE.id}`));
+    await user.type(
+      screen.getByRole("textbox", { name: "Problem" }),
+      "Handoff test problem"
+    );
+    await user.click(screen.getByRole("radio", { name: "Frequent" }));
+
+    expect(screen.getByRole("link", { name: "Add details" })).toHaveAttribute(
+      "href",
+      "/report/detailed?machine=AFM"
+    );
+    const persisted = parseDraft(window.localStorage.getItem(REPORT_DRAFT_KEY));
+    expect(persisted?.entries[0]).toMatchObject({
+      machineId: MACHINE.id,
+      title: "Handoff test problem",
+      frequency: "frequent",
+    });
+  });
+
+  it("preserves an existing shared draft instead of resetting frequency on mount", async () => {
+    window.localStorage.setItem(
+      REPORT_DRAFT_KEY,
+      serializeDraft({
+        version: DRAFT_VERSION,
+        entries: [
+          {
+            ...defaultEntry("22222222-2222-4222-8222-222222222222"),
+            machineId: MACHINE.id,
+            title: "Carried from Detailed",
+            frequency: "constant",
+          },
+        ],
+        single: emptySingle(),
+      })
+    );
+
+    renderForm(true);
+
+    expect(screen.getByRole("textbox", { name: "Problem" })).toHaveValue(
+      "Carried from Detailed"
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "Constant" })).toBeChecked();
     });
   });
 });

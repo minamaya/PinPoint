@@ -1,9 +1,10 @@
 /**
  * E2E Tests for Public Issue Reporting - Extended (Full Suite)
  *
- * Tests for email prompt and signup pre-fill flows.
+ * Tests the anonymous reporter -> success prompt -> pre-filled signup journey.
  * Core reporting tests are in e2e/smoke/public-reporting.spec.ts.
- * Anonymous and guest status/priority enforcement tested in public-issue-submit.test.ts (PGlite integration).
+ * Action redirect parameters, status/priority enforcement, and signup form
+ * pre-fill variants are tested in public-issue-submit.test.ts and signup-form.test.tsx.
  */
 
 import { test, expect } from "../support/fixtures.js";
@@ -20,101 +21,61 @@ test.describe("Public Issue Reporting - Extended", () => {
     });
   });
 
-  test("should show signup prompt when anonymous user provides email", async ({
-    page,
-  }) => {
-    const timestamp = Date.now();
-    const email = `newuser-${timestamp}@example.com`;
-
-    await page.goto("/report/detailed");
-    await selectMachine(page);
-    // Wait for URL refresh (router.push) to prevent race conditions on Mobile Safari
-    await expect(page).toHaveURL(/machine=/);
-
-    await fillReportForm(page, {
-      title: `${PUBLIC_PREFIX} with Email`,
-      includePriority: false,
-    });
-
-    await page.getByLabel("First Name").fill("Test");
-    await page.getByLabel("Last Name").fill("User");
-    await page.getByLabel("Email Address").fill(email);
-
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
-
-    await expect(page).toHaveURL(/\/report\/success/);
-    await expect(page.getByText("Want to track your reports?")).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Join PinPoint" })
-    ).toBeVisible();
-  });
-
-  test("should pre-fill name on signup when provided without email", async ({
-    page,
-  }) => {
-    await page.goto("/report/detailed");
-    await selectMachine(page);
-    // Wait for URL refresh (router.push) to prevent race conditions on Mobile Safari
-    await expect(page).toHaveURL(/machine=/);
-
-    await fillReportForm(page, {
-      title: `${PUBLIC_PREFIX} with Name Only`,
-      includePriority: false,
-    });
-
-    // Provide name but no email
-    await page.getByLabel("First Name").fill("Jane");
-    await page.getByLabel("Last Name").fill("Reporter");
-
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
-
-    // Should redirect to success page with new_pending flag
-    await expect(page).toHaveURL(/\/report\/success/);
-    await expect(page.getByText("Want to track your reports?")).toBeVisible();
-
-    // Click the signup link
-    await page.getByRole("link", { name: "Join PinPoint" }).click();
-
-    // Should redirect to signup page with name pre-filled
-    await expect(page).toHaveURL(/\/signup\?/);
-    await expect(page.getByLabel(/First Name/i)).toHaveValue("Jane");
-    await expect(page.getByLabel(/Last Name/i)).toHaveValue("Reporter");
-  });
-
   test("should pre-fill name and email on signup when both provided", async ({
     page,
   }) => {
-    const timestamp = Date.now();
-    const email = `reporter-${timestamp}@example.com`;
+    const email = `reporter-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`;
 
     await page.goto("/report/detailed");
     await selectMachine(page);
-    // Wait for URL refresh (router.push) to prevent race conditions on Mobile Safari
     await expect(page).toHaveURL(/machine=/);
 
     await fillReportForm(page, {
-      title: `${PUBLIC_PREFIX} with Name and Email`,
+      title: `${PUBLIC_PREFIX} Signup Prefill ${Date.now()}`,
       includePriority: false,
     });
 
-    // Provide name and email
     await page.getByLabel("First Name").fill("John");
     await page.getByLabel("Last Name").fill("Smith");
     await page.getByLabel("Email Address").fill(email);
 
     await page.getByRole("button", { name: "Submit Issue Report" }).click();
 
-    // Should redirect to success page with new_pending flag
     await expect(page).toHaveURL(/\/report\/success/);
     await expect(page.getByText("Want to track your reports?")).toBeVisible();
 
-    // Click the signup link
     await page.getByRole("link", { name: "Join PinPoint" }).click();
 
-    // Should redirect to signup page with name and email pre-filled
     await expect(page).toHaveURL(/\/signup\?/);
     await expect(page.getByLabel(/First Name/i)).toHaveValue("John");
     await expect(page.getByLabel(/Last Name/i)).toHaveValue("Smith");
     await expect(page.getByLabel(/Email/i)).toHaveValue(email);
+  });
+
+  test("success and signup routes pre-fill name without email via SSR", async ({
+    request,
+  }) => {
+    const headers = { "x-skip-autologin": "true" };
+
+    const successResponse = await request.get(
+      "/report/success?new_pending=true&firstName=Jane&lastName=Reporter",
+      { headers }
+    );
+    expect(successResponse.status()).toBe(200);
+    const successHtml = await successResponse.text();
+    expect(successHtml).toContain("Want to track your reports?");
+    expect(successHtml).toContain(
+      'href="/signup?firstName=Jane&amp;lastName=Reporter"'
+    );
+
+    const signupResponse = await request.get(
+      "/signup?firstName=Jane&lastName=Reporter",
+      { headers }
+    );
+    expect(signupResponse.status()).toBe(200);
+    const signupHtml = await signupResponse.text();
+    expect(signupHtml).toMatch(/name="firstName"[^>]*value="Jane"/);
+    expect(signupHtml).toMatch(/name="lastName"[^>]*value="Reporter"/);
+    expect(signupHtml).not.toMatch(/name="email"[^>]*readonly/i);
   });
 });
