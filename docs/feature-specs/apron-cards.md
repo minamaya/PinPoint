@@ -126,7 +126,6 @@
 
 | Requirement | Current implementation gap |
 | :-- | :-- |
-| §3.1, §3.2, §3.6 | The Apron card tab shows the machine's main description read-only and points to the Manage tab; editing it in place is not built yet (PP-nunup). |
 | §4.2 | Automatic apron-size fill from a Pinball Map match is intentionally deferred. Editors choose a size manually for now; unmatched machines still have no default. |
 
 ## Changelog
