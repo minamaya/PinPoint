@@ -1,0 +1,60 @@
+#cloud-config
+# Runner VM image for the Bazzite CI runner (PP-4k0), built by build-golden.sh.
+# It matches what PinPoint's CI expects from GitHub's ubuntu-latest (Ubuntu
+# 26.04): Docker, gh, a system Node, psql, Chromium's system libraries, and the
+# same ImageOS and work directory, so the toolchain and node_modules caches
+# saved by GitHub-hosted runs restore here unchanged.
+hostname: pinpoint-runner
+users:
+  - name: runner
+    groups: [sudo, docker]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    shell: /bin/bash
+    lock_passwd: true
+package_update: true
+package_upgrade: true
+packages:
+  - build-essential
+  - ca-certificates
+  - curl
+  - docker-buildx
+  - docker.io
+  - gh
+  - git
+  - gnupg
+  - jq
+  - nodejs
+  - npm
+  - postgresql-client
+  - python3
+  - python3-pip
+  - python3-venv
+  - rsync
+  - unzip
+  - xz-utils
+  - zip
+  - zstd
+write_files:
+  - path: /etc/docker/daemon.json
+    content: '{"log-driver":"local"}'
+runcmd:
+  - [systemctl, enable, --now, docker]
+  - - bash
+    - -c
+    - >-
+      sudo -u runner mkdir -p /home/runner/actions-runner /home/runner/work &&
+      cd /home/runner/actions-runner &&
+      curl -fsSL https://github.com/actions/runner/releases/download/v@RUNNER_VERSION@/actions-runner-linux-x64-@RUNNER_VERSION@.tar.gz
+      | sudo -u runner tar xz &&
+      ./bin/installdependencies.sh
+  # GitHub-hosted jobs run in /home/runner/work; pnpm re-links a restored
+  # node_modules when the checkout path differs, so match it.
+  - [sudo, -u, runner, ln, -s, /home/runner/work, /home/runner/actions-runner/_work]
+  # The mise toolchain cache key includes ImageOS; with it, Bazzite shares
+  # GitHub-hosted runs' cache instead of installing Node and pnpm every job.
+  - [sudo, -u, runner, bash, -c, "printf 'ImageOS=ubuntu26\\nLANG=C.UTF-8\\n' > /home/runner/actions-runner/.env"]
+  - [bash, -c, "npx -y playwright@@PLAYWRIGHT_VERSION@ install-deps chromium"]
+  - [bash, -c, "apt-get clean && rm -rf /var/lib/apt/lists/*"]
+  - [bash, -c, "docker --version && gh --version | head -1 && node --version && psql --version && echo GOLDEN-$((40+2))-OK > /dev/ttyS0"]
+  - [cloud-init, clean, --logs, --machine-id]
+  - [poweroff]

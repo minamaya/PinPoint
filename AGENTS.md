@@ -152,6 +152,7 @@ Always try local first — seconds vs minutes, full devtools. If a single-test r
 
 - **Check for conflicts first**: `gh pr view <PR> --json mergeable,mergeStateStatus`. `DIRTY`/`CONFLICTING` means GitHub silently skips workflow runs until you resolve. `pnpm run check` includes a `check:behind-main` warning.
 - **Merge gates** (ruleset `6326455`, enforced by GitHub): required checks `CI Gate`, `Claude Review`, and `UI Approval`; every conversation resolved; merging through the **merge queue**. `gh pr merge` puts the PR in the queue, which tests it on top of `main` and the PRs ahead of it (the same three checks, on a `merge_group` run) and merges it only if they pass, so a branch behind `main` needs no update. Merge `main` in (`gh pr update-branch <PR>`, never `--rebase`) only to resolve a conflict. Vercel is not required. `BLOCKED` while E2E is still running is normal.
+- **Bazzite runner**: while Tim has it on, merge-queue runs and his own same-repo PR runs may run on his Bazzite desktop (runner names start `bazzite-`); a re-run always goes to `ubuntu-latest`, and so does everything when the machine is off or unreachable. A job waiting on a `pinpoint-run-…` label is waiting for Bazzite. `scripts/bazzite-runner/README.md`. (PP-4k0.)
 
 ### Migration conflicts
 
