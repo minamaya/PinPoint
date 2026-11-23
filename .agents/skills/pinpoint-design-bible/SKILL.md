@@ -131,6 +131,8 @@ These values are fixed. Do not deviate.
 
 **Nothing full-width is pinned above the bottom tab bar on phones.** Page actions and pagers live in the page flow and scroll with it; the tab bar is the only fixed chrome at the bottom of the screen.
 
+**One exception: the scan hub's thumb zone** (`machine-scan-hub` §1, §5.5). The hub is the page a QR scan lands on, and its two thumb buttons (Post a score, Report a problem) are its whole purpose, so they stay pinned above the tab bar. No other page gets a pinned bar.
+
 ## 4. Responsive Strategy
 
 PinPoint uses a **two-layer responsive framework**. Each layer has a distinct job. Never use both layers to solve the same layout problem.

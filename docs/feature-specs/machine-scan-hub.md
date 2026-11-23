@@ -12,7 +12,7 @@
 
 - **Scan hub** — the page a machine's apron-card QR opens. One hub per machine, at its own URL, distinct from the machine page and its tabs. Player-facing: it exists so the person standing at the machine can post a score, report a problem, and see what others have posted — not to maintain the machine.
 - **Scan source** — the `apron` source tag the QR carries. The hub reads it and passes it on to the actions it launches, so scan traffic stays attributable.
-- **Thumb zone** — a bar pinned directly above the tab bar that holds the two action buttons. It stays in place while the hub scrolls.
+- **Thumb zone** — a bar pinned directly above the tab bar that holds the two action buttons. It stays in place while the hub scrolls. It is the one pinned bar the design bible's shell contract (§3) allows above the tab bar: the hub is the page a QR scan lands on, and these two buttons are its purpose.
 
 ## 2. Route & shell
 
@@ -60,6 +60,7 @@ _None — the current implementation matches this spec._
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | §1: the thumb zone is the one pinned bar the design bible's shell contract allows above the tab bar. No behavior change. |
 | 2026-10-02 | §2.2: the tab strip includes the Apron card tab. |
 | 2026-10-02 | §6.1: Report a problem stays on the `warning` token, described as yellow; the tie to the Major severity color is dropped (Major is orange under the PP-jb9v.1 state palette). |
 | 2026-09-27 | §5.1–§5.3 retired and §5.5–§5.6 added: the hub scrolls, with the action buttons pinned above the tab bar and content fading under them. §3.7: the band leaves the top 60px of the next card visible. §5.4: the band's minimum is 180px. §3.8 added: the PinTips tip card. §1 Thumb zone redefined as the pinned bar. |
