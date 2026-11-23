@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { updateCollectionAction } from "~/app/(app)/c/collections/actions";
-import type { ProseMirrorDoc } from "~/lib/tiptap/types";
+import { docIsEmpty, type ProseMirrorDoc } from "~/lib/tiptap/types";
 
 interface Props {
   /** The dialog opens from Edit collection in ⋯ (collections-and-tags 4.17). */
@@ -27,6 +27,15 @@ interface Props {
   currentIds: string[];
   /** Where focus goes when the dialog closes (useReturnFocus). */
   onCloseAutoFocus?: ((event: Event) => void) | undefined;
+}
+
+/** Typing a character and deleting it leaves an equal (or empty) doc. */
+function sameDescription(
+  a: ProseMirrorDoc | null,
+  b: ProseMirrorDoc | null
+): boolean {
+  if (docIsEmpty(a) && docIsEmpty(b)) return true;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
@@ -67,7 +76,7 @@ export function EditCollectionDialog({
 
   const dirty =
     name !== currentName ||
-    description !== currentDescription ||
+    !sameDescription(description, currentDescription) ||
     selected.length !== currentIds.length ||
     selected.some((id) => !currentIds.includes(id));
 

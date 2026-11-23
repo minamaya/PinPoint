@@ -48,11 +48,35 @@ function renderDialog(): void {
   );
 }
 
+const editorProps = {
+  tagId: "storage",
+  tagName: "Storage",
+  context: "Location · One per machine",
+  allMachines,
+  otherTagByMachine: { afm: "Front room" },
+};
+
 /** Spec collections-and-tags 11.5, 11.11: the tag page's machine editor. */
 describe("EditTagMachinesDialog", () => {
   beforeEach(() => {
     setTagMachines.mockReset();
     refresh.mockReset();
+  });
+
+  it("keeps the ticks, and the discard confirm, when the parent re-renders with a new currentIds array", async () => {
+    const { rerender } = render(
+      <EditMachinesHarness {...editorProps} currentIds={["bk"]} />
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit machines" })
+    );
+    await userEvent.click(screen.getByLabelText(/Attack from Mars/));
+
+    rerender(<EditMachinesHarness {...editorProps} currentIds={["bk"]} />);
+
+    expect(screen.getByLabelText(/Attack from Mars/)).toBeChecked();
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByText("Discard changes?")).toBeInTheDocument();
   });
 
   it("saves the checked set and says which machine moves off its other tag", async () => {

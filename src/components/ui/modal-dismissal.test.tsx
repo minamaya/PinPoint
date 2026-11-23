@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { DiscardChangesDialog } from "~/components/ui/discard-changes-dialog";
 import {
   Dialog,
   DialogClose,
@@ -171,6 +172,40 @@ describe("modal dismissal standard (CORE-UI-009)", () => {
         expect(screen.queryByRole("dialog", { name: "Edit thing" })).toBeNull();
       });
       expect(confirm()).toBeNull();
+    });
+  });
+
+  describe("DiscardChangesDialog callbacks", () => {
+    function renderConfirm(): { keep: () => void; discard: () => void } {
+      const keep = vi.fn();
+      const discard = vi.fn();
+      render(
+        <DiscardChangesDialog open onKeepEditing={keep} onDiscard={discard} />
+      );
+      return { keep, discard };
+    }
+
+    it("Keep editing fires onKeepEditing once and never onDiscard", async () => {
+      const { keep, discard } = renderConfirm();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Keep editing" })
+      );
+      expect(keep).toHaveBeenCalledTimes(1);
+      expect(discard).not.toHaveBeenCalled();
+    });
+
+    it("Escape fires onKeepEditing once", async () => {
+      const { keep, discard } = renderConfirm();
+      await userEvent.keyboard("{Escape}");
+      expect(keep).toHaveBeenCalledTimes(1);
+      expect(discard).not.toHaveBeenCalled();
+    });
+
+    it("Discard fires onDiscard once and never onKeepEditing", async () => {
+      const { keep, discard } = renderConfirm();
+      await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+      expect(discard).toHaveBeenCalledTimes(1);
+      expect(keep).not.toHaveBeenCalled();
     });
   });
 

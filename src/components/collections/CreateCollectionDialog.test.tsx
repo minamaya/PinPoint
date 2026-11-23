@@ -25,7 +25,13 @@ vi.mock("~/components/editor/RichTextEditorDynamic", () => ({
     <textarea
       aria-label={ariaLabel}
       defaultValue={content?.content?.[0]?.content?.[0]?.text ?? ""}
-      onChange={(e) => onChange(paragraphDoc(e.target.value))}
+      onChange={(e) =>
+        onChange(
+          e.target.value === ""
+            ? { type: "doc", content: [{ type: "paragraph" }] }
+            : paragraphDoc(e.target.value)
+        )
+      }
     />
   ),
 }));
@@ -86,6 +92,19 @@ describe("CreateCollectionDialog from CollectionsPageActions", () => {
       })
     );
     await waitFor(() => expect(push).toHaveBeenCalledWith("/c/new-id"));
+  });
+
+  it("closes at once on Escape when the description was typed and then emptied", async () => {
+    render(<CollectionsPageActions allMachines={allMachines} />);
+
+    await userEvent.click(screen.getByTestId("create-collection-trigger"));
+    const description = screen.getByRole("textbox", { name: "Description" });
+    await userEvent.type(description, "x");
+    await userEvent.clear(description);
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Discard changes?")).toBeNull();
   });
 
   it("keeps submit disabled until a name is entered", async () => {

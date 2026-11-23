@@ -43,11 +43,22 @@ export function DiscardChangesDialog({
   keepEditingLabel = "Keep editing",
   onCloseAutoFocus,
 }: DiscardChangesDialogProps): React.JSX.Element {
+  // Radix closes the alert on every button, so its `onOpenChange(false)` also
+  // follows a Discard click. `discarded` keeps that from reading as Keep editing.
+  const discarded = React.useRef(false);
+  React.useEffect(() => {
+    if (open) discarded.current = false;
+  }, [open]);
   return (
     <AlertDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) onKeepEditing();
+        if (next) return;
+        if (discarded.current) {
+          discarded.current = false;
+          return;
+        }
+        onKeepEditing();
       }}
     >
       <AlertDialogContent
@@ -59,10 +70,14 @@ export function DiscardChangesDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onKeepEditing}>
-            {keepEditingLabel}
-          </AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onDiscard}>
+          <AlertDialogCancel>{keepEditingLabel}</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={() => {
+              discarded.current = true;
+              onDiscard();
+            }}
+          >
             {discardLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

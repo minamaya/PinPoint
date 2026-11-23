@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { createCollectionAction } from "~/app/(app)/c/collections/actions";
-import type { ProseMirrorDoc } from "~/lib/tiptap/types";
+import { docIsEmpty, type ProseMirrorDoc } from "~/lib/tiptap/types";
 
 interface Props {
   /** Opens from the page's New collection action (design-bible §26.1). */
@@ -55,7 +55,7 @@ export function CreateCollectionDialog({
     }
   }, [open]);
 
-  const dirty = name !== "" || description !== null || selected.length > 0;
+  const dirty = name !== "" || !docIsEmpty(description) || selected.length > 0;
 
   function create(): void {
     setError(null);

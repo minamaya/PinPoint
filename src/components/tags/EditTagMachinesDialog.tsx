@@ -1,7 +1,14 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -74,9 +81,12 @@ export function EditTagMachinesDialog(
   const { currentIds } = props;
   const [selected, setSelected] = useState(() => new Set(currentIds));
 
-  // Each open starts from the saved set.
+  // Each open starts from the saved set. Only the open transition resets it: a
+  // parent re-render hands over a new `currentIds` array and must not wipe ticks.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open) setSelected(new Set(currentIds));
+    if (open && !wasOpen.current) setSelected(new Set(currentIds));
+    wasOpen.current = open;
   }, [open, currentIds]);
 
   const dirty =
