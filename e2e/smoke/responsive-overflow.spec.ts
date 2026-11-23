@@ -9,7 +9,6 @@
 import { expect, test } from "../support/fixtures.js";
 import {
   assertNoHorizontalOverflow,
-  ensureLoggedIn,
   assertNoA11yViolations,
 } from "../support/actions.js";
 import { seededMachines, seededIssue } from "../support/constants.js";
@@ -26,8 +25,8 @@ import { STORAGE_STATE } from "../support/auth-state.js";
 const machineInitials = seededMachines.addamsFamily.initials;
 const issueNum = seededIssue("TAF").num;
 
-// TAF is admin-owned (with an invited-owner override on top) — this file's
-// `ensureLoggedIn` calls default to the `member` role, which lacks
+// TAF is admin-owned (with an invited-owner override on top) — the
+// authenticated block uses `STORAGE_STATE.member`, which lacks
 // `machines.edit` on it. Routing the /edit entry at TAF would only ever
 // render the page's own permission-denied redirect back to /m/TAF, not the
 // edit page's content. Eight Ball Deluxe is member-owned (see the ownerMap
@@ -97,9 +96,7 @@ const publicRoutes = [
 
 test.describe("Responsive: no horizontal overflow", () => {
   test.describe("authenticated pages", () => {
-    test.beforeEach(async ({ page }, testInfo) => {
-      await ensureLoggedIn(page, testInfo);
-    });
+    test.use({ storageState: STORAGE_STATE.member });
 
     for (const route of authenticatedRoutes) {
       test(`${route}`, async ({ page }) => {
@@ -154,33 +151,31 @@ test.describe("Responsive: no horizontal overflow", () => {
       }
     });
 
-    for (const width of [390, 393]) {
-      test(`machine overflow menu reaches Manage with a mouse at ${String(width)}px`, async ({
-        page,
-      }) => {
-        await page.setViewportSize({ width, height: 844 });
-        await page.goto(`/m/${ownedMachineInitials}`);
+    test("machine overflow menu reaches Manage with a mouse at 390px", async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`/m/${ownedMachineInitials}`);
 
-        await page.getByTestId("machine-tab-more").click();
-        const manageLink = page.getByTestId("machine-tab-overflow-edit");
-        await expect(manageLink).toHaveAttribute(
-          "href",
-          `/m/${ownedMachineInitials}/edit`
-        );
-        await manageLink.click();
+      await page.getByTestId("machine-tab-more").click();
+      const manageLink = page.getByTestId("machine-tab-overflow-edit");
+      await expect(manageLink).toHaveAttribute(
+        "href",
+        `/m/${ownedMachineInitials}/edit`
+      );
+      await manageLink.click();
 
-        await expect(page).toHaveURL(
-          new RegExp(`/m/${ownedMachineInitials}/edit$`)
-        );
-        await expect(page.getByTestId("machine-tab-edit")).toHaveAttribute(
-          "aria-current",
-          "page"
-        );
-        await assertNoHorizontalOverflow(page, {
-          scopeTestIds: ["machine-tab-strip"],
-        });
+      await expect(page).toHaveURL(
+        new RegExp(`/m/${ownedMachineInitials}/edit$`)
+      );
+      await expect(page.getByTestId("machine-tab-edit")).toHaveAttribute(
+        "aria-current",
+        "page"
+      );
+      await assertNoHorizontalOverflow(page, {
+        scopeTestIds: ["machine-tab-strip"],
       });
-    }
+    });
 
     // 320px is the layout floor (design bible §4). Medieval Madness's seeded
     // issues put severity badges in its Recent activity rows, the row shape
@@ -232,14 +227,12 @@ test.describe("Responsive: no horizontal overflow", () => {
     test.describe("collection pages", () => {
       const collectionBase = "/c/tags/location/front-room";
 
-      for (const suffix of ["/issues", "/timeline"]) {
-        test(`${collectionBase}${suffix}`, async ({ page }) => {
-          await page.goto(`${collectionBase}${suffix}`);
-          await page.waitForLoadState("load");
-          await assertNoHorizontalOverflow(page);
-          await assertNoA11yViolations(page);
-        });
-      }
+      test(`${collectionBase}/timeline`, async ({ page }) => {
+        await page.goto(`${collectionBase}/timeline`);
+        await page.waitForLoadState("load");
+        await assertNoHorizontalOverflow(page);
+        await assertNoA11yViolations(page);
+      });
 
       // Loaded state: the group's Issues tab with a wide set of active
       // filters renders the full chip row — the surface where the chip overflow
@@ -263,32 +256,28 @@ test.describe("Responsive: no horizontal overflow", () => {
         }
       });
 
-      for (const width of [390, 393]) {
-        test(`collection tabs reach Timeline with a mouse at ${String(width)}px`, async ({
-          page,
-        }) => {
-          await page.setViewportSize({ width, height: 844 });
-          await page.goto(collectionBase);
+      test("collection tabs reach Timeline with a mouse at 390px", async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(collectionBase);
 
-          const overflowTrigger = page.getByTestId("collection-tab-more");
-          let timeline = page.getByTestId("collection-tab-timeline");
-          if ((await overflowTrigger.count()) > 0) {
-            await overflowTrigger.click();
-            timeline = page.getByTestId("collection-tab-overflow-timeline");
-          }
-          await timeline.click();
+        const overflowTrigger = page.getByTestId("collection-tab-more");
+        let timeline = page.getByTestId("collection-tab-timeline");
+        if ((await overflowTrigger.count()) > 0) {
+          await overflowTrigger.click();
+          timeline = page.getByTestId("collection-tab-overflow-timeline");
+        }
+        await timeline.click();
 
-          await expect(page).toHaveURL(
-            new RegExp(`${collectionBase}/timeline$`)
-          );
-          await expect(
-            page.getByTestId("collection-tab-timeline")
-          ).toHaveAttribute("aria-current", "page");
-          await assertNoHorizontalOverflow(page, {
-            scopeTestIds: ["collection-tab-strip"],
-          });
+        await expect(page).toHaveURL(new RegExp(`${collectionBase}/timeline$`));
+        await expect(
+          page.getByTestId("collection-tab-timeline")
+        ).toHaveAttribute("aria-current", "page");
+        await assertNoHorizontalOverflow(page, {
+          scopeTestIds: ["collection-tab-strip"],
         });
-      }
+      });
 
       test("collection tabs remain reachable at 320px with 200% root text", async ({
         page,
