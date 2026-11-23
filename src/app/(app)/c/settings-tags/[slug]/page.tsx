@@ -2,15 +2,15 @@ import type React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Tag, Trophy } from "lucide-react";
+import { Trophy } from "lucide-react";
 
+import { Breadcrumb } from "~/components/layout/Breadcrumb";
 import { PageContainer } from "~/components/layout/PageContainer";
 import { SettingsTagPageActions } from "~/components/settings-tags/SettingsTagPageActions";
 import { Badge } from "~/components/ui/badge";
 import { getViewer } from "~/lib/auth/viewer";
 import { formatDate } from "~/lib/dates";
 import {
-  SETTINGS_TAGS_HREF,
   type SettingsTagPageSet,
   setsOnMachinesPhrase,
   settingsTagPageCounts,
@@ -87,35 +87,26 @@ export default async function SettingsTagPage({
   return (
     <PageContainer size="standard" className="max-w-4xl">
       <div className="space-y-5">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex items-center gap-1.5 text-sm text-muted-foreground"
-        >
-          <Tag aria-hidden="true" className="size-3.5" />
-          <Link
-            href={SETTINGS_TAGS_HREF}
-            className="font-medium text-primary hover:underline"
-          >
-            Settings tags
-          </Link>
-        </nav>
-        <div className="flex items-end gap-3 border-b border-outline-variant pb-3">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-balance text-3xl font-bold tracking-tight [overflow-wrap:anywhere]">
-              {tag.name}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Settings tag · {setsOnMachinesPhrase(setCount, machineCount)}
-            </p>
+        <div className="space-y-1">
+          <Breadcrumb section="settingsTags" />
+          <div className="flex items-end gap-3 border-b border-outline-variant pb-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <h1 className="text-balance text-3xl font-bold tracking-tight [overflow-wrap:anywhere]">
+                {tag.name}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Settings tag · {setsOnMachinesPhrase(setCount, machineCount)}
+              </p>
+            </div>
+            <SettingsTagPageActions
+              printHref={settingsTagPrintHref(tag.slug, tag.machines)}
+              manage={
+                canManage
+                  ? { tagId: tag.id, name: tag.name, setCount, machineCount }
+                  : null
+              }
+            />
           </div>
-          <SettingsTagPageActions
-            printHref={settingsTagPrintHref(tag.slug, tag.machines)}
-            manage={
-              canManage
-                ? { tagId: tag.id, name: tag.name, setCount, machineCount }
-                : null
-            }
-          />
         </div>
 
         {tag.machines.length === 0 ? (

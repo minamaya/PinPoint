@@ -179,7 +179,6 @@
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
 | §12.1–§12.6 | Neither the Machines list nor the Issues list offers a Tag or a Collection filter. | PP-wqit.15 |
-| 4.8, 4.9 | The breadcrumb is muted with no icon, sits inline before the title, and moves above it only when the header is crowded. | PP-jb9v.20 |
 | 4.12 | "… Show more" sits at the bottom-right of the clamped box rather than at the end of the last shown line, and the description's color comes from the rich-text styles. | PP-jb9v.18 |
 
 ---

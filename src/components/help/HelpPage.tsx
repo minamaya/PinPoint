@@ -1,11 +1,10 @@
 import type React from "react";
-import Link from "next/link";
 
 import { HelpToc } from "~/components/help/HelpToc";
+import { Breadcrumb } from "~/components/layout/Breadcrumb";
 import { cn } from "~/lib/utils";
 
 interface HelpPageProps {
-  breadcrumb: string;
   title: string;
   description?: string;
   size?: "narrow" | "default";
@@ -15,7 +14,6 @@ interface HelpPageProps {
 }
 
 export function HelpPage({
-  breadcrumb,
   title,
   description,
   size = "narrow",
@@ -24,15 +22,11 @@ export function HelpPage({
 }: HelpPageProps): React.JSX.Element {
   const sizeClass = size === "narrow" ? "max-w-3xl" : "max-w-6xl";
   const header = (
-    <header className="space-y-2 mb-8">
-      <p className="text-sm text-muted-foreground">
-        <Link href="/help" className="text-link">
-          Help
-        </Link>
-        {" / "}
-        {breadcrumb}
-      </p>
-      <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+    <header className="mb-8 space-y-2">
+      <div className="space-y-1">
+        <Breadcrumb section="help" />
+        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+      </div>
       {description ? (
         <p className="text-sm text-muted-foreground">{description}</p>
       ) : null}
