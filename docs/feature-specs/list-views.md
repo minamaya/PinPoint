@@ -113,8 +113,8 @@
 - **8.5** _Retired 2026-10-11._ Now 8.24. Number kept so older citations don't dangle.
 - **8.6** Every Surface uses one page design and fits narrower screens by applying the steps in 8.9–8.23. A step fires when the part of the page it changes runs out of room, or below the width it names.
 - **8.7** Whether a part has room is measured on the width its container gives it, never the screen width, and every fit check keeps a small tolerance so a step fires slightly before its part would overflow.
-- **8.8** Steps that change the same part fire in the order listed. A step that does not apply to a Surface, such as a breadcrumb on Machines, is skipped.
-- **8.9** When a Collection or Tag page's breadcrumb, title, and description do not fit on one row, the breadcrumb moves from before the title to above it. This is the page header's first step.
+- **8.8** Steps that change the same part fire in the order listed. A step that does not apply to a Surface, such as the description step on Machines, is skipped.
+- **8.9** _Retired 2026-11-23._ The breadcrumb no longer moves; it always sits above the title (collections-and-tags 4.9). Number kept so older citations don't dangle.
 - **8.10** When a Collection's description would be narrower than 280px beside the title, it moves under the title.
 - **8.11** Page actions that do not fit beside the title, or at the end of a Collection or Tag page's tab row, lose their labels and become icon buttons with accessible names (§3.8); when those still do not fit, they fold into the More menu, which is always the last page action.
 - **8.12** Page actions fold into the More menu from the first: on a Collection or Tag page Share folds, and on Machines Pinball Map folds before Add Machine. After each fold the buttons that remain show their labels again when they fit, and a lone More menu shows its label when it fits.
@@ -197,6 +197,7 @@ _None — the current implementation matches this spec._
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | 8.9 retired: the breadcrumb always sits above the title (collections-and-tags 4.9), so it no longer moves; 8.8's example names the description step instead. |
 | 2026-11-21 | 3.8, 8.11: icon-only page actions are borderless; labeled ones stay outlined. 8.12: on Collection and Tag pages only Share folds, since Print moved into ⋯ (collections-and-tags 4.16). 3.7: an action that would be ⋯'s only entry shows as its own button while there is room. 3.10, 8.11–8.13: ⋯ reads "More" instead of "Actions". 12.1: page actions and ⋯ are keyboard-operable. |
 | 2026-11-15 | No List Host has columns, a table, or displayed fields: View options holds page size only (§5.6), View Configurations, Page Presets, and Built-in Views carry no fields (§1), and Saved Views stored with fields ignore them (§10.14); retired keeping the page on a field change (§4.8), the sideways-scrolling table step (§8.20), and sort headers (§9.8). Every host uses two-line rows (§2.4) on one row structure shared by machine and issue rows (§6.4); the machine row drop step applies at every width (§8.21). |
 | 2026-11-15 | On phones the search field becomes an icon when it would be narrower than 175px, opening across the List Header when tapped (§7.12). |
