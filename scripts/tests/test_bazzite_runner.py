@@ -291,6 +291,56 @@ def test_run_stuck_on_a_dead_vm_is_cancelled(monkeypatch, event, branch, reran):
     assert (rerun in calls) is reran
 
 
+def test_vm_the_supervisor_killed_is_not_treated_as_dead(monkeypatch, tmp_path):
+    # A timeout kill with GitHub still holding the job must not cancel the run.
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    supervisor.vms[7]["started"] -= supervisor.JOB_TIMEOUT_S
+    supervisor.vms[7]["proc"].kill = lambda: None
+    supervisor.reap()
+    assert supervisor.dead == {}
+
+
+@pytest.mark.parametrize(
+    ("exc", "freed"),
+    [
+        (watchdog.urllib.error.HTTPError("u", 404, "gone", None, None), True),
+        (watchdog.urllib.error.HTTPError("u", 422, "busy", None, None), False),
+        (watchdog.urllib.error.HTTPError("u", 502, "bad gateway", None, None), False),
+        (watchdog.urllib.error.URLError("reset"), False),
+    ],
+)
+def test_only_a_missing_runner_counts_as_freed(monkeypatch, exc, freed):
+    monkeypatch.setattr(supervisor, "api", _raise(exc))
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    assert supervisor.delete_runner(55) is freed
+
+
+def test_one_failing_dead_runner_does_not_starve_the_rest(monkeypatch):
+    now = supervisor.time.time()
+    entry = {"run_id": 100, "runner_id": 55, "since": now - 60, "next": now - 1}
+    monkeypatch.setattr(supervisor, "dead", {"a": dict(entry), "b": dict(entry)})
+    monkeypatch.setattr(supervisor, "rerun_when_done", {200, 300})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    tried = []
+
+    def recover_one(name, _info):
+        tried.append(name)
+        raise supervisor.urllib.error.URLError("reset")
+
+    monkeypatch.setattr(supervisor, "recover_one", recover_one)
+    monkeypatch.setattr(supervisor, "run_completed", lambda _rid: True)
+
+    def api(_method, path, _body=None):
+        if "/200/" in path:
+            raise supervisor.urllib.error.HTTPError("u", 422, "no", None, None)
+        return {}
+
+    monkeypatch.setattr(supervisor, "api", api)
+    supervisor.recover_dead()
+    assert tried == ["a", "b"]
+    assert supervisor.rerun_when_done == set()  # 422 gives up, 300 re-ran
+
+
 def test_dead_runner_released_by_github_is_dropped(monkeypatch):
     now = supervisor.time.time()
     monkeypatch.setattr(

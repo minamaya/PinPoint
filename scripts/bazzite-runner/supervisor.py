@@ -296,14 +296,19 @@ def cancel(run_id: int) -> None:
 
 
 def delete_runner(runner_id: int) -> bool:
-    """False while GitHub still has a job assigned to the runner (HTTP 422)."""
+    """True once the runner is gone. False while GitHub still has a job on it
+    (HTTP 422) or when GitHub could not say (any other error)."""
     try:
         api("DELETE", f"{runners_path()}/{runner_id}")
     except urllib.error.HTTPError as err:
-        if err.code == 422:
-            return False
-        if err.code != 404:  # an ephemeral runner removes itself after its job
+        if err.code == 404:  # an ephemeral runner removes itself after its job
+            return True
+        if err.code != 422:
             log(f"delete runner {runner_id}: HTTP {err.code}")
+        return False
+    except (urllib.error.URLError, OSError) as err:
+        log(f"delete runner {runner_id}: {err}")
+        return False
     return True
 
 
@@ -441,6 +446,7 @@ def spawn(run, job) -> None:
         )
     except Exception:
         # Leave nothing registered or on disk for a VM that never started.
+        # delete_runner catches its own errors, so the original one is re-raised.
         delete_runner(resp["runner"]["id"])
         shutil.rmtree(JOBS / str(job["id"]), ignore_errors=True)
         raise
@@ -474,7 +480,8 @@ def reap(force: bool = False) -> None:
         vm["proc"].wait()
         freed = delete_runner(vm["runner_id"])
         lived = time.time() - vm["started"]
-        if not freed and not force:
+        killed = force or expired or orphaned  # stopped by us, not a crash
+        if not freed and not killed:
             # GitHub still has a job on this runner, which no VM is running now.
             dead[vm["name"]] = {
                 "run_id": vm["run_id"],
@@ -534,29 +541,47 @@ def recover_dead() -> None:
             log(f"{name}: GitHub never released its runner; giving up on it")
             del dead[name]
             continue
-        run_id = info["run_id"]
-        if delete_runner(info["runner_id"]):
-            del dead[name]  # GitHub released it: the job had finished after all
-            continue
-        jobs = api("GET", f"/repos/{FULL}/actions/runs/{run_id}/jobs?per_page=100")
-        if not stuck_on(jobs["jobs"], name):
-            continue  # not yet released; retried next poll
-        run = api("GET", f"/repos/{FULL}/actions/runs/{run_id}")
-        api("POST", f"/repos/{FULL}/actions/runs/{run_id}/force-cancel")
-        if is_queue_run(run):
-            log(
-                f"{name} died mid-job; force-cancelled merge-queue run {run_id}, its PR left the queue"
-            )
-        else:
-            log(
-                f"{name} died mid-job; force-cancelled run {run_id}, re-running it on GitHub"
-            )
-            rerun_when_done.add(run_id)
+        try:
+            recover_one(name, info)
+        except Exception as err:  # noqa: BLE001 - retried after DEAD_RETRY_S
+            log(f"recovering {name}: {err}")
     for run_id in list(rerun_when_done):
-        if run_completed(run_id):
+        try:
+            if not run_completed(run_id):
+                continue
             api("POST", f"/repos/{FULL}/actions/runs/{run_id}/rerun-failed-jobs")
-            rerun_when_done.discard(run_id)
             log(f"re-ran {run_id} on GitHub-hosted runners")
+        except urllib.error.HTTPError as err:
+            if err.code >= 500 or err.code == 429:
+                log(f"re-run {run_id}: HTTP {err.code}; retrying")
+                continue
+            # 403/422: GitHub will not re-run it; retrying would never succeed.
+            log(f"re-run {run_id}: HTTP {err.code}; giving up on it")
+        except (urllib.error.URLError, OSError) as err:
+            log(f"re-run {run_id}: {err}")
+            continue
+        rerun_when_done.discard(run_id)
+
+
+def recover_one(name: str, info: dict) -> None:
+    run_id = info["run_id"]
+    if delete_runner(info["runner_id"]):
+        del dead[name]  # GitHub released it: the job had finished after all
+        return
+    jobs = api("GET", f"/repos/{FULL}/actions/runs/{run_id}/jobs?per_page=100")
+    if not stuck_on(jobs["jobs"], name):
+        return  # not yet released; retried later
+    run = api("GET", f"/repos/{FULL}/actions/runs/{run_id}")
+    api("POST", f"/repos/{FULL}/actions/runs/{run_id}/force-cancel")
+    if is_queue_run(run):
+        log(
+            f"{name} died mid-job; force-cancelled merge-queue run {run_id}, its PR left the queue"
+        )
+    else:
+        log(
+            f"{name} died mid-job; force-cancelled run {run_id}, re-running it on GitHub"
+        )
+        rerun_when_done.add(run_id)
 
 
 def forget_finished_runs() -> None:
