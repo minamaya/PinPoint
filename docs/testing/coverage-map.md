@@ -70,18 +70,18 @@ a blank Full-E2E cell is often correct by design) is in the
 
 ## Machines
 
-| Feature surface                          | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                   |
-| ---------------------------------------- | :--: | :---------: | :---: | :------: | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Roster / machine view & saved views      |  ✓   |      ✓      |       |    ✓     | `components/machines/view/MachineViewRows.test.tsx`, `machine-view-saved-views.test.ts`, `e2e/full/machine-view-saved-views.spec.ts`                   |
-| Machine info / hero / scan hub           |  ✓   |      ✓      |   ✓   |    ✓     | `m/[initials]/(tabs)/info-hero.test.tsx`, `machine-services.test.ts`, `e2e/smoke/machine-scan-hub.spec.ts`, `e2e/full/machine-info.spec.ts`            |
-| Machine create / edit form               |  ✓   |      ✓      |       |          | `m/new/create-machine-form.test.tsx`, `machine-form-actions.test.ts`                                                                                   |
-| Machine settings tab (inline / autosave) |  ✓   |      ✓      |       |    ✓     | `test/unit/components/machines/use-auto-save.test.ts`, `machine-settings-actions.test.ts`, `e2e/full/machine-settings.spec.ts`                         |
-| Owner select / transfer / promotion      |  ✓   |      ✓      |       |    ✓     | `m/[initials]/(tabs)/edit/machine-owner-transfer.test.tsx`, `machine-owner-promotion.test.ts`, `e2e/full/machine-owner-picker.spec.ts`                 |
-| Presence / status                        |  ✓   |      ✓      |       |          | `lib/machines/presence.test.ts`, `machine-presence-action.test.ts`                                                                                     |
-| Apron cards                              |  ✓   |      ✓      |   ✓   |    ✓     | `components/machines/apron/ApronCardFace.test.tsx`, `apron-card-actions.test.ts`, `e2e/smoke/apron-card-stress.spec.ts`, `e2e/full/apron-card.spec.ts` |
-| Machine deletion                         |  ✓   |      ✓      |       |          | `test/unit/components/machines/ConfirmingDeleteButton.test.tsx`, `machine-deletion-action.test.ts`                                                     |
-| Canonical path / proxy / hub URL         |  ✓   |             |   ✓   |          | `lib/machines/canonical-path.test.ts`, `test/unit/proxy-machine-canonical.test.ts`, `e2e/smoke/proxy-boundary.spec.ts`                                 |
-| Manufacturer / OPDB tags                 |  ✓   |      ✓      |       |          | `lib/machines/manufacturer.test.ts`, `manufacturer-tags.test.ts`, `opdb-tags.test.ts`                                                                  |
+| Feature surface                          | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                               |
+| ---------------------------------------- | :--: | :---------: | :---: | :------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Roster / machine view & saved views      |  ✓   |      ✓      |       |    ✓     | `components/machines/view/MachineViewRows.test.tsx`, `machine-view-saved-views.test.ts`, `e2e/full/machine-view-saved-views.spec.ts`                                               |
+| Machine info / hero / scan hub           |  ✓   |      ✓      |   ✓   |    ✓     | `m/[initials]/(tabs)/info-hero.test.tsx`, `machine-info-tab.test.tsx`, `e2e/smoke/machine-scan-hub.spec.ts`, `e2e/full/machine-info.spec.ts`                                       |
+| Machine create / edit form               |  ✓   |      ✓      |       |          | `m/new/create-machine-form.test.tsx`, `machine-form-actions.test.ts`, `machine-edit-page.test.tsx`                                                                                 |
+| Machine settings tab (inline / autosave) |  ✓   |      ✓      |       |    ✓     | `test/unit/components/machines/use-auto-save.test.ts`, `machine-settings-actions.test.ts`, `e2e/full/machine-settings.spec.ts`                                                     |
+| Owner select / transfer / promotion      |  ✓   |      ✓      |       |    ✓     | `components/machines/OwnerSelect.test.tsx`, `m/[initials]/(tabs)/edit/machine-owner-transfer.test.tsx`, `machine-owner-promotion.test.ts`, `e2e/full/machine-owner-picker.spec.ts` |
+| Presence / status                        |  ✓   |      ✓      |       |          | `lib/machines/presence.test.ts`, `machine-presence-action.test.ts`                                                                                                                 |
+| Apron cards                              |  ✓   |      ✓      |   ✓   |    ✓     | `components/machines/apron/ApronCardFace.test.tsx`, `apron-card-actions.test.ts`, `e2e/smoke/apron-card-stress.spec.ts`, `e2e/full/apron-card.spec.ts`                             |
+| Machine deletion                         |  ✓   |      ✓      |       |          | `test/unit/components/machines/ConfirmingDeleteButton.test.tsx`, `machine-deletion-action.test.ts`                                                                                 |
+| Canonical path / proxy / hub URL         |  ✓   |             |   ✓   |          | `lib/machines/canonical-path.test.ts`, `test/unit/proxy-machine-canonical.test.ts`, `e2e/smoke/proxy-boundary.spec.ts`                                                             |
+| Manufacturer / OPDB tags                 |  ✓   |      ✓      |       |          | `lib/machines/manufacturer.test.ts`, `manufacturer-tags.test.ts`, `opdb-tags.test.ts`                                                                                              |
 
 ## Machine timeline
 
