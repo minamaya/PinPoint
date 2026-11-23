@@ -7,6 +7,9 @@
  * below with the reason; a new one fails the test until someone decides it
  * belongs there.
  *
+ * A variant-prefixed class (`md:sticky`) is not flagged: the rule is about
+ * phones.
+ *
  * Limits: it reads one string literal at a time, so classes split across
  * several `cn()` arguments are not seen, and it does not read components in
  * `src/components/ui` (dialog and sheet primitives anchor themselves by design).
@@ -39,10 +42,6 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // thumb zone is the one pinned bar.
   "app/(app)/m/[initials]/hub/machine-scan-hub.tsx":
     "The scan hub's thumb zone, until PP-4wtr lands (delete this entry then).",
-  // Pre-existing: the Submit all bar sticks to the viewport bottom. Not part
-  // of PP-rt31's four pages; tracked separately.
-  "app/(app)/report/(tabbed)/quick/quick-report-grid.tsx":
-    "Submit all card sticks to the viewport bottom; needs its own review.",
 };
 
 function sourceFiles(dir: string): string[] {

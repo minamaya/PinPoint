@@ -119,5 +119,11 @@
     "route": "/m/settings-sheets",
     "authRole": "member",
     "seedNeeds": "default seed (machines On the Floor); shows the phone totals card"
+  },
+  "report-multiple": {
+    "label": "Report multiple issues (quick report grid)",
+    "route": "/report/multiple",
+    "authRole": "member",
+    "seedNeeds": "default seed; shows the Submit all card at the end of the entries"
   }
 }
