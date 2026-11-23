@@ -13,7 +13,7 @@ description: >-
 
 # PinPoint Deployment
 
-Merged reference covering PinPoint's deployment-adjacent operational surfaces: DB connections/pooling, the day-to-day migration loop, getting the local stack to start, migration-conflict resolution, production deploys, preview deployments, and the pnpm audit gate. Four of these sections were previously their own skills (`pinpoint-db-connections`, `pinpoint-migration-conflicts`, `pinpoint-preview-deployments`, `pinpoint-audit-override`) and are reproduced here verbatim; **Database Migrations (day-to-day)** was absorbed from the retired patterns docs (PP-22e4), **Production Deploys (Vercel)** from two beads memories demoted in the 2026-08-09 review (PP-p4ek), and **Local stack won't start on an SELinux host** from the PP-9mg0 investigation.
+Reference for PinPoint's deployment-adjacent operational surfaces: DB connections/pooling, the day-to-day migration loop, getting the local stack to start, migration-conflict resolution, production deploys, preview deployments, and the pnpm audit gate.
 
 ## DB Connections
 
@@ -79,7 +79,7 @@ A migration ships in its own PR, not on the feature branch.
 
 1. Branch off main once the spec settles the schema. Claim the next migration number with the merge orchestrator before generating.
 2. Change `schema.ts`, `pnpm exec drizzle-kit generate --name <change>`, `pnpm run test:_generate-schema`, `pnpm run db:reset`. Commit the `.sql`, its snapshot, the journal and `schema.sql` together.
-3. Open the PR, get it reviewed, hand it to the orchestrator. The implementation branch merges main once it lands.
+3. Open the PR, get it reviewed, and report it ready for Tim to merge (AGENTS.md §5 "Handing a PR over to merge"). The implementation branch merges main once it lands.
 4. A later schema change for the same feature is a new migration PR. Label its bead: `bd label add <bead> migration-correction`. `bd list --label migration-correction` is the running count.
 
 Destructive changes follow the same steps, after the PR that removes the last reader of the old shape is live.

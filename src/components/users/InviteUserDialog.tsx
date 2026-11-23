@@ -28,17 +28,23 @@ interface InviteUserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: (userId: string, user: OwnerSelectUser) => void;
+  /** Where focus goes when the dialog closes (useReturnFocus). */
+  onCloseAutoFocus?: ((event: Event) => void) | undefined;
 }
 
 export function InviteUserDialog({
   open,
   onOpenChange,
   onSuccess,
+  onCloseAutoFocus,
 }: InviteUserDialogProps): React.JSX.Element {
   const { dirty, formProps } = useFormDirty();
   return (
     <Dialog open={open} onOpenChange={onOpenChange} dirty={dirty}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent
+        className="sm:max-w-[425px]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle>Invite New User</DialogTitle>
           <DialogDescription>

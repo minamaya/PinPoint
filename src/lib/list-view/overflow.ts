@@ -332,3 +332,178 @@ export function fitLineParts<Part extends string>(
   }
   return shown;
 }
+
+/** One page action's width with its label and as an icon button. */
+export interface PageActionWidths {
+  key: string;
+  labeled: number;
+  icon: number;
+}
+
+export interface PageActionsFitInput {
+  /** The width the row gives the page actions. */
+  available: number;
+  /** The page's actions before ⋯, in display order. */
+  actions: readonly PageActionWidths[];
+  /** ⋯ with its "More" label and as an icon button. */
+  more: { labeled: number; icon: number };
+  /**
+   * Whether ⋯ holds anything of its own before any action folds into it,
+   * not counting `loneEntry`.
+   */
+  moreHasItems: boolean;
+  /**
+   * ⋯'s only entry, when it can show as a button: planned as a trailing
+   * action that folds after every fold step, so while there is room it
+   * shows as its own button instead (list-views §3.7).
+   */
+  loneEntry?: PageActionWidths | undefined;
+  /**
+   * The page's fold order (list-views §3.9): each step names the actions
+   * that fold into ⋯ together, the first step first. An action named in no
+   * step never folds.
+   */
+  foldSteps: readonly (readonly string[])[];
+  gap: number;
+}
+
+export interface PageActionsPlan {
+  /** The actions shown as their own buttons, in display order. */
+  shown: string[];
+  /** The actions folded into ⋯, in display order. */
+  folded: string[];
+  /** Every shown button, ⋯ included, shows its label; otherwise all are icons. */
+  labeled: boolean;
+  /** Whether ⋯ shows: it holds items of its own or a folded action. */
+  showMore: boolean;
+}
+
+/**
+ * Lays out a page's actions (list-views §3.7–§3.9, §8.11, §8.12). Every
+ * shown action shows its label while they all fit with the tolerance to
+ * spare (§8.7); otherwise every one is an icon button, with no size
+ * between. When even the icons do not fit, the next fold step moves its
+ * actions into ⋯ and the rest try labels, then icons, again. ⋯ never folds
+ * and shows only while it holds something. A lone entry (§3.7) shows as the
+ * last button and folds after every step, so ⋯ holds it alone only when
+ * space forces it. When nothing fits even after the last step, that step's
+ * icons remain.
+ */
+export function planPageActions({
+  available,
+  actions: pageActions,
+  more,
+  moreHasItems,
+  loneEntry,
+  foldSteps: pageFoldSteps,
+  gap,
+}: PageActionsFitInput): PageActionsPlan {
+  const room = available - FIT_TOLERANCE;
+  const actions = loneEntry ? [...pageActions, loneEntry] : pageActions;
+  const foldSteps = loneEntry
+    ? [...pageFoldSteps, [loneEntry.key]]
+    : pageFoldSteps;
+  const keys = actions.map((action) => action.key);
+  // Each level folds one more step; a step naming no present action adds
+  // no level.
+  const levels: string[][] = [[]];
+  for (const step of foldSteps) {
+    const previous = levels[levels.length - 1] ?? [];
+    const adds = step.filter(
+      (key) => keys.includes(key) && !previous.includes(key)
+    );
+    if (adds.length > 0) levels.push([...previous, ...adds]);
+  }
+  let plan: PageActionsPlan = {
+    shown: keys,
+    folded: [],
+    labeled: false,
+    showMore: moreHasItems,
+  };
+  for (const foldedKeys of levels) {
+    const shownActions = actions.filter(
+      (action) => !foldedKeys.includes(action.key)
+    );
+    const folded = keys.filter((key) => foldedKeys.includes(key));
+    const showMore = moreHasItems || folded.length > 0;
+    const width = (labeled: boolean): number =>
+      rowWidth(
+        [
+          ...shownActions.map((action) =>
+            labeled ? action.labeled : action.icon
+          ),
+          ...(showMore ? [labeled ? more.labeled : more.icon] : []),
+        ],
+        gap
+      );
+    plan = {
+      shown: shownActions.map((action) => action.key),
+      folded,
+      labeled: false,
+      showMore,
+    };
+    if (width(true) <= room) return { ...plan, labeled: true };
+    if (width(false) <= room) return plan;
+  }
+  return plan;
+}
+
+/** The room between an inline breadcrumb and the title it precedes. */
+export const GROUP_HEADER_BREADCRUMB_GAP = 8;
+/** The room between the title block and a description beside it. */
+export const GROUP_HEADER_DESCRIPTION_GAP = 24;
+/** The narrowest a Collection's description column beside the title may be. */
+export const GROUP_HEADER_DESCRIPTION_MIN = 280;
+
+export interface GroupHeaderFitInput {
+  /** The page header's inner width. */
+  available: number;
+  /**
+   * The breadcrumb's width on one line in its inline form, trailing "›"
+   * included; 0 when the page shows no breadcrumb.
+   */
+  breadcrumb: number;
+  /** The title's width on one line. */
+  title: number;
+  /**
+   * Whether a description competes for the row beside the title: a
+   * Collection with a description, at and above the md breakpoint. Below it
+   * the description always sits under the title (collections-and-tags 4.11).
+   */
+  description: boolean;
+}
+
+export interface GroupHeaderPlan {
+  /** The breadcrumb sits before the title rather than above it. */
+  breadcrumbInline: boolean;
+  /** The description sits beside the title rather than under it. */
+  descriptionBeside: boolean;
+}
+
+/**
+ * Lays out a Collection or Tag page's header (list-views §8.9, §8.10;
+ * collections-and-tags 4.9, 4.11). The breadcrumb stays inline before the
+ * title while the breadcrumb, the title, and a description's 280px column
+ * fit on one line; it is the first to move, above the title, before the
+ * description leaves its column. The description sits beside the title
+ * while the column there can be at least 280px, and moves under it
+ * otherwise. Both checks keep the §8.7 tolerance.
+ */
+export function planGroupHeader({
+  available,
+  breadcrumb,
+  title,
+  description,
+}: GroupHeaderFitInput): GroupHeaderPlan {
+  const room = available - FIT_TOLERANCE;
+  const column = description
+    ? GROUP_HEADER_DESCRIPTION_GAP + GROUP_HEADER_DESCRIPTION_MIN
+    : 0;
+  const inlineWidth = breadcrumb + GROUP_HEADER_BREADCRUMB_GAP + title;
+  const breadcrumbInline = breadcrumb > 0 && inlineWidth + column <= room;
+  if (!description) return { breadcrumbInline, descriptionBeside: false };
+  const titleBlock = breadcrumbInline
+    ? inlineWidth
+    : Math.max(breadcrumb, title);
+  return { breadcrumbInline, descriptionBeside: titleBlock + column <= room };
+}

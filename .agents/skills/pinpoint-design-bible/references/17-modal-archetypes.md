@@ -33,7 +33,7 @@ A FormDialog holds input, so it follows the dismissal standard below (`dirty`, C
 
 ### Dismissal standard (modals that hold input)
 
-Any Dialog, Sheet or Drawer that holds user input follows one standard, built into the primitives and opted into with `dirty` (CORE-UI-008). Never write a per-modal version.
+Any Dialog, Sheet or Drawer that holds user input follows one standard, built into the primitives and opted into with `dirty` (CORE-UI-009). Never write a per-modal version.
 
 - **Outside clicks do nothing.** Clicking the backdrop never closes the modal.
 - **Unsaved changes are confirmed.** Escape, the close X, Cancel and a swipe-down on a Drawer open "Discard changes?" (AlertDialog archetype below; buttons Keep editing / Discard). With no unsaved changes they close at once.

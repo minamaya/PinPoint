@@ -2,16 +2,18 @@ import type React from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { MachineGroupShell } from "~/components/collections/MachineGroupShell";
-import { EditCollectionDialog } from "~/components/collections/EditCollectionDialog";
-import { CollectionShareDialog } from "~/components/collections/CollectionShareDialog";
-import { PrintSettingsSheetsLink } from "~/components/machines/settings/PrintSettingsSheetsLink";
+import { CollectionPageActions } from "~/components/collections/CollectionPageActions";
+import { COLLECTIONS_CRUMB } from "~/components/collections/GroupBreadcrumb";
+import { PageExportProvider } from "~/components/list-view";
 import { ClampedDescription } from "~/components/collections/ClampedDescription";
 import { RichTextDisplay } from "~/components/editor/RichTextDisplay";
 import { docIsEmpty, docToPlainText } from "~/lib/tiptap/types";
+import { groupSettingsSheetsHref } from "~/lib/collections/settings-sheets-href";
 import {
   getEditorCollaborators,
   getGrantableMembers,
 } from "~/lib/collections/collaborators";
+import { getViewer } from "~/lib/auth/viewer";
 import { getCollectionForLayout, getPickerMachines } from "../_data";
 
 interface LayoutProps {
@@ -41,52 +43,57 @@ export default async function CollectionLayout({
   params,
 }: LayoutProps): Promise<React.JSX.Element> {
   const { id } = await params;
-  const data = await getCollectionForLayout(id);
+  const [data, viewer] = await Promise.all([
+    getCollectionForLayout(id),
+    getViewer(),
+  ]);
   if (!data) notFound();
+
+  // Collections links to My Collections, so only a signed-in viewer sees it;
+  // anonymous visitors and View Link viewers without edit access see the
+  // title alone (collections-and-tags 4.8).
+  const breadcrumb =
+    viewer.userId !== undefined && (!data.viaViewToken || data.viewerCanEdit)
+      ? [COLLECTIONS_CRUMB]
+      : [];
 
   // "Edit collection" is shown to the owner AND editor collaborators; "Share"
   // and the owner-only Delete stay on the manage gate. The all-machines fetch
   // and token value are surfaced only to editors/managers, never to a plain
   // view-token or admin visitor.
-  let editActions: React.ReactNode = null;
+  type Actions = React.ComponentProps<typeof CollectionPageActions>;
+  let edit: Actions["edit"] = null;
+  let share: Actions["share"] = null;
   if (data.viewerCanEdit) {
     const allMachines = await getPickerMachines(data.collection.id);
-    let sharePanel: React.ReactNode = null;
     if (data.viewerCanManage) {
       const [editors, grantableMembers] = await Promise.all([
         getEditorCollaborators(undefined, data.collection.id),
         getGrantableMembers(undefined, data.collection.owner.id),
       ]);
-      sharePanel = (
-        <CollectionShareDialog
-          collectionId={data.collection.id}
-          viewToken={data.collection.viewToken}
-          ownerName={data.collection.owner.name}
-          editors={editors}
-          grantableMembers={grantableMembers}
-        />
-      );
+      share = {
+        viewToken: data.collection.viewToken,
+        ownerName: data.collection.owner.name,
+        editors,
+        grantableMembers,
+      };
     }
-    editActions = (
-      <>
-        {sharePanel}
-        <EditCollectionDialog
-          collectionId={data.collection.id}
-          currentName={data.collection.name}
-          currentDescription={data.collection.description}
-          allMachines={allMachines}
-          currentIds={data.collection.machines.map((m) => m.id)}
-          canDelete={data.viewerCanManage}
-        />
-      </>
-    );
+    edit = {
+      currentName: data.collection.name,
+      currentDescription: data.collection.description,
+      allMachines,
+      currentIds: data.collection.machines.map((m) => m.id),
+      canDelete: data.viewerCanManage,
+    };
   }
   // Everyone can print settings sheets (settings-sheets §2.1, §2.6).
-  const headerAction = (
-    <div className="flex items-center gap-2">
-      <PrintSettingsSheetsLink machines={data.collection.machines} />
-      {editActions}
-    </div>
+  const actions = (
+    <CollectionPageActions
+      collectionId={data.collection.id}
+      settingsSheetsHref={groupSettingsSheetsHref(data.collection.machines)}
+      share={share}
+      edit={edit}
+    />
   );
 
   // Saves store a blank description as null; the text check also covers an
@@ -99,15 +106,20 @@ export default async function CollectionLayout({
       </ClampedDescription>
     ) : null;
 
+  // The tab's list offers its Export to the page's ⋯ (collections-and-tags
+  // 4.17).
   return (
-    <MachineGroupShell
-      title={data.collection.name}
-      machines={data.collection.machines}
-      basePath={`/c/${data.handle}`}
-      action={headerAction}
-      description={descriptionBlock}
-    >
-      {children}
-    </MachineGroupShell>
+    <PageExportProvider>
+      <MachineGroupShell
+        title={data.collection.name}
+        breadcrumb={breadcrumb}
+        machines={data.collection.machines}
+        basePath={`/c/${data.handle}`}
+        actions={actions}
+        description={descriptionBlock}
+      >
+        {children}
+      </MachineGroupShell>
+    </PageExportProvider>
   );
 }

@@ -3,7 +3,6 @@
 import type React from "react";
 import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -14,15 +13,25 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
 import { TagNameField } from "~/components/tags/TagNameField";
 import { createTagTypeAction } from "~/app/(app)/c/tags/actions";
 
+interface AddTagTypeDialogProps {
+  /** Opens from the Tags page's Add tag type… action (spec 11.12). */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Where focus goes when the dialog closes (useReturnFocus). */
+  onCloseAutoFocus?: ((event: Event) => void) | undefined;
+}
+
 /** "Add tag type" on the tag browse (spec 11.1, 11.12). */
-export function AddTagTypeDialog(): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+export function AddTagTypeDialog({
+  open,
+  onOpenChange,
+  onCloseAutoFocus,
+}: AddTagTypeDialogProps): React.JSX.Element {
   const [name, setName] = useState("");
   const [exclusive, setExclusive] = useState(false);
 
@@ -35,20 +44,21 @@ export function AddTagTypeDialog(): React.JSX.Element {
   }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen} dirty={name !== "" || exclusive}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <Plus className="size-4 shrink-0" aria-hidden="true" />
-          Add tag type
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-sm">
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dirty={name !== "" || exclusive}
+    >
+      <DialogContent
+        className="sm:max-w-sm"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <AddTagTypeForm
           name={name}
           onNameChange={setName}
           exclusive={exclusive}
           onExclusiveChange={setExclusive}
-          onClose={() => setOpen(false)}
+          onClose={() => onOpenChange(false)}
         />
       </DialogContent>
     </Dialog>

@@ -1,7 +1,7 @@
 # PinPoint Non‑Negotiables
 
-**Last Updated**: 2026-11-22
-**Version**: 2.15 (CORE-UI-008 added: a modal that holds input ignores outside clicks and confirms before discarding unsaved changes — PP-yxw.19). Prior: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
+**Last Updated**: 2026-11-23
+**Version**: 2.16 (CORE-UI-009 added: a modal that holds input ignores outside clicks and confirms before discarding unsaved changes — PP-yxw.19). Prior: 2.15 (CORE-UI-008 added: action buttons and ⋯ menus go through `PageActions` and `ItemActionsMenu` — PP-jb9v.17). Prior: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
 
 > **Canonical catalog**: this document defines the canonical `CORE-*` rules for PinPoint. Portable skills (`.agents/skills/`) and agent context (`AGENTS.md`) cite rules by ID and provide domain/task-specific procedures.
 
@@ -46,7 +46,7 @@
 29. Overlay libraries (`radix-ui`, `vaul`, `cmdk`, `@floating-ui`) are imported only in `src/components/ui`, and every floating primitive there carries `animate-in`/`animate-out` (CORE-UI-007)
 30. Additive migrations merge first in their own PR; destructive ones last (CORE-ARCH-017)
 31. Pages, layouts and components never import `~/server/db`; reads live in a `cache()`'d `_data.ts` loader or a `src/lib` read (CORE-ARCH-018)
-32. A Dialog, Sheet or Drawer that holds input passes `dirty`: outside clicks do nothing, and unsaved changes are confirmed before it closes (CORE-UI-008)
+32. A Dialog, Sheet or Drawer that holds input passes `dirty`: outside clicks do nothing, and unsaved changes are confirmed before it closes (CORE-UI-009)
 
 ---
 
@@ -514,6 +514,13 @@
 - **Do:** Use Tailwind utility classes or CSS variables
 - **Don't:** `style={{ marginTop: '10px' }}` (unless dynamic coordinates)
 
+**CORE-UI-008:** Action buttons and ⋯ menus go through the shared components
+
+- **Severity:** High
+- **Why:** One look, fold order, and overflow icon across the app (design-bible §26); hand-rolled headers and kebabs drift apart
+- **Do:** Page actions through `PageActions`, an item's ⋯ menu through `ItemActionsMenu`; ⋯ is `MoreHorizontal`; Delete entries end without "…"
+- **Don't:** Import `MoreVertical`/`Ellipsis*`, draw `MoreHorizontal` outside the allowlist in `src/test/unit/action-buttons-standard.test.ts`, or label a Delete entry "Delete tag…"
+
 ---
 
 ## Responsive Framework
@@ -532,7 +539,7 @@
 - **Do:** Use Tailwind breakpoint classes or container queries
 - **Don't:** `window.innerWidth`, `window.matchMedia`, `useMediaQuery` hooks
 - **Boundary:** Component-local geometry observation with `ResizeObserver` is allowed when JavaScript must derive behavior or semantic DOM state that CSS cannot expose (for example, which links belong in an overflow menu). It must not be used to restyle a component based on viewport-like breakpoints; CSS still owns presentation.
-- **Sanctioned exception** (a behavior swap CSS can't express, not styling): `use-is-mobile` (PP-43q3). Its consumers: machine settings swap inline cell editing for a bottom-sheet editor, and a set's tag picker swaps its popover for a bottom sheet; `ConfirmingDeleteButton` swaps the arm/confirm-tap delete for a modal confirm; on the issue detail page (read once in `IssueSections` via `IsMobileProvider`), `IssueFieldRow` swaps the anchored field menu for a bottom-sheet picker, `AssigneePicker` swaps its popover for a bottom sheet, `IssueSectionPanel` carries `tabpanel` roles only while the mobile tabs exist, and `EditableIssueTitle` swaps blur-to-cancel for explicit Save and Cancel. The former `use-table-responsive-columns` exception (PP-rs9) is gone: issue rows are two lines at every width (PP-jb9v).
+- **Sanctioned exception** (a behavior swap CSS can't express, not styling): `use-is-mobile` (PP-43q3). Its consumers: machine settings swap inline cell editing for a bottom-sheet editor, and a set's tag picker swaps its popover for a bottom sheet; `ConfirmingDeleteButton` swaps the arm/confirm-tap delete for a modal confirm; `PageActions` swaps the ⋯ Actions dropdown menu for a bottom sheet (list-views §3.10); on the issue detail page (read once in `IssueSections` via `IsMobileProvider`), `IssueFieldRow` swaps the anchored field menu for a bottom-sheet picker, `AssigneePicker` swaps its popover for a bottom sheet, `IssueSectionPanel` carries `tabpanel` roles only while the mobile tabs exist, and `EditableIssueTitle` swaps blur-to-cancel for explicit Save and Cancel. The former `use-table-responsive-columns` exception (PP-rs9) is gone: issue rows are two lines at every width (PP-jb9v).
 
 **CORE-RESP-003:** sm: is padding only
 
@@ -583,7 +590,7 @@
 - **Enforced by:** the `no-restricted-imports` patterns in `.oxlintrc.json` (the import half) and `src/components/ui/motion.test.ts` (the motion half, a static scan of `src/components/ui/`). Both run in CI. Reduced-motion is separate: one global block in `globals.css` (CORE-A11Y-002).
 - **Reference:** `pinpoint-design-bible` §11 Motion.
 
-**CORE-UI-008:** A modal that holds input ignores outside clicks and confirms before discarding unsaved changes
+**CORE-UI-009:** A modal that holds input ignores outside clicks and confirms before discarding unsaved changes
 
 - **Severity:** Required
 - **Why:** Before PP-yxw.19 the same stray-backdrop-click mistake was guarded in three places, three different ways, and not at all in six: a click outside silently threw away typed work. Tim decided on 2026-11-22 that one standard covers every modal that holds input, built once in the shared primitives so a new modal inherits it.

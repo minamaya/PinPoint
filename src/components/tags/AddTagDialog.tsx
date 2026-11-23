@@ -3,7 +3,6 @@
 import type React from "react";
 import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -13,7 +12,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "~/components/ui/dialog";
 import { Label } from "~/components/ui/label";
 import {
@@ -34,16 +32,28 @@ interface TagTypeOption {
   name: string;
 }
 
-type AddTagDialogProps =
-  /** From the tag browse: the person picks a hand-applied type, or none. */
-  | { types: TagTypeOption[]; type?: undefined }
-  /** From a hand-applied type's page: the tag joins that type. */
-  | { type: TagTypeOption; types?: undefined };
+type AddTagDialogProps = (
+  | /** From the tag browse: the person picks a hand-applied type, or none. */
+    { types: TagTypeOption[]; type?: undefined }
+    /** From a hand-applied type's page: the tag joins that type. */
+  | { type: TagTypeOption; types?: undefined }
+) & {
+  /** Opens from the page's Add tag action (design-bible §26.1). */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Where focus goes when the dialog closes (useReturnFocus). */
+  onCloseAutoFocus?: ((event: Event) => void) | undefined;
+};
 
 /** "Add tag" on the tag browse and on a hand-applied type's page (spec 11.3, 11.12). */
-export function AddTagDialog(props: AddTagDialogProps): React.JSX.Element {
-  const initialTypeId = props.type?.id ?? NO_TYPE;
-  const [open, setOpen] = useState(false);
+export function AddTagDialog({
+  types,
+  type,
+  open,
+  onOpenChange,
+  onCloseAutoFocus,
+}: AddTagDialogProps): React.JSX.Element {
+  const initialTypeId = type?.id ?? NO_TYPE;
   const [name, setName] = useState("");
   const [typeId, setTypeId] = useState(initialTypeId);
 
@@ -58,21 +68,19 @@ export function AddTagDialog(props: AddTagDialogProps): React.JSX.Element {
   const dirty = name !== "" || typeId !== initialTypeId;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
-      <DialogTrigger asChild>
-        <Button className="gap-2">
-          <Plus className="size-4 shrink-0" aria-hidden="true" />
-          Add tag
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-sm">
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={dirty}>
+      <DialogContent
+        className="sm:max-w-sm"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <AddTagForm
-          {...props}
+          types={types}
+          type={type}
           name={name}
           onNameChange={setName}
           typeId={typeId}
           onTypeIdChange={setTypeId}
-          onClose={() => setOpen(false)}
+          onClose={() => onOpenChange(false)}
         />
       </DialogContent>
     </Dialog>
@@ -87,7 +95,9 @@ function AddTagForm({
   typeId,
   onTypeIdChange,
   onClose,
-}: AddTagDialogProps & {
+}: {
+  types: TagTypeOption[] | undefined;
+  type: TagTypeOption | undefined;
   name: string;
   onNameChange: (name: string) => void;
   typeId: string;

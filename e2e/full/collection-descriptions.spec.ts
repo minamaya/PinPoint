@@ -2,8 +2,8 @@
  * E2E Tests: Collection descriptions (PP-wqit.11)
  *
  * Journey for spec collections-and-tags 2.8 and 4.7: the owner writes a
- * description in the Edit dialog, it shows under the header on every tab
- * clamped to three lines with Show more, a View Link visitor sees it too, and
+ * description in the Edit dialog, it shows in the header on every tab
+ * clamped with Show more, a View Link visitor sees it too, and
  * clearing it removes it. Validation, normalization and permissions are
  * covered by src/test/integration/collections-actions.test.ts.
  */
@@ -11,8 +11,10 @@
 import { test, expect, attachHydrationWait } from "../support/fixtures.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 import { getTestPrefix } from "../support/test-isolation.js";
+import { clickPageAction } from "../support/page-actions.js";
 
-// Long enough to run past three lines at the description's 768px max width.
+// Long enough to run past three lines even when the description takes the
+// full width under the title.
 const DESCRIPTION =
   "The machines we put in front of players for the monthly tournament and the Thursday league. " +
   "Everything in this bank should be tournament-ready before each event: fresh rubbers, a level playfield, and tilt set to the league standard. " +
@@ -50,11 +52,11 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
       page.getByRole("link", { name: "Attack from Mars", exact: true })
     ).toBeVisible();
 
-    // No description yet: nothing under the header (4.7).
+    // No description yet: the header shows none (4.7).
     await expect(page.getByTestId("collection-description")).toHaveCount(0);
 
-    // Write one in the Edit dialog.
-    await page.getByTestId("collection-edit-trigger").click();
+    // Write one in the Edit dialog, from Edit collection in ⋯ (4.17).
+    await clickPageAction(page, "Edit collection…");
     const dialog = page.getByRole("dialog", { name: "Edit collection" });
     const editor = dialog.getByRole("textbox", { name: "Description" });
     await editor.click();
@@ -62,7 +64,8 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
     await dialog.getByTestId("collection-save").click();
     await expect(dialog).toBeHidden();
 
-    // Shown under the header, clamped with Show more.
+    // Shown in the header, beside the title on desktop and under it on
+    // phones, clamped with Show more (4.11, 4.12).
     const description = page.getByTestId("collection-description");
     await expect(description).toContainText("tournament-ready");
     const showMore = description.getByRole("button", { name: "Show more" });
@@ -81,7 +84,7 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
 
     // A View Link visitor sees it too.
     await page.goto(collectionUrl);
-    await page.getByTestId("collection-share-trigger").click();
+    await clickPageAction(page, "Share");
     await page.getByTestId("collection-share-toggle").click();
     const shareUrl = await page
       .getByTestId("collection-share-url")
@@ -101,7 +104,7 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
     }
 
     // Clearing the description removes it.
-    await page.getByTestId("collection-edit-trigger").click();
+    await clickPageAction(page, "Edit collection…");
     await dialog.getByRole("textbox", { name: "Description" }).click();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Backspace");

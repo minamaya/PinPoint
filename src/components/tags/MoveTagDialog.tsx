@@ -26,6 +26,8 @@ interface MoveTagDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   move: TagMove;
+  /** Where focus goes when the dialog closes (useReturnFocus). */
+  onCloseAutoFocus?: ((event: Event) => void) | undefined;
 }
 
 /** The `<select>` value standing for no tag type. */
@@ -89,6 +91,7 @@ export function MoveTagDialog({
   open,
   onOpenChange,
   move,
+  onCloseAutoFocus,
 }: MoveTagDialogProps): React.JSX.Element {
   const currentValue = optionValue(move.typeId);
   const [choice, setChoice] = useState(currentValue);
@@ -104,7 +107,10 @@ export function MoveTagDialog({
       onOpenChange={onOpenChange}
       dirty={choice !== currentValue}
     >
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <MoveTagForm
           move={move}
           choice={choice}

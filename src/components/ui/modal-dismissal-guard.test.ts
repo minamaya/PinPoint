@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * CORE-UI-008: every Dialog, Sheet and Drawer either opts into the shared
+ * CORE-UI-009: every Dialog, Sheet and Drawer either opts into the shared
  * dismissal standard (`dirty`, see `modal-dismissal.tsx`) or is listed below
  * with the reason it holds no input. A modal that holds a form field and skips
  * both would let a stray backdrop click throw away typed work.
@@ -34,6 +34,8 @@ const READ_ONLY_MODALS: Record<string, string> = {
   "components/issues/fields/MetadataDrawer.tsx":
     "Option picker; choosing an option saves at once.",
   "components/layout/BottomTabBar.tsx": "Navigation menu of links; no field.",
+  "components/list-view/PageActions.tsx":
+    "Phone sheet of the ⋯ Actions entries; a menu of links and buttons, no field.",
   "components/layout/QuickSearch.tsx":
     "Search palette; the query is a filter with no draft, and an outside click closing it is the expected behavior.",
   "components/list-view/PhoneListHeader.tsx":
@@ -117,7 +119,7 @@ function modalRoots(file: string): { roots: ModalRoot[]; outside: number[] } {
 const scanned = sourceFiles().map((file) => ({ file, ...modalRoots(file) }));
 const withModals = scanned.filter(({ roots }) => roots.length > 0);
 
-describe("modal dismissal standard is applied everywhere (CORE-UI-008)", () => {
+describe("modal dismissal standard is applied everywhere (CORE-UI-009)", () => {
   it("finds the modals it is meant to guard", () => {
     const names = withModals.map(({ file }) => path.basename(file));
     expect(names).toEqual(

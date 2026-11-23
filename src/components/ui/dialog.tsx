@@ -14,7 +14,7 @@ import { cn } from "~/lib/utils";
 
 /**
  * Pass `dirty` on any Dialog that holds user input: outside clicks are ignored
- * and unsaved changes are confirmed before the dialog closes (CORE-UI-008).
+ * and unsaved changes are confirmed before the dialog closes (CORE-UI-009).
  */
 function Dialog({
   dirty,

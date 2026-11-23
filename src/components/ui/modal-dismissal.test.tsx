@@ -70,7 +70,7 @@ async function clickOutside(
 const confirm = (): HTMLElement | null =>
   screen.queryByTestId("discard-changes-dialog");
 
-describe("modal dismissal standard (CORE-UI-008)", () => {
+describe("modal dismissal standard (CORE-UI-009)", () => {
   describe("Dialog with dirty={false}", () => {
     it("ignores an outside click", async () => {
       render(<DialogHarness dirty={false} />);

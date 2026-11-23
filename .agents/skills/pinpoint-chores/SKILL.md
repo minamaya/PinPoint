@@ -42,7 +42,7 @@ Find the bead first (by label, so you have its ID for comments + the reset):
 
     bd update <chores-bead> --status in_progress
 
-**Delegate the context-heavy items to subagents.** The checklist keeps growing, and several items burn a lot of context (the GHA infra-flake triage, the Sentry / Supabase advisor sweeps, the Weekly-Review bead review). As lead, farm those out to subagents and keep just the synthesis — don't run everything inline. Give each subagent the item's runbook pointer and have it report back findings + proposed beads; you decide and file. Cheap, quick items (version-pin checks, the vendored-docs diff) can stay inline.
+**Context-heavy items.** The GHA infra-flake triage, the Sentry / Supabase advisor sweeps, and the Weekly-Review bead review read a lot of material. When that reading would crowd the session, a subagent can take one item: give it the item's runbook pointer and have it report back findings + proposed beads; you decide and file. Each subagent adds its own cost, so run cheap, quick items (version-pin checks, the vendored-docs diff) inline.
 
 Then work the checklist. For each item, note findings as a comment on the bead (`bd comments add <chores-bead> "..."`) and file follow-up beads for anything actionable — don't fix everything inline; chores is triage + quick wins.
 
@@ -87,10 +87,10 @@ Then work the checklist. For each item, note findings as a comment on the bead (
    - When bumping `oxlint` / `oxlint-tsgolint`, run `pnpm run lint` (the sole lint engine).
 
 3. **Dependabot updates**
-   - Review open Dependabot PRs (`gh pr list --author "app/dependabot"`). Merge the safe ones via the normal PR workflow; file a bead for any that need real work.
+   - Review open Dependabot PRs (`gh pr list --author "app/dependabot"`). Take the safe ones through the normal PR workflow and report them ready (Tim merges, or asks you to); file a bead for any that need real work.
 
 4. **Changelog PR from the Weekly Review routine**
-   - The consolidated Weekly Review cloud routine opens a changelog PR (`docs/changelog-<date>`) when user-facing PRs merged that week. Review and merge it via the normal PR workflow (or correct/supplement first).
+   - The consolidated Weekly Review cloud routine opens a changelog PR (`docs/changelog-<date>`) when user-facing PRs merged that week. Review it (correct or supplement it first if needed) and report it ready via the normal PR workflow.
 
 5. **Sentry + Supabase advisor checks** (moved here from the session-start briefing)
    - **Sentry — new production errors.** Requires the Sentry MCP OAuth handshake; if the query tools aren't registered, run `mcp__plugin_sentry_sentry__authenticate`, complete the browser login, then `/reload-plugins` (tool registration is a one-time handshake — completing OAuth alone won't expose the query tools). Then `mcp__plugin_sentry_sentry__find_organizations` → `mcp__plugin_sentry_sentry__search_issues` with `query: "is:unresolved firstSeen:>-7d"`. Flag high-event-count issues and new regressions; triage into beads.
@@ -107,7 +107,7 @@ Then work the checklist. For each item, note findings as a comment on the bead (
 
 8. **GHA infra-flake triage**
    - Run the weekly triage procedure in `docs/runbooks/gha-flake-log.md`: read the recent weekly `gha-flake-week` sighting beads (current ISO week + prior 2) plus the permanent `gha-flake-log` ledger, pull new sightings past the ledger cursor, cluster by signature, rule out non-issues, spin genuine recurring infra issues into child beads, catch regressions against `fixed` rows, close aged-out weekly beads, then rewrite the ledger and advance the cursor.
-   - This is context-heavy — a good candidate to delegate to a subagent (see "Running the chores").
+   - This is context-heavy (see "Context-heavy items" under "Running the chores").
 
 9. **Prod backup + read-only-role validation**
    - **Backups.** Run `pnpm run chores:backups`. It calls `supabase backups list` against PinPoint-Prod and asserts the daily physical backups are still happening: newest COMPLETED backup < 48h old, at least 7 retained, `walg_enabled` true. It warns on a 24–48h-old newest backup, any non-`COMPLETED` entry, and a >36h gap inside the window; it reports `pitr_enabled` so a posture change is visible.
@@ -134,4 +134,4 @@ Do **not** close the bead — it's a recurring holder. Deferring it (status `def
 
 > **Note:** `bd defer --until=<date>` is interpreted as **UTC midnight** of that date. In US-Central that's the evening before, so a "next Saturday" re-arm actually becomes due Friday evening local — the nag's day-count boundary flips then, not at local Saturday midnight. Close enough for a weekly cadence; just don't expect the count to tick over exactly at local midnight.
 
-> Beads sync note: `bd` writes locally; the lead handles `bd dolt push`. Don't push beads from a chores session unless you're the lead.
+> Beads sync note: on the Mac, `bd` pushes to DoltHub automatically (`dolt.auto-push`; `docs/runbooks/cloud-routines-beads-access.md`), so a chores session needs no manual `bd dolt push`.

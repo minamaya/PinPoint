@@ -15,7 +15,7 @@ import { cn } from "~/lib/utils";
 
 /**
  * Pass `dirty` on any Sheet that holds user input: outside clicks are ignored
- * and unsaved changes are confirmed before the sheet closes (CORE-UI-008).
+ * and unsaved changes are confirmed before the sheet closes (CORE-UI-009).
  */
 function Sheet({
   dirty,

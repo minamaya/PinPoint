@@ -1,0 +1,13 @@
+[Unit]
+Description=Egress fence for the GitHub runner user (PP-4k0)
+After=firewalld.service
+Before=gh-runner.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nft -f /etc/ghrunner/ghrunner-egress.nft
+ExecStop=/usr/bin/nft delete table inet ghrunner_egress
+
+[Install]
+WantedBy=multi-user.target

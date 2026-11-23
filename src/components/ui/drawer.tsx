@@ -14,7 +14,7 @@ import { cn } from "~/lib/utils";
 /**
  * Pass `dirty` on any Drawer that holds user input: outside clicks are ignored
  * and unsaved changes are confirmed before the drawer closes, including on a
- * swipe-down (CORE-UI-008).
+ * swipe-down (CORE-UI-009).
  */
 function Drawer({
   dirty,

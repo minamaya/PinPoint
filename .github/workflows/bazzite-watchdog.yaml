@@ -1,0 +1,52 @@
+# Bazzite watchdog (PP-4k0): recovers CI jobs stranded on Tim's self-hosted
+# runner when the machine stops answering mid-run (crash, reboot, network loss).
+#
+# New runs never need this: they route to Bazzite only while its lease is
+# fresh, so a dead machine stops receiving work within 90 seconds. What the
+# lease cannot cover is a run already routed there whose later jobs are still
+# waiting. scripts/bazzite-runner/watchdog.py cancels those runs, re-runs pull
+# request runs (a re-run always goes to ubuntu-latest), and names any
+# merge-queue PR that needs re-queuing.
+#
+# It skips at no cost while the lease reads "0", which is how a clean
+# `ci-runner off` leaves it. See scripts/bazzite-runner/README.md.
+
+name: Bazzite Watchdog
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: bazzite-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    name: Recover jobs stranded on Bazzite
+    if: vars.BAZZITE_LEASE != '' && vars.BAZZITE_LEASE != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # ratchet:step-security/harden-runner@v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # ratchet:actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/bazzite-runner
+
+      - name: Recover stranded runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BAZZITE_LEASE: ${{ vars.BAZZITE_LEASE }}
+        run: python3 scripts/bazzite-runner/watchdog.py

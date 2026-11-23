@@ -76,7 +76,23 @@ jobs:
   # still ran the full E2E suite).
   changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     outputs:
       code: ${{ steps.set-code.outputs.code }}
       deps: ${{ steps.base.outputs.force == 'true' && 'true' || steps.deps-filter.outputs.deps }}
@@ -197,7 +213,23 @@ jobs:
   # type-checked, linted and unit-tested.
   static:
     name: Static checks, unit tests, build
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}-l', github.run_id) || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Harden Runner
@@ -268,7 +300,23 @@ jobs:
   # wait and setup).
   linters:
     name: Fast Linters
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # ratchet:step-security/harden-runner@v2.22.3
@@ -378,7 +426,23 @@ jobs:
   # PGlite integration tests, plus `pnpm audit` when the lockfile changed.
   test-integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}-l', github.run_id) || 'ubuntu-latest' }}
     needs: changes
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true'
     steps:
@@ -498,7 +562,23 @@ jobs:
   # ==============================================================================
   test-e2e-smoke:
     name: E2E Smoke Tests (Chromium, Mobile Chrome)
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}-l', github.run_id) || 'ubuntu-latest' }}
     if: >-
       ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
       && (needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true') }}
@@ -562,7 +642,23 @@ jobs:
 
   test-e2e-full-chromium:
     name: E2E Full Tests (Chromium), Supabase integration
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}-l', github.run_id) || 'ubuntu-latest' }}
     if: >-
       ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
       && (needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true') }}
@@ -864,7 +960,23 @@ jobs:
       - test-e2e-smoke
       - test-e2e-full-chromium
       - test-e2e-comprehensive
-    runs-on: ubuntu-latest
+    # Bazzite runner (scripts/bazzite-runner/README.md): Tim's machine takes a
+    # first-attempt run while its lease is newer than the run's event. A lapsed
+    # lease, any re-run, and every other event go to ubuntu-latest. The lease is
+    # UTC and compares as a string, so only a UTC event time is compared.
+    runs-on: >-
+      ${{ github.run_attempt == 1
+      && ((github.event_name == 'merge_group'
+      && (endsWith(github.event.merge_group.head_commit.timestamp, 'Z')
+      || endsWith(github.event.merge_group.head_commit.timestamp, '+00:00'))
+      && vars.BAZZITE_LEASE > github.event.merge_group.head_commit.timestamp)
+      || (github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login == 'timothyfroehlich'
+      && github.actor == 'timothyfroehlich'
+      && github.triggering_actor == 'timothyfroehlich'
+      && vars.BAZZITE_PR_LEASE > github.event.pull_request.updated_at))
+      && format('pinpoint-run-{0}', github.run_id) || 'ubuntu-latest' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # ratchet:step-security/harden-runner@v2.22.3

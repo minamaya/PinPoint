@@ -36,6 +36,11 @@ import {
   testTagSlug,
 } from "../support/supabase-admin.js";
 import { getTestPrefix } from "../support/test-isolation.js";
+import {
+  clickPageAction,
+  expectNoPageAction,
+  pageActionsTrigger,
+} from "../support/page-actions.js";
 
 /** A machine-editor tag row's accessible name reads "<name>, <count> machines". */
 function tagRow(name: string): RegExp {
@@ -72,7 +77,12 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Tags" })
       ).toBeVisible();
-      await page.getByRole("button", { name: "Add tag type" }).click();
+      // Add tag type is ⋯'s only entry, so it shows as its own button while
+      // there is room (list-views §3.7).
+      await clickPageAction(page, {
+        button: "Add tag type",
+        entry: "Add tag type…",
+      });
       const typeDialog = page.getByRole("dialog", { name: "Add tag type" });
       await expect(typeDialog).toBeVisible();
       await assertNoA11yViolations(page);
@@ -91,7 +101,7 @@ test.describe("Hand-applied tags", () => {
       await expect(page.getByText("One per machine").first()).toBeVisible();
 
       // --- Tag type page: Add tag ------------------------------------------
-      await page.getByRole("button", { name: "Add tag" }).click();
+      await clickPageAction(page, "Add tag");
       const tagDialog = page.getByRole("dialog", {
         name: `Add tag to ${typeName}`,
       });
@@ -103,11 +113,11 @@ test.describe("Hand-applied tags", () => {
       await expect(tagLink).toContainText("No machines");
       await tagLink.click();
 
-      // --- Tag page: Edit machines -----------------------------------------
+      // --- Tag page: Edit machines, in ⋯ (4.17) ----------------------------
       await expect(
         page.getByRole("heading", { level: 1, name: tagName })
       ).toBeVisible();
-      await page.getByRole("button", { name: "Edit machines" }).click();
+      await clickPageAction(page, "Edit machines…");
       const machinesDialog = page.getByRole("dialog", {
         name: `Machines in ${tagName}`,
       });
@@ -142,8 +152,7 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: typeName })
       ).toBeVisible();
-      await page.getByRole("button", { name: "Tag type actions" }).click();
-      await page.getByRole("menuitem", { name: "Delete tag type…" }).click();
+      await clickPageAction(page, "Delete tag type");
       const confirm = page.getByRole("alertdialog", {
         name: `Delete ${typeName}?`,
       });
@@ -171,12 +180,11 @@ test.describe("Hand-applied tags", () => {
     test("sees the tag browse without Add tag type", async ({ page }) => {
       await page.goto("/c/tags");
       await expect(page.getByRole("link", { name: "Location" })).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Add tag type" })
-      ).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Add tag" })).toHaveCount(
-        0
-      );
+      await expectNoPageAction(page, {
+        button: "Add tag type",
+        entry: "Add tag type…",
+      });
+      await expectNoPageAction(page, "Add tag");
     });
   });
 
@@ -189,23 +197,25 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Front room" })
       ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Edit machines" })
-      ).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: "Tag actions" })
-      ).toHaveCount(0);
+      // No editing in ⋯ (4.17); Share and Print settings sheets stay
+      // (4.14, 4.16).
+      for (const editing of [
+        "Edit machines…",
+        "Rename…",
+        "Move to another tag type…",
+        "Merge into another tag…",
+        "Delete tag",
+      ]) {
+        await expectNoPageAction(page, editing);
+      }
 
       await page.goto("/c/tags/location");
       await expect(
         page.getByRole("heading", { level: 1, name: "Location" })
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Add tag" })).toHaveCount(
-        0
-      );
-      await expect(
-        page.getByRole("button", { name: "Tag type actions" })
-      ).toHaveCount(0);
+      // No Add tag and no ⋯ of tag type editing (11.12).
+      await expectNoPageAction(page, "Add tag");
+      await expect(pageActionsTrigger(page)).toHaveCount(0);
     });
   });
 });
@@ -448,9 +458,9 @@ test.describe("Tag type changes", () => {
       if (!machine) throw new Error("Test machine was not created");
       const typePath = `/c/tags/${testTagSlug(typeName)}`;
       const badge = page.getByText("One per machine", { exact: true });
+      // The tag type's ⋯ More menu (design-bible §26.3).
       const openMenuItem = async (name: string): Promise<void> => {
-        await page.getByRole("button", { name: "Tag type actions" }).click();
-        await page.getByRole("menuitem", { name }).click();
+        await clickPageAction(page, name);
       };
       const makeDialog = page.getByRole("alertdialog", {
         name: `Make ${typeName} one per machine?`,
@@ -555,10 +565,7 @@ test.describe("Tag type changes", () => {
         breadcrumb.getByRole("link", { name: fromType })
       ).toBeVisible();
 
-      await page.getByRole("button", { name: "Tag actions" }).click();
-      await page
-        .getByRole("menuitem", { name: "Move to another tag type…" })
-        .click();
+      await clickPageAction(page, "Move to another tag type…");
       const dialog = page.getByRole("dialog", { name: `Move ${tagName}` });
       await expect(dialog).toBeVisible();
       await expect(
@@ -634,10 +641,7 @@ test.describe("Tag type changes", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: source })
       ).toBeVisible();
-      await page.getByRole("button", { name: "Tag actions" }).click();
-      await page
-        .getByRole("menuitem", { name: "Merge into another tag…" })
-        .click();
+      await clickPageAction(page, "Merge into another tag…");
       const dialog = page.getByRole("dialog", {
         name: `Merge ${source} into another tag`,
       });
@@ -661,9 +665,15 @@ test.describe("Tag type changes", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: target })
       ).toBeVisible();
-      await expect(page.getByTestId("collection-summary")).toContainText(
-        "2 machines"
-      );
+      // Its Overview lists both machines.
+      for (const machine of [both, onlySource]) {
+        await expect(
+          page.getByRole("link", {
+            name: `Test Machine ${machine.initials}`,
+            exact: true,
+          })
+        ).toBeVisible();
+      }
 
       // --- The merged tag's addresses open the target (11.19) --------------
       await page.goto(oldPath);
@@ -718,10 +728,7 @@ test.describe("Tag type changes", () => {
       await page.goto(
         `/c/tags/${testTagSlug(looseType)}/${testTagSlug(source)}`
       );
-      await page.getByRole("button", { name: "Tag actions" }).click();
-      await page
-        .getByRole("menuitem", { name: "Merge into another tag…" })
-        .click();
+      await clickPageAction(page, "Merge into another tag…");
       const dialog = page.getByRole("dialog", {
         name: `Merge ${source} into another tag`,
       });
@@ -785,10 +792,7 @@ test.describe("Tag type changes", () => {
       await page.goto(
         `/c/tags/${testTagSlug(sourceType)}/${testTagSlug(tagName)}`
       );
-      await page.getByRole("button", { name: "Tag actions" }).click();
-      await page
-        .getByRole("menuitem", { name: "Move to another tag type…" })
-        .click();
+      await clickPageAction(page, "Move to another tag type…");
       const dialog = page.getByRole("dialog", { name: `Move ${tagName}` });
       const select = dialog.getByLabel("Tag type");
       const move = dialog.getByRole("button", { name: "Move tag" });

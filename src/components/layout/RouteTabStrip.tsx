@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { MoreHorizontal } from "lucide-react";
 import { Button, buttonVariants } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -44,6 +45,14 @@ interface RouteTabStripProps {
   ariaLabel: string;
   /** `data-testid` prefix, e.g. "machine-tab" → "machine-tab-info". */
   testIdPrefix: string;
+  /**
+   * The strip shares its row with other controls, such as a Collection or
+   * Tag page's actions (collections-and-tags 4.10). The row draws the bottom
+   * border, and the strip asks for its tabs' full width, shrinking and
+   * moving tabs into its menu only when the row cannot give it that much
+   * (list-views §8.13).
+   */
+  sharesRow?: boolean | undefined;
 }
 
 /**
@@ -61,6 +70,7 @@ export function RouteTabStrip({
   tabs,
   ariaLabel,
   testIdPrefix,
+  sharesRow = false,
 }: RouteTabStripProps): React.JSX.Element {
   const pathname = usePathname();
   const containerRef = useRef<HTMLElement>(null);
@@ -171,10 +181,25 @@ export function RouteTabStrip({
     };
   }, [isOverflowMenuOpen]);
 
+  // Sharing a row, the strip's basis is every tab's full width: the strip
+  // shrinks below it, folding tabs into its menu, only when the row's other
+  // controls leave less. Its tabs' width, never its current contents, so
+  // folded tabs come back as soon as the row has room again.
+  const naturalWidth =
+    sharesRow && measurements
+      ? Math.ceil(measurements.tabWidths.reduce((sum, width) => sum + width, 0))
+      : undefined;
+
   return (
     <nav
       ref={containerRef}
-      className="relative flex min-h-12 min-w-0 border-b border-outline-variant"
+      className={cn(
+        "relative flex min-h-12 min-w-0",
+        sharesRow ? "grow-0" : "border-b border-outline-variant"
+      )}
+      style={
+        naturalWidth === undefined ? undefined : { flexBasis: naturalWidth }
+      }
       aria-label={ariaLabel}
       data-testid={`${testIdPrefix}-strip`}
     >
@@ -224,7 +249,8 @@ export function RouteTabStrip({
                   : "border-transparent text-muted-foreground hover:text-primary"
               )}
             >
-              <span aria-hidden="true">…</span>
+              {/* The one overflow icon (design-bible §26.3). */}
+              <MoreHorizontal className="size-5" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-40">
@@ -276,7 +302,7 @@ export function RouteTabStrip({
             className: cn("absolute w-max", overflowTriggerMeasurementClasses),
           })}
         >
-          …
+          <MoreHorizontal className="size-5" aria-hidden="true" />
         </span>
       </div>
     </nav>

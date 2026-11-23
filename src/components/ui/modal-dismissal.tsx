@@ -6,7 +6,7 @@ import { DiscardChangesDialog } from "~/components/ui/discard-changes-dialog";
 
 /**
  * One dismissal standard for every modal that holds user input (design-bible
- * §17, CORE-UI-008). A Dialog, Sheet or Drawer opts in with `dirty`:
+ * §17, CORE-UI-009). A Dialog, Sheet or Drawer opts in with `dirty`:
  *
  * - A click outside the modal does nothing.
  * - With unsaved changes, Escape, the close X, Cancel (a `DialogClose`) and a
