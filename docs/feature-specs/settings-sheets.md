@@ -26,7 +26,7 @@
 - **2.4** The starting sets sit with the machine list, so they are chosen before machines are added. Changing a starting set updates every print run row whose sets the person has not changed by hand.
 - **2.5** The print run lists each added machine with its From set and To set, both changeable to any of the machine's sets, what its block would print, and a way to remove it. A row whose starting set matches more than one set (§6.3) is marked and stays off the sheet until a set is chosen. A row whose starting set matches no set is marked and prints as §5 describes.
 - **2.6** Each Collection's page and each machine tag's page links to this page with its machines On the Floor already added. Each settings tag's page links to it with the machines On the Floor that have a set carrying the tag already added, and that tag as the To starting set.
-- **2.7** A Print run panel holds the direction, the coverage, the number of machines that will print, Preview, and Print. Set up and differences only are preselected. On a phone the panel's totals stay in view, as on Print apron cards.
+- **2.7** A Print run panel holds the direction, the coverage, the number of machines that will print, Preview, and Print. Set up and differences only are preselected. On a phone the number of machines that will print, the detail line, and a Print run link sit in a card under the page title and scroll with the page, as on Print apron cards (apron-cards §12.4); nothing is pinned above the app's tab bar.
 - **2.8** Preview shows the sheet as it will print without opening the print dialog. Print opens the sheet on its own page without app navigation and opens the browser's print dialog; that page offers Print again and a way back to the print run.
 
 ## 3. Sheet layout
@@ -73,3 +73,4 @@ _None — the current implementation matches this spec._
 | :-- | :-- |
 | 2026-10-05 | Spec created. |
 | 2026-10-07 | Default sets (machine-settings §4) replace preferred sets; this page's defaults are now called starting sets; settings tag pages link here (2.6). |
+| 2026-11-23 | §2.7: on a phone the totals sit in a card under the page title instead of a bar pinned above the tab bar (design bible §3). |

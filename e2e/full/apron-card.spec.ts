@@ -65,7 +65,7 @@ test.describe("Apron card tab as an editor", () => {
     await page.getByRole("button", { name: "Add card" }).click();
 
     // Every card needs a size before the tab can save (§4.3).
-    const save = page.getByRole("button", { name: "Save cards" });
+    const save = page.getByRole("button", { name: "Save", exact: true });
     await expect(
       page.getByText("Choose an apron size for Card 1")
     ).toBeVisible();
@@ -109,7 +109,7 @@ test.describe("Apron card tab as an editor", () => {
     await expect(page.getByRole("group", { name: "Credits" })).toHaveCount(0);
 
     await save.click();
-    await expect(page.getByText("Cards saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
     await page.reload();
     const picker = page.getByRole("combobox", { name: "Saved card" });
@@ -138,7 +138,7 @@ test.describe("Apron card tab as an editor", () => {
       .getByRole("button", { name: "Delete card" })
       .click();
     await save.click();
-    await expect(page.getByText("Cards saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
     await page.reload();
     await picker.click();

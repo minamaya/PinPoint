@@ -56,13 +56,20 @@ const savedCardSchema = z.object({
 
 /**
  * One save of the Apron card tab (spec apron-cards §11.6): every card it
- * shows, in order, plus the saved cards deleted since the last save.
+ * shows, in order, the saved cards deleted since the last save, and the
+ * machine's main description when it was edited there (§3.2).
  */
 export const saveApronCardsSchema = z
   .object({
     machineId: z.uuid(),
     cards: z.array(savedCardSchema).max(APRON_CARDS_MAX),
     deletedIds: z.array(z.uuid()).max(APRON_CARDS_MAX),
+    /**
+     * The machine's main description (§3.2), sent only when edited: absent
+     * leaves it alone, null clears it. Size and emptiness are checked by the
+     * action with the other machine-description edit surfaces' validator.
+     */
+    machineDescription: proseMirrorDocValueSchema.nullable().optional(),
   })
   .superRefine((value, ctx) => {
     // Each saved card appears once: updated, or deleted, never both.

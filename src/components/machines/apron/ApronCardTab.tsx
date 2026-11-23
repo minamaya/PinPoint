@@ -6,7 +6,6 @@ import { AlertTriangle, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { RichTextEditor } from "~/components/editor/RichTextEditorDynamic";
-import { RichTextDisplay } from "~/components/editor/RichTextDisplay";
 import { SegmentedToggle } from "~/components/machines/PinballmapListingControl";
 import {
   MachineFormActionBar,
@@ -67,7 +66,7 @@ export interface ApronCardTabProps {
   machineId: string;
   machineInitials: string;
   identity: ApronCardIdentity;
-  /** The machine's saved main description (spec §3.2). */
+  /** The machine's saved main description, editable on the tab (spec §3.2). */
   mainDescription: ProseMirrorDoc | null;
   savedCards: SavedApronCard[];
   scanUrl: string;
@@ -98,6 +97,9 @@ export function ApronCardTab({
 }: ApronCardTabProps): React.JSX.Element {
   const id = useId();
   const [saved, setSaved] = useState(savedCards);
+  // The machine's main description, saved and as edited on the tab (§3.2).
+  const [savedMain, setSavedMain] = useState(mainDescription);
+  const [mainDraft, setMainDraft] = useState(mainDescription);
   const [drafts, setDrafts] = useState(() => savedCards.map(draftFromSaved));
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [selectedKey, setSelectedKey] = useState<string | null>(
@@ -120,13 +122,22 @@ export function ApronCardTab({
   );
   const [queueCount, setQueueCount] = useState(initialQueueCount);
 
-  const dirty = deletedIds.length > 0 || draftsDirty(drafts, saved);
+  const mainDirty =
+    !(docIsEmpty(mainDraft) && docIsEmpty(savedMain)) &&
+    JSON.stringify(mainDraft) !== JSON.stringify(savedMain);
+  const dirty =
+    mainDirty || deletedIds.length > 0 || draftsDirty(drafts, saved);
   const selected = drafts.find((card) => card.key === selectedKey) ?? null;
   const missingSize = drafts.find((card) => card.size === null) ?? null;
 
-  const resetTo = (cards: SavedApronCard[], keepKey: string | null): void => {
+  const resetTo = (
+    cards: SavedApronCard[],
+    main: ProseMirrorDoc | null,
+    keepKey: string | null
+  ): void => {
     const next = cards.map(draftFromSaved);
     setDrafts(next);
+    setMainDraft(main);
     setDeletedIds([]);
     setSelectedKey(
       next.some((card) => card.key === keepKey)
@@ -139,7 +150,7 @@ export function ApronCardTab({
   const { dialog: unsavedDialog, openConfirm } = useUnsavedChangesGuard({
     isDirty: dirty,
     onDiscard: () => {
-      resetTo(saved, selectedKey);
+      resetTo(saved, savedMain, selectedKey);
     },
   });
 
@@ -194,6 +205,7 @@ export function ApronCardTab({
       const result = await saveApronCardsAction({
         machineId,
         deletedIds,
+        ...(mainDirty ? { machineDescription: mainDraft } : {}),
         cards: sized.map((card) => ({
           ...(card.id ? { id: card.id } : {}),
           name: card.name,
@@ -228,8 +240,9 @@ export function ApronCardTab({
         stored.find((card) => card.name === selected?.name)?.id ??
         null;
       setSaved(stored);
-      resetTo(stored, keepKey);
-      toast.success("Cards saved");
+      setSavedMain(result.value.machineDescription);
+      resetTo(stored, result.value.machineDescription, keepKey);
+      toast.success("Saved");
     });
   };
 
@@ -240,9 +253,9 @@ export function ApronCardTab({
         name: card.name,
         size: card.size,
         template: card.template,
-        content: cardFaceContent(identity, mainDescription, card),
+        content: cardFaceContent(identity, savedMain, card),
       })),
-    [saved, identity, mainDescription]
+    [saved, identity, savedMain]
   );
   const exportMenu = (className?: string): React.JSX.Element => (
     <ApronCardExportDialog
@@ -305,7 +318,7 @@ export function ApronCardTab({
   const size: ApronCardSize = selected?.size ?? "stern";
   const previewWidth = apronCardPixelSize(size).width + 40;
   const content = selected
-    ? cardFaceContent(identity, mainDescription, selected)
+    ? cardFaceContent(identity, mainDraft, selected)
     : null;
   const otherCards = drafts.filter((card) => card.key !== selected?.key);
   // The preview column is the card's printed width plus the frame's padding.
@@ -522,13 +535,19 @@ export function ApronCardTab({
                   placeholder="Text for this card only"
                 />
               ) : (
-                <div className="rounded-md border border-outline-variant px-3 py-2 text-sm text-muted-foreground">
-                  {mainDescription && !docIsEmpty(mainDescription) ? (
-                    <RichTextDisplay content={mainDescription} />
-                  ) : (
-                    <p>No machine description</p>
-                  )}
-                  <p className="mt-2 text-xs">Edited on the Manage tab</p>
+                <div className="flex flex-col">
+                  {/* The Manage tab's editor: same formatting, no mentions. */}
+                  <RichTextEditor
+                    key={`main-description:${editorEpoch}`}
+                    content={mainDraft}
+                    onChange={setMainDraft}
+                    mentionsEnabled={false}
+                    ariaLabel="Machine description"
+                    placeholder="Add a description for this machine..."
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Shared with the Manage tab
+                  </p>
                 </div>
               )}
             </fieldset>
@@ -682,7 +701,7 @@ function ActionBar({
           Cancel
         </Button>
         <Button onClick={onSave} disabled={saveDisabled}>
-          {saving ? "Saving…" : "Save cards"}
+          {saving ? "Saving…" : "Save"}
         </Button>
       </MachineFormActionBar>
     </div>

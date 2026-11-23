@@ -7,6 +7,7 @@ One standard for every action button and every ⋯ menu in the app: page headers
 - **Its own button:** the page's create action (Add Machine, Add tag, New collection, Invite User) and Share. Only one create action on a page is filled. A second one goes in ⋯, unless it would be ⋯'s only entry: the lone-entry rule below takes precedence, so on Tags, Add tag type is an outlined button.
 - **Inside ⋯:** editing (Edit…, Rename…, Move…, Merge…), then Export and Print, then a divider and Delete, in red. The lone-entry rule below can bring one of these out as its own button, as on Issues (issues-list §2.3).
 - **Exceptions, named by their page's spec:** a control beside the thing it edits stays visible (an issue's Edit title and Move, issue-detail §4.3, §4.5); Machines' Pinball Map (machine-views §6.6); Tags' Settings tags link; Watch, which stays in the page body.
+- **Share that hands out a link** opens the device's share sheet on phones and copies the link on desktop, confirming "Link copied".
 - **A ⋯ never holds fewer than two entries unless space forces it.** An action that would sit in ⋯ alone shows as its own button.
 
 ## 26.2 How buttons look
@@ -14,6 +15,7 @@ One standard for every action button and every ⋯ menu in the app: page headers
 - A button with a label is outlined. An icon-only button is borderless, with a hover and pressed background.
 - The page's create action is filled, labeled or icon-only. It is the only filled button on the page.
 - Page action buttons are 36px tall on desktop and 44px on phones (list-views §7.9); an icon-only one is square. Item ⋯ buttons are 32px on desktop and 44px on phones.
+- While an action's work runs (an export building), the button that started it shows a spinner and its busy label ("Exporting…") and is disabled; when the action sits in More, More shows them.
 - Every icon-only button has an accessible name and, on desktop, a tooltip with the same text.
 - When a header runs out of room, labels drop first, then buttons fold into ⋯ one step at a time in the page's order, the create action last. ⋯ itself never folds. List View pages follow list-views §3.7–§3.10 and §8.11–§8.13.
 

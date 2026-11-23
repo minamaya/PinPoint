@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 
@@ -370,25 +369,6 @@ export async function deleteTestSettingsTags(names: string[]) {
     .in("name", names)
     .eq("is_builtin", false);
   if (error) throw error;
-}
-
-/**
- * Generate an unsubscribe token for E2E tests.
- * Uses the same HMAC-SHA256 algorithm and signing secret as
- * src/lib/notifications/unsubscribe-token.ts. The test client must
- * derive tokens using the same UNSUBSCRIBE_SIGNING_SECRET that the dev
- * server uses to verify them, otherwise verification fails.
- */
-export function generateUnsubscribeTokenForTest(userId: string): string {
-  const secret = process.env["UNSUBSCRIBE_SIGNING_SECRET"];
-  if (!secret) {
-    throw new Error(
-      "Missing UNSUBSCRIBE_SIGNING_SECRET — required for unsubscribe E2E tests. Set it in .env.local (and in CI workflow env)."
-    );
-  }
-  return createHmac("sha256", secret)
-    .update(userId + ":unsubscribe")
-    .digest("hex");
 }
 
 /**

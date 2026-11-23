@@ -175,6 +175,210 @@ def test_service_unit_keeps_its_state_owner_only():
     assert "UMask=0077" in unit
 
 
+# --- A VM that dies mid-job (PP-gakbw) --------------------------------------
+
+
+def test_runner_names_differ_for_the_same_job():
+    # The dead VM's runner can stay registered; reusing its name returns 409.
+    first = supervisor.runner_name(100, 7, 1_700_000_000)
+    again = supervisor.runner_name(100, 7, 1_700_000_001)
+    assert first != again
+    assert first.startswith(f"{supervisor.NAME_PREFIX}100-7-")
+    assert len(first) <= 64
+
+
+def test_one_failed_spawn_does_not_stop_the_others(monkeypatch):
+    run = _run()
+    jobs = [_job(["pinpoint-run-100"], job_id=i) for i in (1, 2, 3)]
+    monkeypatch.setattr(
+        supervisor, "queued_jobs", lambda _full: [(run, j) for j in jobs]
+    )
+    monkeypatch.setattr(supervisor, "vms", {})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    started = []
+
+    def spawn(_run, job):
+        if job["id"] == 1:
+            raise supervisor.urllib.error.HTTPError("u", 409, "Conflict", None, None)
+        started.append(job["id"])
+
+    monkeypatch.setattr(supervisor, "spawn", spawn)
+    supervisor.serve_once(full=False)
+    assert started == [2, 3]
+
+
+class _ExitedVM:
+    def poll(self):
+        return 0
+
+    def wait(self):
+        return 0
+
+
+def _dead_vm(tmp_path, monkeypatch, delete_ok):
+    d = tmp_path / "job"
+    d.mkdir()
+    (d / "serial.log").write_text("runner console")
+    monkeypatch.setattr(supervisor, "VM_LOGS", tmp_path / "vm-logs")
+    monkeypatch.setattr(supervisor, "dead", {})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    monkeypatch.setattr(supervisor, "delete_runner", lambda _rid: delete_ok)
+    monkeypatch.setattr(
+        supervisor,
+        "vms",
+        {
+            7: {
+                "proc": _ExitedVM(),
+                "dir": d,
+                "runner_id": 55,
+                "run_id": 100,
+                "started": supervisor.time.time() - 20,
+                "name": "bazzite-100-7-a",
+            }
+        },
+    )
+
+
+def test_vm_that_exits_with_its_job_still_assigned_is_recorded(monkeypatch, tmp_path):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    supervisor.reap()
+    assert supervisor.vms == {}
+    assert supervisor.dead["bazzite-100-7-a"]["run_id"] == 100
+    assert (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text() == "runner console"
+
+
+def test_vm_that_finished_its_job_is_not_recorded(monkeypatch, tmp_path):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=True)
+    supervisor.vms[7]["started"] -= 600  # a normal-length job
+    supervisor.reap()
+    assert supervisor.dead == {}
+    assert not supervisor.VM_LOGS.exists()
+
+
+@pytest.mark.parametrize(
+    ("event", "branch", "reran"),
+    [
+        ("pull_request", "feat/x", True),
+        ("merge_group", "gh-readonly-queue/main/pr-1-abc", False),
+    ],
+)
+def test_run_stuck_on_a_dead_vm_is_cancelled(monkeypatch, event, branch, reran):
+    name = "bazzite-100-7-a"
+    now = supervisor.time.time()
+    monkeypatch.setattr(
+        supervisor,
+        "dead",
+        {name: {"run_id": 100, "runner_id": 55, "since": now - 60, "next": now - 1}},
+    )
+    monkeypatch.setattr(supervisor, "rerun_when_done", set())
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    monkeypatch.setattr(supervisor, "delete_runner", lambda _rid: False)
+    monkeypatch.setattr(supervisor, "run_completed", lambda _rid: True)
+    calls = []
+
+    def api(method, path, _body=None):
+        calls.append((method, path))
+        if path.endswith("/jobs?per_page=100"):
+            return {"jobs": [{"status": "in_progress", "runner_name": name}]}
+        if method == "GET":
+            return _run(event=event, branch=branch)
+        return {}
+
+    monkeypatch.setattr(supervisor, "api", api)
+    supervisor.recover_dead()
+    assert ("POST", f"/repos/{supervisor.FULL}/actions/runs/100/force-cancel") in calls
+    rerun = ("POST", f"/repos/{supervisor.FULL}/actions/runs/100/rerun-failed-jobs")
+    assert (rerun in calls) is reran
+
+
+class _RunningVM:
+    def __init__(self):
+        self.code = None
+
+    def poll(self):
+        return self.code
+
+    def kill(self):
+        self.code = -9
+
+    def wait(self):
+        return self.code
+
+
+def test_vm_killed_at_its_timeout_with_the_job_still_assigned_is_recovered(
+    monkeypatch, tmp_path
+):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    supervisor.vms[7]["proc"] = _RunningVM()
+    supervisor.vms[7]["started"] -= supervisor.JOB_TIMEOUT_S
+    monkeypatch.setattr(supervisor, "idle_and_unneeded", lambda _vm: False)
+    supervisor.reap()
+    assert "bazzite-100-7-a" in supervisor.dead
+
+
+def test_vm_killed_as_an_orphan_is_not_treated_as_dead(monkeypatch, tmp_path):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    supervisor.vms[7]["proc"] = _RunningVM()
+    supervisor.vms[7]["started"] -= 120
+    monkeypatch.setattr(supervisor, "idle_and_unneeded", lambda _vm: True)
+    supervisor.reap()
+    assert supervisor.dead == {}
+
+
+@pytest.mark.parametrize(
+    ("exc", "freed"),
+    [
+        (watchdog.urllib.error.HTTPError("u", 404, "gone", None, None), True),
+        (watchdog.urllib.error.HTTPError("u", 422, "busy", None, None), False),
+        (watchdog.urllib.error.HTTPError("u", 502, "bad gateway", None, None), False),
+        (watchdog.urllib.error.URLError("reset"), False),
+    ],
+)
+def test_only_a_missing_runner_counts_as_freed(monkeypatch, exc, freed):
+    monkeypatch.setattr(supervisor, "api", _raise(exc))
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    assert supervisor.delete_runner(55) is freed
+
+
+def test_one_failing_dead_runner_does_not_starve_the_rest(monkeypatch):
+    now = supervisor.time.time()
+    entry = {"run_id": 100, "runner_id": 55, "since": now - 60, "next": now - 1}
+    monkeypatch.setattr(supervisor, "dead", {"a": dict(entry), "b": dict(entry)})
+    monkeypatch.setattr(supervisor, "rerun_when_done", {200, 300})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    tried = []
+
+    def recover_one(name, _info):
+        tried.append(name)
+        raise supervisor.urllib.error.URLError("reset")
+
+    monkeypatch.setattr(supervisor, "recover_one", recover_one)
+    monkeypatch.setattr(supervisor, "run_completed", lambda _rid: True)
+
+    def api(_method, path, _body=None):
+        if "/200/" in path:
+            raise supervisor.urllib.error.HTTPError("u", 422, "no", None, None)
+        return {}
+
+    monkeypatch.setattr(supervisor, "api", api)
+    supervisor.recover_dead()
+    assert tried == ["a", "b"]
+    assert supervisor.rerun_when_done == set()  # 422 gives up, 300 re-ran
+
+
+def test_dead_runner_released_by_github_is_dropped(monkeypatch):
+    now = supervisor.time.time()
+    monkeypatch.setattr(
+        supervisor,
+        "dead",
+        {"x": {"run_id": 100, "runner_id": 55, "since": now - 60, "next": now - 1}},
+    )
+    monkeypatch.setattr(supervisor, "delete_runner", lambda _rid: True)
+    monkeypatch.setattr(supervisor, "api", _raise(AssertionError("no API call")))
+    supervisor.recover_dead()
+    assert supervisor.dead == {}
+
+
 def test_heavy_label_gets_the_large_vm():
     assert supervisor.size_for("pinpoint-run-100-l") == supervisor.HEAVY
     assert supervisor.size_for("pinpoint-run-100") == supervisor.LIGHT

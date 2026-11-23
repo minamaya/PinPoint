@@ -116,23 +116,23 @@ a blank Full-E2E cell is often correct by design) is in the
 
 ## Notifications
 
-| Feature surface               | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                                   |
-| ----------------------------- | :--: | :---------: | :---: | :------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| In-app notification list      |  ✓   |      ✓      |       |    ✓     | `components/notifications/NotificationList.test.tsx`, `notifications.test.ts`, `e2e/full/email-and-notifications.spec.ts`                                                              |
-| Email dispatch / threading    |  ✓   |      ✓      |       |          | `lib/notifications/email-threading.test.ts`, `supabase/email-transport.test.ts`, `supabase/mailpit.test.ts`                                                                            |
-| Discord DM / channel delivery |  ✓   |      ✓      |   ✓   |    ✓     | `lib/notifications/channels/discord-channel.test.ts`, `notification-discord-batch.test.ts`, `e2e/smoke/admin-discord-integration.spec.ts`, `e2e/full/discord-dm-preferences.spec.ts`   |
-| Preferences & unsubscribe     |  ✓   |      ✓      |       |    ✓     | `settings/notifications/notification-preferences-form.test.tsx`, `notification-preferences-action.test.ts`, `api/unsubscribe.route.test.ts`, `e2e/full/discord-dm-preferences.spec.ts` |
-| Resource-URL deep links       |  ✓   |             |       |          | `lib/notifications/resource-url.test.ts`                                                                                                                                               |
-| Discord activity summary      |  ✓   |      ✓      |       |          | `lib/discord/activity-summary/message.test.ts`, `schedule.test.ts`, `discord-activity-summary.test.ts`, `supabase/discord-activity-summary.test.ts`                                    |
+| Feature surface               | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                                    |
+| ----------------------------- | :--: | :---------: | :---: | :------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In-app notification list      |  ✓   |      ✓      |       |    ✓     | `components/notifications/NotificationList.test.tsx`, `notifications.test.ts`, `e2e/full/email-and-notifications.spec.ts`                                                               |
+| Email dispatch / threading    |  ✓   |      ✓      |       |    ✓     | `lib/notifications/email-threading.test.ts`, `supabase/email-transport.test.ts`, `supabase/mailpit.test.ts`, `e2e/full/email-and-notifications.spec.ts`                                 |
+| Discord DM / channel delivery |  ✓   |      ✓      |   ✓   |    ✓     | `lib/notifications/channels/discord-channel.test.ts`, `notification-discord-batch.test.ts`, `e2e/smoke/admin-discord-integration.spec.ts`, `e2e/full/discord-dm-preferences.spec.ts`    |
+| Preferences & unsubscribe     |  ✓   |      ✓      |       |    ✓     | `settings/notifications/notification-preferences-form.test.tsx`, `notification-preferences-action.test.ts`, `api/unsubscribe.route.test.ts`, `e2e/full/email-and-notifications.spec.ts` |
+| Resource-URL deep links       |  ✓   |             |       |          | `lib/notifications/resource-url.test.ts`                                                                                                                                                |
+| Discord activity summary      |  ✓   |      ✓      |       |          | `lib/discord/activity-summary/message.test.ts`, `schedule.test.ts`, `discord-activity-summary.test.ts`, `supabase/discord-activity-summary.test.ts`                                     |
 
 ## Admin
 
-| Feature surface                    | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                        |
-| ---------------------------------- | :--: | :---------: | :---: | :------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| User management (promote / remove) |  ✓   |      ✓      |       |    ✓     | `admin/users/user-role-select.test.tsx`, `admin/users/remove-invited-user-button.test.tsx`, `admin/user-management.test.ts`, `e2e/full/admin-users.spec.ts` |
-| Discord integration config         |  ✓   |      ✓      |   ✓   |          | `settings/connected-accounts/test-discord-dm-action.test.ts`, `admin/discord-integration-actions.test.ts`, `e2e/smoke/admin-discord-integration.spec.ts`    |
-| PinballMap integration config      |  ✓   |      ✓      |       |          | `admin/integrations/pinballmap/read-model.test.ts`, `admin/pinballmap-integration-actions.test.ts`                                                          |
-| Region-alerts config               |  ✓   |      ✓      |       |          | `lib/pinballmap/region-alert-message.test.ts`, `admin/pinballmap-region-alerts-config.test.ts`                                                              |
+| Feature surface                    | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                                                |
+| ---------------------------------- | :--: | :---------: | :---: | :------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User management (promote / remove) |  ✓   |      ✓      |       |    ✓     | `admin/users/user-role-select.test.tsx`, `admin/users/remove-invited-user-button.test.tsx`, `admin/user-management.test.ts`, `e2e/full/admin-users.spec.ts`                                         |
+| Discord integration config         |  ✓   |      ✓      |   ✓   |          | `admin/integrations/discord/discord-config-form.test.tsx`, `admin/discord-integration-actions.test.ts`, `admin/discord-vault-orphan-cleanup.test.ts`, `e2e/smoke/admin-discord-integration.spec.ts` |
+| PinballMap integration config      |  ✓   |      ✓      |       |          | `admin/integrations/pinballmap/read-model.test.ts`, `admin/pinballmap-integration-actions.test.ts`                                                                                                  |
+| Region-alerts config               |  ✓   |      ✓      |       |          | `lib/pinballmap/region-alert-message.test.ts`, `admin/pinballmap-region-alerts-config.test.ts`                                                                                                      |
 
 ## Profiles & people
 

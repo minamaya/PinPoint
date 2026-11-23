@@ -105,7 +105,7 @@
 - **12.1** A member can open a Print apron cards page from the Machines list. It requires the same signed-in membership as exporting one card (§9.3).
 - **12.2** The page lists every saved card of every machine that is not Removed, grouped by apron size. A person selects cards one at a time or a whole size group at once, and can narrow the list by machine name.
 - **12.3** A card that does not fit is listed and marked. It can be selected only while an explicit override on the page is ticked; the override is not saved (§9.5).
-- **12.4** The page shows, for each apron size with a selected card, the number of selected cards, cards per sheet, sheets, and empty positions, and the total number of files and sheets.
+- **12.4** The page shows, for each apron size with a selected card, the number of selected cards, cards per sheet, sheets, and empty positions, and the total number of files and sheets. On a phone these totals, with the Print run link, sit in a card under the page title and scroll with the page; nothing is pinned above the app's tab bar.
 - **12.5** Downloading produces one print file per apron size with a selected card. Every sheet in a file holds only that size's cards in the same grid, so the file's printed stack can be cut together. Cards print at their exact dimensions (§9.2).
 - **12.6** A person chooses the paper, 11 × 17 in (the default) or 8.5 × 11 in, and the printer's edge margin, 4 mm (the default) or ¼ in. Cards per sheet follow from the paper, the margin, and the apron size.
 - **12.7** Neighbouring cards on a sheet sit edge to edge and share one cut wherever their touching edges print the same; a card may print upside down to make that happen. Cards are separated by a gap only where one card's bleed would otherwise print onto its neighbour.
@@ -126,13 +126,13 @@
 
 | Requirement | Current implementation gap |
 | :-- | :-- |
-| §3.1, §3.2, §3.6 | The Apron card tab shows the machine's main description read-only and points to the Manage tab; editing it in place is not built yet (PP-nunup). |
 | §4.2 | Automatic apron-size fill from a Pinball Map match is intentionally deferred. Editors choose a size manually for now; unmatched machines still have no default. |
 
 ## Changelog
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | §12.4: on a phone the totals sit in a card under the page title instead of a bar pinned above the tab bar (design bible §3). |
 | 2026-11-21 | 13.4: the Machines page's ⋯ is the More menu. |
 | 2026-10-11 | The print-queue count shows on the Print apron cards entry inside the Machines page's ⋯ Actions menu (§13.4). |
 | 2026-10-10 | The Apron card tab edits the machine's main description in place when a card uses it (§3.1, §3.2, §3.6). |
