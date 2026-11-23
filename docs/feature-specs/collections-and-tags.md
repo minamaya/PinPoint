@@ -65,7 +65,7 @@
 - **4.12** A description shows at most three lines, or two below the md breakpoint. Longer text ends its last shown line with an inline "… Show more" control that shows the rest, and Show less then returns it to its clamped length.
 - **4.13** Below 390px wide the header's spacing above the title and below the tabs tightens from 12px to 4px.
 - **4.14** A Machine Group page's actions are, in order, Share and ⋯ (list-views §3.7), the same on every tab; 4.15 says who sees Share.
-- **4.15** On a Collection, Share opens the sharing controls for its View Link and Editors (3.3–3.7) and appears only to the owner (3.8). On a tag, Share copies the tag page's address, for everyone.
+- **4.15** On a Collection, Share opens the sharing controls for its View Link and Editors (3.3–3.7) and appears only to the owner (3.8). On a tag, Share is available to everyone and shares the tag page's address: on phones it opens the device's share sheet, and on desktop it copies the address.
 - **4.16** ⋯ holds Print settings sheets, for everyone, which opens Print settings sheets with the group's machines On the Floor already added (settings-sheets §2.6). It holds no apron cards entry.
 - **4.17** ⋯ holds the editing actions the viewer holds: on a Collection, Edit collection, for the owner and Editors, and Delete collection, for the owner (3.8); on a hand-applied tag, Edit machines, Rename, Move to another tag type, Merge into another tag, and Delete, for technicians and admins (11.8, 11.9, 11.11, 11.16, 11.17). On the Issues tab it also holds Export (issues-list 2.4), and on the Machines tab, Export (machine-views §3.15).
 - **4.18** When the actions do not fit (list-views §3.9), Share folds into ⋯.
@@ -180,6 +180,7 @@
 | :-- | :-- | :-- |
 | §12.1–§12.6 | Neither the Machines list nor the Issues list offers a Tag or a Collection filter. | PP-wqit.15 |
 | 4.8, 4.9 | The breadcrumb is muted with no icon, sits inline before the title, and moves above it only when the header is crowded. | PP-jb9v.20 |
+| 4.15 | A tag's Share copies the address on phones too, instead of opening the share sheet. | PP-jb9v.21 |
 | 4.12 | "… Show more" sits at the bottom-right of the clamped box rather than at the end of the last shown line, and the description's color comes from the rich-text styles. | PP-jb9v.18 |
 
 ---
@@ -188,6 +189,7 @@
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | 4.15: a tag's Share opens the device's share sheet on phones and copies the address on desktop. |
 | 2026-11-23 | 4.8: the Collection's owner and Editors keep the Collections crumb when they open it through its View Link, and the breadcrumb uses the site-wide style (design bible §27). 4.9: the breadcrumb always sits on its own line above the title. |
 | 2026-11-21 | 4.14–4.16, 4.18: Print settings sheets moves from its own Print menu into ⋯, so a Machine Group page's actions are Share and ⋯. 4.17: ⋯ holds Delete collection for the owner. 4.15: drops "other viewers see ⋯", since list-views 3.7 shows a lone entry as its own button. |
 | 2026-10-13 | On the Machines tab, ⋯ also holds Export (4.17). |
