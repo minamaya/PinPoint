@@ -243,7 +243,7 @@ describe("updateSession public route access", () => {
 
   // Note: /m/new is protected at the page level (server component redirect),
   // not at middleware level, since /m/* is broadly public in middleware.
-  // Its protection is verified in the E2E suite (public-routes-audit.spec.ts).
+  // Its protection is verified in the E2E suite (e2e/smoke/proxy-boundary.spec.ts).
   const protectedRoutes = [
     "/settings",
     "/admin/users",

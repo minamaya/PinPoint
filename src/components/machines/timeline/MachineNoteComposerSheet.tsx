@@ -4,6 +4,11 @@ import type React from "react";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 
+import {
+  draftHasContent,
+  machineNoteDraftKey,
+  useCommentDraft,
+} from "~/components/issues/comment-draft";
 import { MachineTimelineComposer } from "~/components/machines/timeline/MachineTimelineComposer";
 import { Button } from "~/components/ui/button";
 import {
@@ -31,8 +36,8 @@ interface Props {
  * same bottom sheet is centered to a comfortable max-width rather than running
  * full-bleed.
  *
- * Closing the sheet keeps the unposted note as a draft; reopening it restores
- * the text and tag. The composer's server action revalidates the machine routes, so the timeline
+ * Closing the sheet with an unposted note asks before discarding it
+ * (design-bible §17); a reload still keeps the draft. The composer's server action revalidates the machine routes, so the timeline
  * and the overview "Recent activity" section refresh once the sheet closes.
  */
 export function MachineNoteComposerSheet({
@@ -41,9 +46,21 @@ export function MachineNoteComposerSheet({
   userId,
 }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
+  // The same draft the composer writes, read here so the sheet knows whether
+  // dismissing it would lose a note. Discard empties it.
+  const draft = useCommentDraft(
+    machineNoteDraftKey(userId, machineId),
+    "machine-note-sheet"
+  );
+  const dirty = draftHasContent(draft.snapshot.draft);
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet
+      open={open}
+      onOpenChange={setOpen}
+      dirty={dirty}
+      onDiscard={draft.clear}
+    >
       <SheetTrigger asChild>
         <Button size="sm" className="shrink-0">
           <Plus className="size-4" />

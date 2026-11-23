@@ -1,11 +1,12 @@
 "use client";
 
 import type React from "react";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -92,14 +93,30 @@ export function MoveTagDialog({
   move,
   onCloseAutoFocus,
 }: MoveTagDialogProps): React.JSX.Element {
+  const currentValue = optionValue(move.typeId);
+  const [choice, setChoice] = useState(currentValue);
+
+  // Each open starts at the current type.
+  useEffect(() => {
+    if (open) setChoice(currentValue);
+  }, [open, currentValue]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dirty={choice !== currentValue}
+    >
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        {/* Mounts with the content, so each open starts at the current type. */}
-        <MoveTagForm move={move} onClose={() => onOpenChange(false)} />
+        <MoveTagForm
+          move={move}
+          choice={choice}
+          onChoiceChange={setChoice}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -107,15 +124,18 @@ export function MoveTagDialog({
 
 function MoveTagForm({
   move,
+  choice,
+  onChoiceChange,
   onClose,
 }: {
   move: TagMove;
+  choice: string;
+  onChoiceChange: (choice: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
   const currentValue = optionValue(move.typeId);
-  const [choice, setChoice] = useState(currentValue);
   const [refused, setRefused] = useState<Block | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -133,7 +153,7 @@ function MoveTagForm({
   const machines = `${String(move.machineCount)} ${move.machineCount === 1 ? "machine" : "machines"}`;
 
   function pick(value: string): void {
-    setChoice(value);
+    onChoiceChange(value);
     setRefused(null);
     setError(null);
   }
@@ -204,9 +224,11 @@ function MoveTagForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button
           type="submit"
           loading={pending}

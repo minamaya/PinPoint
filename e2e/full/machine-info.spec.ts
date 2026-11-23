@@ -55,7 +55,7 @@ test.describe("Machine Info tab — player landing", () => {
     ).toBeVisible();
   });
 
-  // Companion to public-routes-audit.spec.ts's anonymous-viewer case. A member
+  // Companion to e2e/smoke/proxy-boundary.spec.ts's anonymous-viewer case. A member
   // who does not own this machine may open Manage for the read-only Pinball Map
   // control, but none of its machine-mutation surfaces (PP-o355.38, spec 4.9).
   test("a member without edit permission gets read-only Pinball Map access on Manage", async ({

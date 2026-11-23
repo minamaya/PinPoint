@@ -69,7 +69,7 @@ describe("MachineNoteComposerSheet", () => {
     expect(
       await screen.findByRole("button", { name: /^post$/i })
     ).toBeInTheDocument();
-    // No Cancel: the sheet's own close keeps the note as a draft.
+    // No Cancel button: the sheet's own close X is the way out.
     expect(
       screen.queryByRole("button", { name: /cancel/i })
     ).not.toBeInTheDocument();
@@ -122,7 +122,7 @@ describe("MachineNoteComposerSheet", () => {
     });
   });
 
-  it("restores the unposted note when the sheet reopens", async () => {
+  it("asks before discarding an unposted note, and Keep editing keeps it", async () => {
     const user = userEvent.setup();
     render(
       <MachineNoteComposerSheet
@@ -134,6 +134,28 @@ describe("MachineNoteComposerSheet", () => {
     await user.click(screen.getByRole("button", { name: /new note/i }));
     await user.click(await screen.findByRole("button", { name: /sim-type/i }));
     await user.keyboard("{Escape}");
+
+    expect(
+      await screen.findByRole("alertdialog", { name: "Discard changes?" })
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(screen.getByRole("button", { name: /^post$/i })).toBeEnabled();
+  });
+
+  it("Discard closes the sheet and empties the note", async () => {
+    const user = userEvent.setup();
+    render(
+      <MachineNoteComposerSheet
+        machineId="m1"
+        machineName="AFM"
+        userId="user-1"
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /new note/i }));
+    await user.click(await screen.findByRole("button", { name: /sim-type/i }));
+    await user.keyboard("{Escape}");
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
     await waitFor(() => {
       expect(
         screen.queryByRole("button", { name: /^post$/i })
@@ -144,6 +166,6 @@ describe("MachineNoteComposerSheet", () => {
 
     expect(
       await screen.findByRole("button", { name: /^post$/i })
-    ).toBeEnabled();
+    ).toBeDisabled();
   });
 });

@@ -1,13 +1,21 @@
 "use client";
 
 import type React from "react";
-import { useId, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -70,6 +78,21 @@ export function EditTagMachinesDialog(
   const open = controlled ? props.open : ownOpen;
   const setOpen = controlled ? props.onOpenChange : setOwnOpen;
   const onCloseAutoFocus = controlled ? props.onCloseAutoFocus : undefined;
+  const { currentIds } = props;
+  const [selected, setSelected] = useState(() => new Set(currentIds));
+
+  // Each open starts from the saved set. Only the open transition resets it: a
+  // parent re-render hands over a new `currentIds` array and must not wipe ticks.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) setSelected(new Set(currentIds));
+    wasOpen.current = open;
+  }, [open, currentIds]);
+
+  const dirty =
+    selected.size !== currentIds.length ||
+    currentIds.some((machineId) => !selected.has(machineId));
+
   const editor: TagMachinesEditor = {
     tagId: props.tagId,
     tagName: props.tagName,
@@ -79,7 +102,7 @@ export function EditTagMachinesDialog(
     otherTagByMachine: props.otherTagByMachine,
   };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} dirty={dirty}>
       {controlled ? null : (
         <DialogTrigger asChild>
           <Button className="gap-2">
@@ -91,11 +114,13 @@ export function EditTagMachinesDialog(
       <DialogContent
         className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
-        // A stray backdrop click shouldn't discard the selection.
-        onInteractOutside={(event) => event.preventDefault()}
       >
-        {/* Mounts with the content, so each open starts from the saved set. */}
-        <EditTagMachinesForm {...editor} onClose={() => setOpen(false)} />
+        <EditTagMachinesForm
+          {...editor}
+          selected={selected}
+          onSelectedChange={setSelected}
+          onClose={() => setOpen(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -108,13 +133,16 @@ function EditTagMachinesForm({
   allMachines,
   currentIds,
   otherTagByMachine,
+  selected,
+  onSelectedChange,
   onClose,
 }: TagMachinesEditor & {
+  selected: Set<string>;
+  onSelectedChange: (selected: Set<string>) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const id = useId();
   const router = useRouter();
-  const [selected, setSelected] = useState(() => new Set(currentIds));
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -158,12 +186,10 @@ function EditTagMachinesForm({
         : "Save changes";
 
   function toggle(machineId: string, checked: boolean): void {
-    setSelected((previous) => {
-      const next = new Set(previous);
-      if (checked) next.add(machineId);
-      else next.delete(machineId);
-      return next;
-    });
+    const next = new Set(selected);
+    if (checked) next.add(machineId);
+    else next.delete(machineId);
+    onSelectedChange(next);
   }
 
   function save(): void {
@@ -268,9 +294,11 @@ function EditTagMachinesForm({
           ) : null}
         </p>
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
           <Button
             type="button"
             onClick={save}

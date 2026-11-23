@@ -1,7 +1,7 @@
 # PinPoint Non‑Negotiables
 
-**Last Updated**: 2026-11-15
-**Version**: 2.15 (CORE-UI-008 added: action buttons and ⋯ menus go through `PageActions` and `ItemActionsMenu` — PP-jb9v.17). Prior: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
+**Last Updated**: 2026-11-23
+**Version**: 2.16 (CORE-UI-009 added: a modal that holds input ignores outside clicks and confirms before discarding unsaved changes — PP-yxw.19). Prior: 2.15 (CORE-UI-008 added: action buttons and ⋯ menus go through `PageActions` and `ItemActionsMenu` — PP-jb9v.17). Prior: 2.14 (CORE-UI-007 added: overlay libraries only inside `src/components/ui`, every floating primitive animates — PP-p2ts.7). Prior: 2.13 (CORE-ARCH-018 added: pages, layouts and components never import the database — PP-az4d.10). Prior: 2.12 (CORE-ARCH-017 added: additive migrations merge first in their own PR, destructive ones last — PP-ncxx.6). Prior: 2.11 (CORE-TS-002 amended: a `*_VALUES` array is the single source for zod, Drizzle and TS unions — PP-az4d.13). Prior: 2.10 (CORE-ARCH-016 added: third-party HTTP goes through `~/lib/http/external` with a per-request timeout — PP-az4d.11). Prior: 2.9 (CORE-ARCH-013 added: Server Actions go through `createProtectedAction` — PP-az4d.4). Prior: 2.8 (CORE-ARCH-015 added: a caught error not returned to the user goes to `reportError`; cron routes use `runCron` — PP-az4d.3). Prior: 2.7 (CORE-ARCH-014 added: one write path per mutation; CORE-ARCH-010 amended: share load-bearing code at two copies, reuse existing helpers — PP-az4d.1)
 
 > **Canonical catalog**: this document defines the canonical `CORE-*` rules for PinPoint. Portable skills (`.agents/skills/`) and agent context (`AGENTS.md`) cite rules by ID and provide domain/task-specific procedures.
 
@@ -46,6 +46,7 @@
 29. Overlay libraries (`radix-ui`, `vaul`, `cmdk`, `@floating-ui`) are imported only in `src/components/ui`, and every floating primitive there carries `animate-in`/`animate-out` (CORE-UI-007)
 30. Additive migrations merge first in their own PR; destructive ones last (CORE-ARCH-017)
 31. Pages, layouts and components never import `~/server/db`; reads live in a `cache()`'d `_data.ts` loader or a `src/lib` read (CORE-ARCH-018)
+32. A Dialog, Sheet or Drawer that holds input passes `dirty`: outside clicks do nothing, and unsaved changes are confirmed before it closes (CORE-UI-009)
 
 ---
 
@@ -588,6 +589,15 @@
 - **Don't:** Import those libraries in a page, feature component or editor; hand-build a floating panel; add a primitive under `src/components/ui/` that renders floating content without `animate-in` and `animate-out`, unless it is listed in the allowlist in `src/components/ui/motion.test.ts` with a reason.
 - **Enforced by:** the `no-restricted-imports` patterns in `.oxlintrc.json` (the import half) and `src/components/ui/motion.test.ts` (the motion half, a static scan of `src/components/ui/`). Both run in CI. Reduced-motion is separate: one global block in `globals.css` (CORE-A11Y-002).
 - **Reference:** `pinpoint-design-bible` §11 Motion.
+
+**CORE-UI-009:** A modal that holds input ignores outside clicks and confirms before discarding unsaved changes
+
+- **Severity:** Required
+- **Why:** Before PP-yxw.19 the same stray-backdrop-click mistake was guarded in three places, three different ways, and not at all in six: a click outside silently threw away typed work. Tim decided on 2026-11-22 that one standard covers every modal that holds input, built once in the shared primitives so a new modal inherits it.
+- **Do:** Pass `dirty` on the `<Dialog>`, `<Sheet>` or `<Drawer>` root, as a boolean on every render. An outside click then does nothing. With unsaved changes, Escape, the close X, Cancel and a Drawer swipe-down open "Discard changes?" (Keep editing / Discard); with none they close at once. Compute `dirty` from state (current value against the value at open, or "not empty" for a create form); for a native form of uncontrolled fields use `useFormDirty()` from `~/hooks/use-form-dirty`. Write Cancel as `<DialogClose asChild>` (or `SheetClose` / `DrawerClose`) so it passes through the guard. Pass `onDiscard` when the draft lives outside the modal's content and is not reset on open. A control that saves as it is used still passes `dirty={false}`, so an outside click does nothing.
+- **Don't:** Hand-write `onInteractOutside` / `onPointerDownOutside` on a modal Content, or a per-modal `isDirty` plus discard AlertDialog. Close with `onClick={() => setOpen(false)}` on Cancel. Close from code with the guard in mind: `setOpen(false)` after a successful save is deliberately unguarded.
+- **Enforced by:** `src/components/ui/modal-dismissal-guard.test.ts`, a static scan that fails when a Dialog, Sheet or Drawer outside `src/components/ui` omits `dirty` and its file is not in the `READ_ONLY_MODALS` list with a reason (a pure confirm, a viewer, a picker that applies each choice at once), and when a modal Content blocks outside clicks by hand. Behavior is covered by `modal-dismissal.test.tsx`.
+- **Reference:** `pinpoint-design-bible` §17 Modal Archetypes. The confirm is `DiscardChangesDialog` (`src/components/ui/discard-changes-dialog.tsx`); page-level navigation guards use `useUnsavedChangesGuard`, which renders the same confirm.
 
 ---
 

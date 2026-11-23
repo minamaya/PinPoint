@@ -54,4 +54,14 @@ describe("LoginForm", () => {
     const spinner = button.querySelector(".animate-spin");
     expect(spinner).toBeInTheDocument();
   });
+
+  it("renders the email/username input as type=text so browsers accept bare usernames", () => {
+    mockUseActionState.mockReturnValue([null, vi.fn(), false]);
+
+    render(<LoginForm />);
+
+    const emailInput = screen.getByLabelText(/email or username/i);
+    expect(emailInput).toHaveAttribute("type", "text");
+    expect(emailInput).toHaveAttribute("autocomplete", "username");
+  });
 });

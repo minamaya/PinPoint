@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import {
   AlertDialog,
@@ -16,6 +16,7 @@ import {
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -40,16 +41,22 @@ export function RenameCardDialog({
   otherNames: readonly string[];
   onRename: (name: string) => void;
 }): React.JSX.Element {
+  const [value, setValue] = useState(name);
+
+  // Start from the current name each time the dialog opens.
+  useEffect(() => {
+    if (open) setValue(name);
+  }, [open, name]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={value !== name}>
       <DialogContent className="sm:max-w-sm">
         {open ? (
           <RenameForm
             name={name}
+            value={value}
+            onValueChange={setValue}
             otherNames={otherNames}
-            onCancel={() => {
-              onOpenChange(false);
-            }}
             onRename={(next) => {
               onRename(next);
               onOpenChange(false);
@@ -63,17 +70,18 @@ export function RenameCardDialog({
 
 function RenameForm({
   name,
+  value,
+  onValueChange,
   otherNames,
-  onCancel,
   onRename,
 }: {
   name: string;
+  value: string;
+  onValueChange: (value: string) => void;
   otherNames: readonly string[];
-  onCancel: () => void;
   onRename: (name: string) => void;
 }): React.JSX.Element {
   const id = useId();
-  const [value, setValue] = useState(name);
   const trimmed = value.trim();
   const error =
     trimmed === ""
@@ -105,7 +113,7 @@ function RenameForm({
           aria-invalid={error !== null && trimmed !== name}
           aria-describedby={error ? `${id}-error` : undefined}
           onChange={(event) => {
-            setValue(event.target.value);
+            onValueChange(event.target.value);
           }}
         />
         {error !== null && trimmed !== "" ? (
@@ -115,9 +123,11 @@ function RenameForm({
         ) : null}
       </div>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button type="submit" disabled={error !== null}>
           Rename
         </Button>

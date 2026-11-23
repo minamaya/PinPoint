@@ -1,9 +1,10 @@
 /**
- * E2E smoke: Settings page loads for an authenticated user.
+ * E2E smoke: Settings page loads for an authenticated user and links to their
+ * public profile page without 500s.
  *
- * Verifies the page renders without a 500 and the Connected Accounts
- * section is visible. Full OAuth round-trip behaviour is covered by unit
- * tests (oauth-actions.test.ts, connected-accounts-section.test.tsx).
+ * Full OAuth round-trip behaviour is covered by unit tests (oauth-actions.test.ts,
+ * connected-accounts-section.test.tsx); full profile editing is in
+ * e2e/full/profile-edit.spec.ts.
  */
 
 import { test, expect } from "../support/fixtures.js";
@@ -13,7 +14,9 @@ import { assertNoA11yViolations } from "../support/actions.js";
 test.describe("Settings page (smoke)", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
-  test("Connected Accounts section renders on /settings", async ({ page }) => {
+  test("Settings loads Connected Accounts and links to own profile", async ({
+    page,
+  }) => {
     await page.goto("/settings");
 
     await expect(
@@ -21,5 +24,10 @@ test.describe("Settings page (smoke)", () => {
     ).toBeVisible();
 
     await assertNoA11yViolations(page);
+
+    await page.getByRole("link", { name: /view your public profile/i }).click();
+
+    await expect(page).toHaveURL(/\/u\//);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 });

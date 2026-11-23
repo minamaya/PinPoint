@@ -17,6 +17,7 @@ import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -74,7 +75,11 @@ export function SaveViewDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dirty={name !== "" || makeDefault}
+    >
       <DialogContent className="sm:max-w-md">
         <form onSubmit={submit} className="space-y-4" noValidate>
           <DialogHeader>
@@ -124,13 +129,11 @@ export function SaveViewDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" loading={isPending}>
               Save
             </Button>
@@ -313,7 +316,8 @@ export function ManageViewsDialog({
   views: ListViewsModel;
 }): React.JSX.Element {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // Each rename applies on blur or Enter, so there is nothing to lose.
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={false}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Manage views</DialogTitle>

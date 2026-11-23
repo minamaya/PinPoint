@@ -82,7 +82,7 @@ test.describe("FloatingCommentButton — mobile signed-in", () => {
   // editor mocked; this is the one place the real TipTap editor restores a
   // draft from the browser's localStorage after a full reload. Nothing is
   // posted, so the seeded issue is untouched.
-  test("a comment draft survives closing the sheet and reloading the page", async ({
+  test("a comment draft survives Keep editing and reloading the page", async ({
     page,
   }, testInfo) => {
     await loginAs(page, testInfo);
@@ -95,14 +95,13 @@ test.describe("FloatingCommentButton — mobile signed-in", () => {
     await page.keyboard.type(draft);
     await expect(editor).toContainText(draft);
 
-    // Dismiss the sheet; reopening it in the same page view restores the draft.
+    // Dismissing a typed comment asks first; Keep editing leaves it in place.
     await form.getByRole("button", { name: "Close" }).click();
-    await expect(form).toBeHidden();
-    const reopened = await openIssueCommentForm(page);
-    await expect(
-      reopened.form.getByRole("textbox", { name: "Comment" })
-    ).toContainText(draft);
-    await reopened.form.getByRole("button", { name: "Close" }).click();
+    const confirm = page.getByRole("alertdialog", { name: "Discard changes?" });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "Keep editing" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(editor).toContainText(draft);
 
     // A reload restores it too.
     await page.reload();
@@ -110,5 +109,31 @@ test.describe("FloatingCommentButton — mobile signed-in", () => {
     await expect(
       afterReload.form.getByRole("textbox", { name: "Comment" })
     ).toContainText(draft);
+  });
+
+  test("Discard closes the sheet and empties the draft", async ({
+    page,
+  }, testInfo) => {
+    await loginAs(page, testInfo);
+    await page.goto(ISSUE_URL);
+    const draft = `Discard ${testInfo.project.name} ${Date.now().toString()}`;
+
+    const { form } = await openIssueCommentForm(page);
+    const editor = form.getByRole("textbox", { name: "Comment" });
+    await expect(editor).toBeFocused();
+    await page.keyboard.type(draft);
+    await expect(editor).toContainText(draft);
+
+    await form.getByRole("button", { name: "Close" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Discard changes?" })
+      .getByRole("button", { name: "Discard" })
+      .click();
+    await expect(form).toBeHidden();
+
+    const reopened = await openIssueCommentForm(page);
+    await expect(
+      reopened.form.getByRole("textbox", { name: "Comment" })
+    ).not.toContainText(draft);
   });
 });

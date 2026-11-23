@@ -97,7 +97,8 @@ export function CollectionShareDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // Every control here applies at once, so nothing is ever unsaved.
+    <Dialog open={open} onOpenChange={onOpenChange} dirty={false}>
       <DialogContent
         className="sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}

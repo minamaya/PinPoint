@@ -180,7 +180,7 @@ export function ApronCardExportDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange} dirty={false}>
         <DialogTrigger asChild>
           <Button
             variant="outline"
