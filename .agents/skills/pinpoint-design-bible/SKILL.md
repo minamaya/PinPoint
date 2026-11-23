@@ -56,6 +56,7 @@ Sections keep their numbers wherever they live — `design-bible §17` resolves 
 | 24  | Severity Vocabulary               | `references/23-24-mockups-and-severity.md`           |
 | 25  | Status & Error Copy Register      | `references/25-copy-register.md`                     |
 | 26  | Action Buttons and Overflow Menus | `references/26-action-buttons.md`                    |
+| 27  | Breadcrumbs                       | `references/27-breadcrumbs.md`                       |
 
 ## 1. Visual Identity
 

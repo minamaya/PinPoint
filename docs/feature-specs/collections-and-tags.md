@@ -58,8 +58,8 @@
 - **4.5** The Timeline tab shows one chronological feed across the group's machines, each entry labeled with its machine. Its filters can narrow that set but never widen it. The feed is read-only.
 - **4.6** An empty Collection shows people who can edit it a way to add machines, and shows everyone else that the Collection has no machines yet.
 - **4.7** A Collection's description appears in its header on every tab, to everyone who can open the Collection, including through its View Link. A Collection without a description shows nothing there.
-- **4.8** The header's breadcrumb names where the group lives: on a tag's page, Tags and then the tag's tag type when it has one (7.7); on a Collection, Collections, linking to My Collections (§5), shown only to signed-in viewers who can open My Collections; anonymous visitors and View Link viewers see the title with no breadcrumb. Crumbs are separated by "›", and the breadcrumb shows no tag icon.
-- **4.9** The breadcrumb sits inline before the title, aligned with the title's top. When the breadcrumb, the title, and a Collection description's 280px column beside them (4.11) do not fit on one line, the breadcrumb moves above the title; it moves before the description leaves its column.
+- **4.8** The header's breadcrumb names where the group lives: on a tag's page, Tags and then the tag's tag type when it has one (7.7); on a Collection, Collections, linking to My Collections (§5), shown only to signed-in viewers who can open My Collections; anonymous visitors, and View Link viewers other than the Collection's owner and Editors, see the title with no breadcrumb. It uses the site-wide breadcrumb style (pinpoint-design-bible).
+- **4.9** The breadcrumb sits on its own line above the title at every width.
 - **4.10** The page actions sit at the right end of the row holding the Overview, Issues, and Timeline tabs, on every tab and at every width.
 - **4.11** At and above the md breakpoint a Collection's description sits beside the title in a column 280px to 560px wide, and moves under the title when that column cannot get 280px. Below the md breakpoint it always sits under the title.
 - **4.12** A description shows at most three lines, or two below the md breakpoint. Longer text ends its last shown line with an inline "… Show more" control that shows the rest, and Show less then returns it to its clamped length.
@@ -179,7 +179,7 @@
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
 | §12.1–§12.6 | Neither the Machines list nor the Issues list offers a Tag or a Collection filter. | PP-wqit.15 |
-| 4.8 | The owner and Editors see the Collections crumb when they open a Collection through its View Link. | Tim decides whether they should (PP-jb9v.18). |
+| 4.8, 4.9 | The breadcrumb is muted with no icon, sits inline before the title, and moves above it only when the header is crowded. | PP-jb9v.20 |
 | 4.12 | "… Show more" sits at the bottom-right of the clamped box rather than at the end of the last shown line, and the description's color comes from the rich-text styles. | PP-jb9v.18 |
 
 ---
@@ -188,6 +188,7 @@
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | 4.8: the Collection's owner and Editors keep the Collections crumb when they open it through its View Link, and the breadcrumb uses the site-wide style (design bible §27). 4.9: the breadcrumb always sits on its own line above the title. |
 | 2026-11-21 | 4.14–4.16, 4.18: Print settings sheets moves from its own Print menu into ⋯, so a Machine Group page's actions are Share and ⋯. 4.17: ⋯ holds Delete collection for the owner. 4.15: drops "other viewers see ⋯", since list-views 3.7 shows a lone entry as its own button. |
 | 2026-10-13 | On the Machines tab, ⋯ also holds Export (4.17). |
 | 2026-10-11 | Machine Group header: the summary counts line is gone at every width, and the open-issue count stays on the Issues tab (4.2); a breadcrumb, Tags and the tag type on tags and Collections on Collections, sits inline before the title and is first to move above it (4.8, 4.9, 7.7); the page actions sit at the right end of the tab row (4.10); a Collection's description sits beside the title in a 280–560px column on wider screens and under it on phones, clamped to three lines or two on phones with an inline Show more (4.7, 4.11, 4.12); the header's spacing tightens below 390px (4.13). Collections shows in the breadcrumb only to signed-in viewers who can open My Collections, with "›" separators and no tag icon (4.8). Page actions: Share, Print, and ⋯ on every tab (4.14); Share opens a Collection's sharing controls for its owner and copies a tag's address for everyone (4.15); Print holds Settings sheets only (4.16); ⋯ holds the viewer's editing actions, and Export on the Issues tab (4.17); Share and Print fold into ⋯ together (4.18). |
