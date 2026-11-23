@@ -62,9 +62,7 @@ Removed 2026-09-16. The Info tab card's "View all on iScored" link replaces it: 
 
 ## Known divergences (code vs spec)
 
-| Spec | Code today | Resolution |
-| :-- | :-- | :-- |
-| 3.1 score filtering on the batch endpoint | The batch request already sends `?max=10`, which `getAllScores` does not support and ignores, so no filtering happens | PP-5lcgw |
+_None — the current implementation matches this spec._
 
 ---
 
@@ -72,6 +70,7 @@ Removed 2026-09-16. The Info tab card's "View all on iScored" link replaces it: 
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | Dropped the `?max=10` no-op from the `getAllScores` batch request (`getAllScores` does not support `max`); resolved the §3.1 divergence (PP-5lcgw). |
 | 2026-10-01 | Retired §6.1 (iScored link status on `/fleet`), since `/fleet` was dropped. |
 | 2026-09-26 | §2.3 names `update_machine`'s `iscoredGameId` field, replacing the removed `set_machine_iscored` tool (PP-u4ab.23); divergence row dropped. |
 | 2026-09-19 | Define Game link concept: public gameroom deep-link pattern (scrollTo={gameID}) used for "View all on iScored" and the card logo, distinct from the mobile score entry link. |

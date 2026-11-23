@@ -315,7 +315,7 @@ async function loadScores(
   }
 
   const result = await fetchIscoredJson(
-    `${ISCORED_BASE_URL}/api/${encodeURIComponent(user)}/getAllScores?max=10`,
+    `${ISCORED_BASE_URL}/api/${encodeURIComponent(user)}/getAllScores`,
     user,
     {
       nonOk: "iScored API returned non-OK status",
