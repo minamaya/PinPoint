@@ -340,9 +340,51 @@ def completed_or_unknown(run_id: int) -> bool:
 # --- VMs --------------------------------------------------------------------
 
 
-def user_data(jit: str) -> str:
+# passt sends a guest's UDP flow from the host on the same source port, and drops
+# it when that port is taken (PP-itvwi): tailscaled holds 41641, and concurrent
+# VMs would take each other's ports. So each VM slot gets its own slice of the
+# guest's ephemeral range, and the ports the host has bound are reserved.
+EPHEMERAL = (32768, 60999)  # Linux default, in the guest and on the host
+TAILSCALE_PORT = 41641
+
+
+def port_range(slot: int, slots: int = MAX_VMS) -> tuple[int, int]:
+    span = (EPHEMERAL[1] - EPHEMERAL[0] + 1) // slots
+    low = EPHEMERAL[0] + slot * span
+    return low, low + span - 1
+
+
+def host_udp_ports(tables=("/proc/net/udp", "/proc/net/udp6")) -> set[int]:
+    """Local ports of the host's UDP sockets (the hex after the colon in column 2)."""
+    ports = set()
+    for table in tables:
+        try:
+            rows = Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            ports.add(int(row.split()[1].rsplit(":", 1)[1], 16))
+    return ports
+
+
+def reserved_ports(low: int, high: int, host_ports: set[int]) -> str:
+    keep = sorted(p for p in host_ports | {TAILSCALE_PORT} if low <= p <= high)
+    return ",".join(map(str, keep))
+
+
+def free_slot() -> int:
+    used = {vm["slot"] for vm in vms.values()}
+    return next(i for i in range(MAX_VMS) if i not in used)
+
+
+def user_data(jit: str, ports: tuple[int, int] = EPHEMERAL, reserved: str = "") -> str:
+    low, high = ports
+    bootcmd = f'  - [sysctl, -w, "net.ipv4.ip_local_port_range={low} {high}"]\n'
+    if reserved:
+        bootcmd += f'  - [sysctl, -w, "net.ipv4.ip_local_reserved_ports={reserved}"]\n'
     return f"""#cloud-config
-write_files:
+bootcmd:
+{bootcmd}write_files:
   - path: /home/runner/jit
     permissions: "0600"
     content: {jit}
@@ -361,6 +403,9 @@ def spawn(run, job) -> None:
     name = runner_name(run["id"], job["id"], time.time())
     label = job["labels"][0]
     vcpus, mem = size_for(label)
+    slot = free_slot()
+    ports = port_range(slot)
+    reserved = reserved_ports(*ports, host_udp_ports())
     resp = api(
         "POST",
         f"{runners_path()}/generate-jitconfig",
@@ -373,7 +418,7 @@ def spawn(run, job) -> None:
         d.mkdir(mode=0o700, parents=True)
         fd = os.open(d / "user-data", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
-            f.write(user_data(resp["encoded_jit_config"]))
+            f.write(user_data(resp["encoded_jit_config"], ports, reserved))
         (d / "meta-data").write_text(f"instance-id: {name}\nlocal-hostname: {name}\n")
         subprocess.run(
             [
@@ -457,6 +502,7 @@ def spawn(run, job) -> None:
         "run_id": run["id"],
         "started": time.time(),
         "name": name,
+        "slot": slot,
     }
     admitted.setdefault(run["id"], time.time())
     log(f"spawned {name} ({vcpus} vCPU/{mem}) for {run['head_branch']} / {job['name']}")

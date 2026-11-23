@@ -379,6 +379,52 @@ def test_dead_runner_released_by_github_is_dropped(monkeypatch):
     assert supervisor.dead == {}
 
 
+# --- Guest UDP source ports (PP-itvwi) --------------------------------------
+
+
+def test_vm_slots_get_disjoint_ephemeral_ranges():
+    ranges = [supervisor.port_range(i) for i in range(supervisor.MAX_VMS)]
+    for (low, high), (next_low, _) in zip(ranges, ranges[1:]):
+        assert low < high < next_low
+    assert ranges[0][0] == supervisor.EPHEMERAL[0]
+    assert ranges[-1][1] <= supervisor.EPHEMERAL[1]
+
+
+def test_host_udp_ports_reads_both_tables(tmp_path):
+    header = "  sl  local_address rem_address   st tx_queue rx_queue\n"
+    udp = tmp_path / "udp"
+    udp.write_text(header + "   0: 00000000:A2A9 00000000:0000 07 00000000:00000000\n")
+    udp6 = tmp_path / "udp6"
+    udp6.write_text(
+        header
+        + "   0: 00000000000000000000000000000000:14E9 00000000000000000000000000000000:0000 07\n"
+    )
+    missing = tmp_path / "missing"
+    assert supervisor.host_udp_ports((udp, udp6, missing)) == {41641, 5353}
+
+
+def test_tailscale_port_is_reserved_in_the_slot_that_holds_it():
+    for slot in range(supervisor.MAX_VMS):
+        low, high = supervisor.port_range(slot)
+        reserved = supervisor.reserved_ports(low, high, {53, 50000})
+        assert ("41641" in reserved.split(",")) is (low <= 41641 <= high)
+        assert "53" not in reserved.split(",")  # outside every guest range
+
+
+def test_user_data_sets_the_guest_port_range_before_the_runner_starts():
+    doc = yaml.safe_load(supervisor.user_data("JIT", (38414, 44059), "40000,41641"))
+    assert doc["bootcmd"] == [
+        ["sysctl", "-w", "net.ipv4.ip_local_port_range=38414 44059"],
+        ["sysctl", "-w", "net.ipv4.ip_local_reserved_ports=40000,41641"],
+    ]
+    assert doc["write_files"][0]["content"] == "JIT"
+
+
+def test_free_slot_takes_the_lowest_unused(monkeypatch):
+    monkeypatch.setattr(supervisor, "vms", {1: {"slot": 0}, 2: {"slot": 2}})
+    assert supervisor.free_slot() == 1
+
+
 def test_heavy_label_gets_the_large_vm():
     assert supervisor.size_for("pinpoint-run-100-l") == supervisor.HEAVY
     assert supervisor.size_for("pinpoint-run-100") == supervisor.LIGHT
