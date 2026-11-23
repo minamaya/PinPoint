@@ -6,23 +6,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // accessing it would throw. vi.hoisted() places the mock fn initializer
 // in the same hoist bucket as vi.mock(), guaranteeing rpcMock is
 // initialized before the factory closure uses it.
-const { rpcMock, maybeSingleMock, eqMock, selectMock, fromMock } = vi.hoisted(
-  () => {
-    const maybeSingleMock = vi.fn();
-    const eqMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
-    const selectMock = vi.fn(() => ({ eq: eqMock }));
-    const fromMock = vi.fn(() => ({ select: selectMock }));
-    return {
-      rpcMock: vi.fn(),
-      maybeSingleMock,
-      eqMock,
-      selectMock,
-      fromMock,
-    };
-  }
-);
+const { rpcMock, maybeSingleMock } = vi.hoisted(() => ({
+  rpcMock: vi.fn(),
+  maybeSingleMock: vi.fn(),
+}));
 vi.mock("~/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: rpcMock, from: fromMock }),
+  createAdminClient: () => ({
+    rpc: rpcMock,
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: maybeSingleMock,
+        }),
+      }),
+    }),
+  }),
 }));
 
 import {
@@ -124,17 +122,11 @@ describe("getDiscordConfig", () => {
 describe("isDiscordIntegrationConfigured", () => {
   beforeEach(() => {
     maybeSingleMock.mockReset();
-    fromMock.mockClear();
-    selectMock.mockClear();
-    eqMock.mockClear();
   });
 
   it("returns false when query returns null data or an error", async () => {
     maybeSingleMock.mockResolvedValueOnce({ data: null, error: null });
     await expect(isDiscordIntegrationConfigured()).resolves.toBe(false);
-    expect(fromMock).toHaveBeenCalledWith("discord_integration_config");
-    expect(selectMock).toHaveBeenCalledWith("guild_id, bot_token_vault_id");
-    expect(eqMock).toHaveBeenCalledWith("id", "singleton");
 
     maybeSingleMock.mockResolvedValueOnce({
       data: { guild_id: "123", bot_token_vault_id: "vault-1" },

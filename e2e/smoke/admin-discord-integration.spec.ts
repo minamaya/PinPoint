@@ -85,23 +85,19 @@ test.describe("Admin integrations page (anonymous)", () => {
   }) => {
     const headers = { "x-skip-autologin": "true" };
 
-    const legacyRes = await request.get("/admin/integrations/discord", {
-      headers,
-      maxRedirects: 0,
-    });
-    expect(legacyRes.status()).toBe(307);
-    expect(legacyRes.headers()["location"]).toMatch(
-      /\/login\?next=%2Fadmin%2Fintegrations%2Fdiscord$/
-    );
-
-    const mainRes = await request.get("/admin/integrations", {
-      headers,
-      maxRedirects: 0,
-    });
-    expect(mainRes.status()).toBe(307);
-    expect(mainRes.headers()["location"]).toMatch(
-      /\/login\?next=%2Fadmin%2Fintegrations$/
-    );
+    for (const path of ["/admin/integrations/discord", "/admin/integrations"]) {
+      const res = await request.get(path, {
+        headers,
+        maxRedirects: 0,
+      });
+      expect(res.status()).toBe(307);
+      const locationUrl = new URL(
+        res.headers()["location"] ?? "",
+        "http://localhost"
+      );
+      expect(locationUrl.pathname).toBe("/login");
+      expect(locationUrl.searchParams.get("next")).toBe(path);
+    }
   });
 });
 
