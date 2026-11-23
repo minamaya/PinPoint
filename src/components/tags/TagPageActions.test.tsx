@@ -51,13 +51,45 @@ describe("TagPageActions", () => {
     toast.success.mockReset();
   });
 
-  it("Share copies the tag page's address", async () => {
+  it("Share opens the share sheet with the tag page's address on a phone", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    vi.stubGlobal("navigator", { ...navigator, share });
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    render(
+      <TagPageActions
+        tagHref="/c/tags/location/storage"
+        tagName="Storage"
+        settingsSheetsHref="/m/settings-sheets?m=AFM"
+        editing={null}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    await waitFor(() =>
+      expect(share).toHaveBeenCalledWith({
+        title: "Storage",
+        url: `${window.location.origin}/c/tags/location/storage`,
+      })
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("Share copies the tag page's address on desktop", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
     render(
       <TagPageActions
         tagHref="/c/tags/location/storage"
+        tagName="Storage"
         settingsSheetsHref="/m/settings-sheets?m=AFM"
         editing={null}
       />
@@ -75,6 +107,7 @@ describe("TagPageActions", () => {
     render(
       <TagPageActions
         tagHref="/c/tags/location/storage"
+        tagName="Storage"
         settingsSheetsHref="/m/settings-sheets?m=AFM"
         editing={null}
       />
@@ -95,6 +128,7 @@ describe("TagPageActions", () => {
     render(
       <TagPageActions
         tagHref="/c/tags/location/storage"
+        tagName="Storage"
         settingsSheetsHref="/m/settings-sheets?m=AFM"
         editing={editing}
       />
@@ -124,6 +158,7 @@ describe("TagPageActions", () => {
     render(
       <TagPageActions
         tagHref="/c/tags/location/storage"
+        tagName="Storage"
         settingsSheetsHref="/m/settings-sheets?m=AFM"
         editing={editing}
       />

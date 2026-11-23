@@ -3,7 +3,6 @@
 import type React from "react";
 import { useState } from "react";
 import { Share2 } from "lucide-react";
-import { toast } from "sonner";
 import {
   GROUP_FOLD_STEPS,
   groupPrintEntry,
@@ -25,12 +24,15 @@ import {
 } from "~/components/tags/TagManageDialogs";
 import { MergeTagDialog } from "~/components/tags/MergeTagDialog";
 import { MoveTagDialog } from "~/components/tags/MoveTagDialog";
+import { shareLinkWithFeedback } from "~/lib/share/share-link";
 import { deleteTagAction, renameTagAction } from "~/app/(app)/c/tags/actions";
 import type { TagMerge, TagMove } from "~/app/(app)/c/tags/[type]/[slug]/_data";
 
 interface TagPageActionsProps {
-  /** The tag page's path, which Share copies as a full address (4.15). */
+  /** The tag page's path, which Share hands out as a full address (4.15). */
   tagHref: string;
+  /** The tag's name, which the phone share sheet shows with the link. */
+  tagName: string;
   /** Print settings sheets with the tag's machines On the Floor added. */
   settingsSheetsHref: string;
   /**
@@ -52,13 +54,15 @@ type TagDialog = "machines" | "rename" | "move" | "merge" | "delete";
 
 /**
  * A tag page's actions (collections-and-tags 4.14–4.18): Share, which
- * copies the page's address for everyone, then ⋯ holding a hand-applied
+ * hands out the page's address for everyone (the share sheet on phones, a
+ * copy on desktop), then ⋯ holding a hand-applied
  * tag's editing (Edit machines, Rename, Move to another tag type, Merge
  * into another tag), the current tab's Export, Print settings sheets for
  * everyone, and the tag's Delete. Share folds into ⋯.
  */
 export function TagPageActions({
   tagHref,
+  tagName,
   settingsSheetsHref,
   editing,
 }: TagPageActionsProps): React.JSX.Element {
@@ -78,17 +82,6 @@ export function TagPageActions({
     onOpenChange: (open) => setDialog(open ? name : null),
     onCloseAutoFocus: returnFocus.onCloseAutoFocus,
   });
-
-  async function copyAddress(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(
-        new URL(tagHref, window.location.origin).toString()
-      );
-      toast.success("Link copied");
-    } catch {
-      toast.error("Could not copy the link.");
-    }
-  }
 
   const editingEntries: PageMenuEntry[] = editing
     ? [
@@ -140,7 +133,7 @@ export function TagPageActions({
             label: "Share",
             icon: Share2,
             onSelect: () => {
-              void copyAddress();
+              void shareLinkWithFeedback({ url: tagHref, title: tagName });
             },
             testId: "tag-share-button",
           },

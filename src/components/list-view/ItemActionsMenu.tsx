@@ -96,7 +96,7 @@ function isDestructiveSection(section: ItemMenuSection): boolean {
 // A borderless icon button, 32px on desktop and 44px on phones, with a hover
 // and pressed background (design-bible §26.2).
 const triggerClass =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:bg-muted data-[state=open]:bg-muted motion-reduce:transition-none md:size-8";
+  "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:bg-muted data-[state=open]:bg-muted disabled:opacity-60 motion-reduce:transition-none md:size-8";
 
 function EntryLabel({
   entry,
@@ -240,6 +240,11 @@ export function ItemActionsMenu({
     [describedBy, description !== undefined ? descriptionId : undefined]
       .filter((id) => id !== undefined)
       .join(" ") || undefined;
+  // While an entry's action runs, the ⋯ that started it spins and is
+  // disabled, as page actions' ⋯ does (design-bible §26.2).
+  const busy = ordered.some((section) =>
+    entriesOf(section).some((entry) => entry.busy === true)
+  );
   const onChoose = (entry: ItemMenuEntry): void => {
     keepFocusRef.current = entry.keepsFocus === true;
   };
@@ -256,13 +261,22 @@ export function ItemActionsMenu({
             type="button"
             aria-label={label}
             aria-describedby={describedByIds}
+            aria-busy={busy ? true : undefined}
+            disabled={busy}
             data-testid={testId}
             className={triggerClass}
           >
-            <MoreHorizontal
-              aria-hidden="true"
-              className="size-[18px] md:size-4"
-            />
+            {busy ? (
+              <Loader2
+                aria-hidden="true"
+                className="size-[18px] animate-spin motion-reduce:animate-none md:size-4"
+              />
+            ) : (
+              <MoreHorizontal
+                aria-hidden="true"
+                className="size-[18px] md:size-4"
+              />
+            )}
           </button>
         </DropdownMenuTrigger>
       </NameTooltip>

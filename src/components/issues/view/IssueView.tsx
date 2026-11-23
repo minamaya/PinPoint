@@ -166,7 +166,7 @@ export function IssueView({
     },
   };
 
-  // View options holds page size only (issues-list §5.5).
+  // Display holds page size, and Sort once the header folds it in (issues-list §5.5).
   const display: ListDisplayModel = {
     pageSize: state.pageSize,
     pageSizes: LIST_PAGE_SIZES,

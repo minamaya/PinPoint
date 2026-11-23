@@ -97,6 +97,9 @@ export function usePageExportEntry(): PageMenuEntry | null {
     icon: Download,
     buttonLabel: "Export",
     busy,
+    // The button that started it reads this while the file builds: Export,
+    // or ⋯ when Export is inside it (design-bible §26.2).
+    busyLabel: "Exporting…",
     testId: "export-csv-button",
     onSelect: () => {
       void run();

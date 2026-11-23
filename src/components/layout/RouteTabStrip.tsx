@@ -194,7 +194,7 @@ export function RouteTabStrip({
     <nav
       ref={containerRef}
       className={cn(
-        "relative flex min-h-12 min-w-0",
+        "relative flex h-11 min-w-0 md:h-10",
         sharesRow ? "grow-0" : "border-b border-outline-variant"
       )}
       style={
@@ -309,11 +309,13 @@ export function RouteTabStrip({
   );
 }
 
-const tabControlClasses =
-  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors motion-reduce:transition-none";
+// Tabs are 44px tall on phones and 40px on desktop, with 10px side padding
+// (design-bible §5, tab strip).
+const ROUTE_TAB_HEIGHT_CLASSES = "h-11 md:h-10";
 
-const overflowTriggerMeasurementClasses =
-  "h-full min-w-11 rounded-none border-b-2 px-4 py-3 text-lg leading-none motion-reduce:transition-none";
+const tabControlClasses = `inline-flex ${ROUTE_TAB_HEIGHT_CLASSES} shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 text-sm font-medium transition-colors motion-reduce:transition-none`;
+
+const overflowTriggerMeasurementClasses = `${ROUTE_TAB_HEIGHT_CLASSES} min-w-11 rounded-none border-b-2 px-2.5 text-lg leading-none motion-reduce:transition-none md:min-w-10`;
 
 const overflowTriggerClasses = cn(
   overflowTriggerMeasurementClasses,

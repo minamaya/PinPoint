@@ -76,7 +76,9 @@ export interface ListHeaderFitInput {
   editCompactWidth: number;
   /** The compact pager's width with its range text and without it. */
   pagerWidths: { full: number; compact: number };
-  /** Sort, Export, and View options together. */
+  /** The sort control, while it sits in the List Header. */
+  sortWidth: number;
+  /** Every other control at the right end: a host list action and Display. */
   controlsWidth: number;
   gap: number;
 }
@@ -87,6 +89,8 @@ export interface ListHeaderPlan {
   /** Whether More views shows. */
   showMoreViews: boolean;
   pager: CompactPagerMode;
+  /** Sort moves into Display, above page size (§8.17). */
+  sortInDisplay: boolean;
   /** Discard changes shortens to "Discard". */
   compactEdit: boolean;
 }
@@ -124,41 +128,49 @@ function fitTabs(
   return null;
 }
 
-const STEPS: readonly { pager: CompactPagerMode; compactEdit: boolean }[] = [
-  { pager: "full", compactEdit: false },
-  { pager: "compact", compactEdit: false },
-  { pager: "hidden", compactEdit: false },
-  { pager: "hidden", compactEdit: true },
+const STEPS: readonly {
+  pager: CompactPagerMode;
+  sortInDisplay: boolean;
+  compactEdit: boolean;
+}[] = [
+  { pager: "full", sortInDisplay: false, compactEdit: false },
+  { pager: "compact", sortInDisplay: false, compactEdit: false },
+  { pager: "hidden", sortInDisplay: false, compactEdit: false },
+  { pager: "hidden", sortInDisplay: true, compactEdit: false },
+  { pager: "hidden", sortInDisplay: true, compactEdit: true },
 ];
 
 /**
  * Lays out the desktop List Header (§8.16–§8.19), keeping the tolerance
- * spare (§8.7). View tabs move into More
- * views from the right first; only when the Applied View's tab alone still
- * does not fit does the compact pager drop its range text, and then
- * disappear. The pager below the list always remains, and shows the result
- * range even when there is only one page. Past that, Discard
- * changes shortens to "Discard", and finally the Applied View's tab name
- * truncates (the component lets that one tab shrink).
+ * spare (§8.7). View tabs move into More views from the right first; only
+ * when the Applied View's tab alone still does not fit does the compact
+ * pager drop its range text, and then disappear. The pager below the list
+ * always remains, and shows the result range even when there is only one
+ * page. Then Sort moves into Display, above page size (§8.17). Past that,
+ * Discard changes shortens to "Discard", and finally the Applied View's tab
+ * name truncates (the component lets that one tab shrink).
  */
 export function planListHeader(input: ListHeaderFitInput): ListHeaderPlan {
-  for (const { pager, compactEdit } of STEPS) {
+  for (const { pager, sortInDisplay, compactEdit } of STEPS) {
     const pagerWidth =
       pager === "hidden" ? 0 : input.pagerWidths[pager] + input.gap;
+    const sortWidth = sortInDisplay ? 0 : input.sortWidth + input.gap;
     const leftAvailable =
       input.available -
       FIT_TOLERANCE -
       input.controlsWidth -
+      sortWidth -
       pagerWidth -
       input.gap;
     const editWidth = compactEdit ? input.editCompactWidth : input.editWidth;
     const tabs = fitTabs(input, leftAvailable, editWidth);
-    if (tabs) return { ...tabs, pager, compactEdit };
+    if (tabs) return { ...tabs, pager, sortInDisplay, compactEdit };
   }
   return {
     visibleTabs: input.appliedIndex === null ? [] : [input.appliedIndex],
     showMoreViews: true,
     pager: "hidden",
+    sortInDisplay: true,
     compactEdit: true,
   };
 }

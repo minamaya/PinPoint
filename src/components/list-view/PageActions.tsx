@@ -51,6 +51,12 @@ export type PageMenuEntry = {
   destructive?: boolean | undefined;
   /** The entry's action is running; it shows a spinner and is disabled. */
   busy?: boolean | undefined;
+  /**
+   * What the button that started the action reads while it runs, such as
+   * "Exporting…": the entry's own button, or ⋯ while the entry is inside it
+   * (design-bible §26.2).
+   */
+  busyLabel?: string | undefined;
   testId?: string | undefined;
   /**
    * The icon the entry shows as its own button. Only an entry with one can
@@ -69,6 +75,8 @@ interface PageActionBase {
   primary?: boolean | undefined;
   /** The action is running; its button shows a spinner and is disabled. */
   busy?: boolean | undefined;
+  /** What its button reads while it runs, such as "Exporting…" (§26.2). */
+  busyLabel?: string | undefined;
   testId?: string | undefined;
 }
 
@@ -205,6 +213,24 @@ function ActionTooltip({
   );
 }
 
+/** What an action's button reads: its busy label while it runs (§26.2). */
+function shownLabel(action: PageAction): string {
+  return action.busy === true && action.busyLabel !== undefined
+    ? action.busyLabel
+    : action.label;
+}
+
+/**
+ * The running entry ⋯ holds, if any: while it runs, ⋯ shows the spinner and
+ * its busy label and is disabled, since the button that started the action
+ * is ⋯ (design-bible §26.2).
+ */
+function busyEntryOf(
+  sections: readonly (readonly PageMenuEntry[])[]
+): PageMenuEntry | undefined {
+  return sections.flat().find((entry) => entry.busy === true);
+}
+
 function entryKey(entry: PageMenuEntry): string {
   return entry.key;
 }
@@ -219,6 +245,7 @@ function foldedEntriesOf(action: PageAction): readonly PageMenuEntry[] {
     key: action.key,
     label: action.label,
     busy: action.busy,
+    busyLabel: action.busyLabel,
     testId: action.testId,
   };
   return "href" in action
@@ -233,6 +260,7 @@ function entryAsAction(entry: PageMenuEntry, icon: LucideIcon): PageAction {
     label: entry.buttonLabel ?? entry.label,
     icon,
     busy: entry.busy,
+    busyLabel: entry.busyLabel,
     testId: entry.testId,
   };
   return "href" in entry
@@ -318,11 +346,14 @@ const sheetRowClass =
 /** ⋯ on phones: a sheet of the same entries (list-views §3.10, §12.2). */
 function ActionsSheet({
   trigger,
+  label,
   face,
   sections,
   opener,
 }: {
   trigger: React.ReactNode;
+  /** ⋯'s current name: "More", or a running entry's busy label. */
+  label: string;
   face: Face;
   sections: readonly (readonly PageMenuEntry[])[];
   opener: React.RefObject<HTMLButtonElement | null>;
@@ -330,7 +361,7 @@ function ActionsSheet({
   const [open, setOpen] = React.useState(false);
   return (
     <Drawer direction="bottom" open={open} onOpenChange={setOpen}>
-      <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
+      <ActionTooltip label={label} face={face}>
         <DrawerTrigger asChild>{trigger}</DrawerTrigger>
       </ActionTooltip>
       <DrawerContent
@@ -431,10 +462,11 @@ function ActionButton({
   }
   if ("onSelect" in action) {
     return (
-      <ActionTooltip label={action.label} face={face}>
+      <ActionTooltip label={shownLabel(action)} face={face}>
         <button
           type="button"
-          aria-label={action.label}
+          aria-label={shownLabel(action)}
+          aria-busy={action.busy === true ? true : undefined}
           disabled={action.busy}
           data-testid={action.testId}
           onClick={(event) => action.onSelect(event.currentTarget)}
@@ -442,7 +474,7 @@ function ActionButton({
         >
           <ActionFace
             icon={action.icon}
-            label={action.label}
+            label={shownLabel(action)}
             face={face}
             chevron={false}
             busy={action.busy}
@@ -493,19 +525,24 @@ function ActionsMenu({
   // sanctioned use-is-mobile exception); the button's look stays in CSS.
   const isMobile = useIsMobile();
   const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const busyEntry = busyEntryOf(sections);
+  const label = busyEntry?.busyLabel ?? PAGE_ACTIONS_MENU_LABEL;
   const trigger = (
     <button
       ref={triggerRef}
       type="button"
-      aria-label={PAGE_ACTIONS_MENU_LABEL}
+      aria-label={label}
+      aria-busy={busyEntry ? true : undefined}
+      disabled={busyEntry !== undefined}
       data-testid="page-actions-menu"
       className={buttonClass(false, face)}
     >
       <ActionFace
         icon={MoreHorizontal}
-        label={PAGE_ACTIONS_MENU_LABEL}
+        label={label}
         face={face}
         chevron={false}
+        busy={busyEntry !== undefined}
       />
     </button>
   );
@@ -513,6 +550,7 @@ function ActionsMenu({
     return (
       <ActionsSheet
         trigger={trigger}
+        label={label}
         face={face}
         sections={sections}
         opener={triggerRef}
@@ -521,7 +559,7 @@ function ActionsMenu({
   }
   return (
     <DropdownMenu>
-      <ActionTooltip label={PAGE_ACTIONS_MENU_LABEL} face={face}>
+      <ActionTooltip label={label} face={face}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       </ActionTooltip>
       <DropdownMenuContent
@@ -577,9 +615,16 @@ export function PageActions({
       : null;
   const buttons = lone ? [...actions, lone.action] : actions;
   const moreHasItems = ownSections.length > 0 && !lone;
+  // While an action runs, its button reads its busy label, so the plan
+  // uses that face's width (design-bible §26.2). ⋯ reads the label of any
+  // running entry it could hold.
+  const moreBusyLabel = lone
+    ? undefined
+    : busyEntryOf([...ownSections, ...actions.map(foldedEntriesOf)])?.busyLabel;
   const contentKey = [
-    ...buttons.map((action) => `${action.key}:${action.label}`),
+    ...buttons.map((action) => `${action.key}:${shownLabel(action)}`),
     String(moreHasItems),
+    moreBusyLabel ?? "",
   ].join("|");
   const measured = useMeasuredWidths(containerRef, laneRef, contentKey);
   const width = (key: string): number => measured?.widths[key] ?? 0;
@@ -587,7 +632,11 @@ export function PageActions({
     action: PageAction
   ): { key: string; labeled: number; icon: number } => ({
     key: action.key,
-    labeled: width(`${action.key}:labeled`),
+    labeled: width(
+      shownLabel(action) === action.label
+        ? `${action.key}:labeled`
+        : `${action.key}:busy`
+    ),
     icon: width(`${action.key}:icon`),
   });
   // A row that is not laid out measures zero; CSS guesses until it is.
@@ -596,7 +645,10 @@ export function PageActions({
       ? planPageActions({
           available: measured.available,
           actions: actions.map(widthsOf),
-          more: { labeled: width("more:labeled"), icon: width("more:icon") },
+          more: {
+            labeled: width(moreBusyLabel ? "more:busy" : "more:labeled"),
+            icon: width("more:icon"),
+          },
           moreHasItems,
           loneEntry: lone ? widthsOf(lone.action) : undefined,
           foldSteps,
@@ -662,6 +714,23 @@ export function PageActions({
                 chevron={"entries" in action}
               />
             </span>
+            {shownLabel(action) === action.label ? null : (
+              <span
+                data-measure={`${action.key}:busy`}
+                className={cn(
+                  "absolute w-max",
+                  buttonClass(action.primary, "labeled")
+                )}
+              >
+                <ActionFace
+                  icon={action.icon}
+                  label={shownLabel(action)}
+                  face="labeled"
+                  chevron={false}
+                  busy
+                />
+              </span>
+            )}
             <span
               data-measure={`${action.key}:icon`}
               className={cn("absolute", buttonClass(action.primary, "icon"))}
@@ -686,6 +755,20 @@ export function PageActions({
             chevron={false}
           />
         </span>
+        {moreBusyLabel ? (
+          <span
+            data-measure="more:busy"
+            className={cn("absolute w-max", buttonClass(false, "labeled"))}
+          >
+            <ActionFace
+              icon={MoreHorizontal}
+              label={moreBusyLabel}
+              face="labeled"
+              chevron={false}
+              busy
+            />
+          </span>
+        ) : null}
         <span
           data-measure="more:icon"
           className={cn("absolute", buttonClass(false, "icon"))}

@@ -163,7 +163,7 @@ export interface ListSortModel {
   onChange: (field: string, dir: SortDirection) => void;
 }
 
-/** View options and the phone sheet's Display section (§5.6, §5.7, §7.5). */
+/** Display and the phone sheet's Display section (§5.6, §5.7, §7.5). */
 export interface ListDisplayModel {
   pageSize: number;
   pageSizes: readonly number[];

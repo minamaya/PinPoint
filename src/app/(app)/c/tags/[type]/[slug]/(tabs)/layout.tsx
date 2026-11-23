@@ -67,6 +67,7 @@ export default async function TagLayout({
         actions={
           <TagPageActions
             tagHref={tag.href}
+            tagName={tag.name}
             settingsSheetsHref={groupSettingsSheetsHref(tag.machines)}
             editing={
               editor && move && merge

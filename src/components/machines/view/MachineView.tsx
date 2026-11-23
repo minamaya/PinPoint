@@ -195,7 +195,7 @@ export function MachineView({
     },
   };
 
-  // View options holds page size only.
+  // Display holds page size, and Sort once the header folds it in (list-views §5.6).
   const display: ListDisplayModel = {
     pageSize: state.pageSize,
     pageSizes: LIST_PAGE_SIZES,
