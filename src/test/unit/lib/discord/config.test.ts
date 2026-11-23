@@ -6,12 +6,30 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // accessing it would throw. vi.hoisted() places the mock fn initializer
 // in the same hoist bucket as vi.mock(), guaranteeing rpcMock is
 // initialized before the factory closure uses it.
-const { rpcMock } = vi.hoisted(() => ({ rpcMock: vi.fn() }));
+const { rpcMock, maybeSingleMock, eqMock, selectMock, fromMock } = vi.hoisted(
+  () => {
+    const maybeSingleMock = vi.fn();
+    const eqMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
+    const selectMock = vi.fn(() => ({ eq: eqMock }));
+    const fromMock = vi.fn(() => ({ select: selectMock }));
+    return {
+      rpcMock: vi.fn(),
+      maybeSingleMock,
+      eqMock,
+      selectMock,
+      fromMock,
+    };
+  }
+);
 vi.mock("~/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: rpcMock }),
+  createAdminClient: () => ({ rpc: rpcMock, from: fromMock }),
 }));
 
-import { getDiscordBotToken, getDiscordConfig } from "~/lib/discord/config";
+import {
+  getDiscordBotToken,
+  getDiscordConfig,
+  isDiscordIntegrationConfigured,
+} from "~/lib/discord/config";
 
 describe("getDiscordConfig", () => {
   beforeEach(() => {
@@ -100,5 +118,55 @@ describe("getDiscordConfig", () => {
       error: null,
     });
     await expect(getDiscordBotToken()).resolves.toBe("region-alert-token");
+  });
+});
+
+describe("isDiscordIntegrationConfigured", () => {
+  beforeEach(() => {
+    maybeSingleMock.mockReset();
+    fromMock.mockClear();
+    selectMock.mockClear();
+    eqMock.mockClear();
+  });
+
+  it("returns false when query returns null data or an error", async () => {
+    maybeSingleMock.mockResolvedValueOnce({ data: null, error: null });
+    await expect(isDiscordIntegrationConfigured()).resolves.toBe(false);
+    expect(fromMock).toHaveBeenCalledWith("discord_integration_config");
+    expect(selectMock).toHaveBeenCalledWith("guild_id, bot_token_vault_id");
+    expect(eqMock).toHaveBeenCalledWith("id", "singleton");
+
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { guild_id: "123", bot_token_vault_id: "vault-1" },
+      error: { message: "rls failure" },
+    });
+    await expect(isDiscordIntegrationConfigured()).resolves.toBe(false);
+  });
+
+  it("returns false when guild_id or bot_token_vault_id is missing", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { guild_id: null, bot_token_vault_id: "vault-1" },
+      error: null,
+    });
+    await expect(isDiscordIntegrationConfigured()).resolves.toBe(false);
+
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { guild_id: "123", bot_token_vault_id: null },
+      error: null,
+    });
+    await expect(isDiscordIntegrationConfigured()).resolves.toBe(false);
+  });
+
+  it("returns true when both guild_id and bot_token_vault_id are set", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { guild_id: "123", bot_token_vault_id: "vault-1" },
+      error: null,
+    });
+    await expect(isDiscordIntegrationConfigured()).resolves.toBe(true);
+  });
+
+  it("fails closed (returns false) when the query throws", async () => {
+    maybeSingleMock.mockRejectedValueOnce(new Error("network timeout"));
+    await expect(isDiscordIntegrationConfigured()).resolves.toBe(false);
   });
 });
