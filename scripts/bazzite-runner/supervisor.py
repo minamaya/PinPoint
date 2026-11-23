@@ -480,8 +480,10 @@ def reap(force: bool = False) -> None:
         vm["proc"].wait()
         freed = delete_runner(vm["runner_id"])
         lived = time.time() - vm["started"]
-        killed = force or expired or orphaned  # stopped by us, not a crash
-        if not freed and not killed:
+        # A timeout kill with its job still assigned leaves the job stuck like a
+        # crash does, so it is recovered too. An orphan kill needs an idle runner,
+        # and a forced kill is shutdown_now's, which cancels the runs itself.
+        if not freed and not (force or orphaned):
             # GitHub still has a job on this runner, which no VM is running now.
             dead[vm["name"]] = {
                 "run_id": vm["run_id"],

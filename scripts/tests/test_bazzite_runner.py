@@ -291,11 +291,36 @@ def test_run_stuck_on_a_dead_vm_is_cancelled(monkeypatch, event, branch, reran):
     assert (rerun in calls) is reran
 
 
-def test_vm_the_supervisor_killed_is_not_treated_as_dead(monkeypatch, tmp_path):
-    # A timeout kill with GitHub still holding the job must not cancel the run.
+class _RunningVM:
+    def __init__(self):
+        self.code = None
+
+    def poll(self):
+        return self.code
+
+    def kill(self):
+        self.code = -9
+
+    def wait(self):
+        return self.code
+
+
+def test_vm_killed_at_its_timeout_with_the_job_still_assigned_is_recovered(
+    monkeypatch, tmp_path
+):
     _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    supervisor.vms[7]["proc"] = _RunningVM()
     supervisor.vms[7]["started"] -= supervisor.JOB_TIMEOUT_S
-    supervisor.vms[7]["proc"].kill = lambda: None
+    monkeypatch.setattr(supervisor, "idle_and_unneeded", lambda _vm: False)
+    supervisor.reap()
+    assert "bazzite-100-7-a" in supervisor.dead
+
+
+def test_vm_killed_as_an_orphan_is_not_treated_as_dead(monkeypatch, tmp_path):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    supervisor.vms[7]["proc"] = _RunningVM()
+    supervisor.vms[7]["started"] -= 120
+    monkeypatch.setattr(supervisor, "idle_and_unneeded", lambda _vm: True)
     supervisor.reap()
     assert supervisor.dead == {}
 
