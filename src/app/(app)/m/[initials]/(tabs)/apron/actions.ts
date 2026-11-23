@@ -10,6 +10,8 @@ import { err, ok, type Result } from "~/lib/result";
 import { serverActionError } from "~/lib/observability/report-error";
 import { isPgErrorCode } from "~/lib/db/postgres-errors";
 import { cardTextDoc } from "~/lib/machines/apron-card-text";
+import { validateProseMirrorDoc } from "~/lib/tiptap/validate";
+import type { ProseMirrorDoc } from "~/lib/tiptap/types";
 import type { SavedApronCard } from "~/lib/machines/apron-card";
 import { getMachineApronCards } from "~/app/(app)/m/[initials]/_data";
 import {
@@ -19,7 +21,7 @@ import {
 } from "~/app/(app)/m/[initials]/(tabs)/apron/schemas";
 
 type SaveApronCardsResult = Result<
-  { cards: SavedApronCard[] },
+  { cards: SavedApronCard[]; machineDescription: ProseMirrorDoc | null },
   "VALIDATION" | "UNAUTHORIZED" | "NOT_FOUND" | "CONFLICT" | "SERVER"
 >;
 
@@ -29,7 +31,9 @@ const CONFLICT_MESSAGE =
 /**
  * Saves the Apron card tab (spec apron-cards §11.6): adds, updates, renames,
  * and deletes the machine's saved cards in one transaction, so a save applies
- * every change or none. Returns the cards as stored, in order.
+ * every change or none. When the card text's main description was edited on
+ * the tab (§3.2), it is written to the machine in the same transaction.
+ * Returns the cards as stored, in order, and the machine's main description.
  */
 export async function saveApronCardsAction(
   input: SaveApronCardsInput
@@ -38,7 +42,23 @@ export async function saveApronCardsAction(
   if (!parsed.success) {
     return err("VALIDATION", parsed.error.issues[0]?.message ?? "Invalid card");
   }
-  const { machineId, cards, deletedIds } = parsed.data;
+  const { machineId, cards, deletedIds, machineDescription } = parsed.data;
+
+  // Same validator and caps as the Manage tab's description (10k plain text /
+  // 100k JSON); a whitespace-only description clears the column.
+  let descriptionWrite: ProseMirrorDoc | null | undefined;
+  if (machineDescription !== undefined && machineDescription !== null) {
+    const checked = validateProseMirrorDoc(machineDescription);
+    if (checked.status === "invalid") {
+      return err("VALIDATION", "Invalid machine description.");
+    }
+    if (checked.status === "too-long") {
+      return err("VALIDATION", "Machine description is too long.");
+    }
+    descriptionWrite = checked.status === "ok" ? checked.doc : null;
+  } else {
+    descriptionWrite = machineDescription;
+  }
 
   const supabase = await createClient();
   const {
@@ -54,7 +74,7 @@ export async function saveApronCardsAction(
       }),
       db.query.machines.findFirst({
         where: eq(machines.id, machineId),
-        columns: { id: true, initials: true, ownerId: true },
+        columns: { id: true, initials: true, ownerId: true, description: true },
       }),
     ]);
     if (!machine) return err("NOT_FOUND", "Machine not found.");
@@ -155,6 +175,13 @@ export async function saveApronCardsAction(
           });
         }
       }
+      // Written only once the cards are, so a refused save leaves it too.
+      if (descriptionWrite !== undefined) {
+        await tx
+          .update(machines)
+          .set({ description: descriptionWrite })
+          .where(eq(machines.id, machine.id));
+      }
       return "saved";
     });
     if (outcome === "conflict") return err("CONFLICT", CONFLICT_MESSAGE);
@@ -167,7 +194,15 @@ export async function saveApronCardsAction(
 
     revalidatePath(`/m/${machine.initials}/apron`);
     revalidatePath(`/m/${machine.initials}/apron/print`);
-    return ok({ cards: await getMachineApronCards(machine.id) });
+    // The main description also shows on the machine's other tabs.
+    if (descriptionWrite !== undefined) {
+      revalidatePath(`/m/${machine.initials}`, "layout");
+    }
+    return ok({
+      cards: await getMachineApronCards(machine.id),
+      machineDescription:
+        descriptionWrite === undefined ? machine.description : descriptionWrite,
+    });
   } catch (error) {
     // Another editor added a card with one of these names since this page
     // loaded (§11.2).

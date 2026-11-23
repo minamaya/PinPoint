@@ -4,14 +4,15 @@
  * Worker-scoped PGlite (CORE-TEST-001). Covers the permission split for
  * changing cards (apron-cards spec §3.6, §11.7: owner, technician, or admin —
  * the `machines.edit` capability), payload rejection (§4.3 size, §11.2 unique
- * names), and that one save adds, updates, renames, and deletes cards together
- * (§11.6), template included (§5.5).
+ * names), that one save adds, updates, renames, and deletes cards together
+ * (§11.6), template included (§5.5), and that it writes the machine's main
+ * description when the tab edited it (§3.2).
  */
 
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
-import { machineApronCards } from "~/server/db/schema";
+import { machineApronCards, machines } from "~/server/db/schema";
 import { docToPlainText, plainTextToDoc } from "~/lib/tiptap/types";
 import { saveApronCardsAction } from "~/app/(app)/m/[initials]/(tabs)/apron/actions";
 import type { SavedApronCardInput } from "~/app/(app)/m/[initials]/(tabs)/apron/schemas";
@@ -209,6 +210,81 @@ describe("saveApronCardsAction (PP-o23o)", () => {
       "paragraph",
     ]);
     expect(stored?.tip).toBeNull();
+  });
+
+  async function mainDescription(machineId: string) {
+    const db = await getTestDb();
+    const row = await db.query.machines.findFirst({
+      where: eq(machines.id, machineId),
+      columns: { description: true },
+    });
+    return row?.description ?? null;
+  }
+
+  it("writes the machine's main description with the cards (§3.2)", async () => {
+    const owner = await makeUser("member");
+    const machineId = await makeMachine(owner);
+    signInAs(owner);
+
+    const result = await saveApronCardsAction({
+      machineId,
+      cards: [card("Card 1", { useCustomDescription: false })],
+      deletedIds: [],
+      machineDescription: plainTextToDoc("Two-player 1979 Bally."),
+    });
+    expect(result.ok).toBe(true);
+    expect(docToPlainText(await mainDescription(machineId))).toBe(
+      "Two-player 1979 Bally."
+    );
+    if (!result.ok) return;
+    expect(docToPlainText(result.value.machineDescription)).toBe(
+      "Two-player 1979 Bally."
+    );
+
+    // Absent leaves it alone; a whitespace-only doc clears it.
+    await save(machineId, [card("Card 1", { id: result.value.cards[0]?.id })]);
+    expect(docToPlainText(await mainDescription(machineId))).toBe(
+      "Two-player 1979 Bally."
+    );
+    await saveApronCardsAction({
+      machineId,
+      cards: [],
+      deletedIds: [],
+      machineDescription: plainTextToDoc("   "),
+    });
+    expect(await mainDescription(machineId)).toBeNull();
+  });
+
+  it("leaves the main description alone when the cards are refused", async () => {
+    const owner = await makeUser("member");
+    const machineId = await makeMachine(owner);
+    signInAs(owner);
+    await seedCards(machineId, ["Tournament"]);
+
+    const result = await saveApronCardsAction({
+      machineId,
+      cards: [card("Tournament")],
+      deletedIds: [],
+      machineDescription: plainTextToDoc("Should not land."),
+    });
+    expect(result).toMatchObject({ ok: false, code: "CONFLICT" });
+    expect(await mainDescription(machineId)).toBeNull();
+  });
+
+  it("refuses a main description edit from a member who does not own the machine", async () => {
+    const owner = await makeUser("member");
+    const other = await makeUser("member");
+    const machineId = await makeMachine(owner);
+    signInAs(other);
+
+    const result = await saveApronCardsAction({
+      machineId,
+      cards: [],
+      deletedIds: [],
+      machineDescription: plainTextToDoc("Vandalism."),
+    });
+    expect(result).toMatchObject({ ok: false, code: "UNAUTHORIZED" });
+    expect(await mainDescription(machineId)).toBeNull();
   });
 
   it("refuses to update a card deleted elsewhere since the page loaded", async () => {
