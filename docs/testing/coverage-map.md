@@ -56,17 +56,17 @@ a blank Full-E2E cell is often correct by design) is in the
 
 ## Issues
 
-| Feature surface                         | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                  |
-| --------------------------------------- | :--: | :---------: | :---: | :------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Report / quick report                   |  ✓   |      ✓      |   ✓   |    ✓     | `report/unified-report-form.test.tsx`, `quick-report-action.test.ts`, `e2e/smoke/quick-report.spec.ts`, `e2e/full/report-modes.spec.ts`                               |
-| Issue detail / comments                 |  ✓   |      ✓      |   ✓   |    ✓     | `components/issues/StickyCommentComposer.test.tsx`, `issue-comment-actions.test.ts`, `e2e/smoke/issues-crud.spec.ts`, `e2e/full/issue-detail-sticky-composer.spec.ts` |
-| Issue list / filters / pagination       |  ✓   |      ✓      |   ✓   |    ✓     | `components/issues/IssueListPagination.test.tsx`, `issue-list-summary.test.ts`, `e2e/smoke/issue-list.spec.ts`, `e2e/full/issue-list-extended.spec.ts`                |
-| Metadata (status / severity / assignee) |  ✓   |      ✓      |       |    ✓     | `components/issues/IssueMetadata.test.tsx`, `issue-services.test.ts`, `e2e/full/status-overhaul.spec.ts`                                                              |
-| Watch / subscribe                       |  ✓   |      ✓      |       |          | `test/unit/components/issues/WatchButton.test.tsx`, `notifications.test.ts`                                                                                           |
-| Export (CSV)                            |  ✓   |             |       |          | `(app)/issues/export-action.test.ts`, `lib/export/csv.test.ts`, `components/issues/view/IssueView.test.tsx`                                                           |
-| Summary widgets                         |  ✓   |      ✓      |       |          | `components/issues/IssueSummaryWidgets.test.tsx`, `issue-list-summary.test.ts`                                                                                        |
-| Issue / comment images                  |  ✓   |      ✓      |   ✓   |          | `server/actions/images.test.ts`, `report-image-dedup.test.ts`, `e2e/smoke/image-upload.spec.ts`                                                                       |
-| Reassign issue to another machine       |      |      ✓      |       |    ✓     | `issue-services.test.ts`, `e2e/full/issues-reassign-machine.spec.ts`                                                                                                  |
+| Feature surface                         | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                                                                                                               |
+| --------------------------------------- | :--: | :---------: | :---: | :------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Report / quick report                   |  ✓   |      ✓      |   ✓   |    ✓     | `report/unified-report-form.test.tsx`, `quick-report-action.test.ts`, `e2e/smoke/quick-report.spec.ts`, `e2e/full/report-modes.spec.ts`                                                                            |
+| Issue detail / comments                 |  ✓   |      ✓      |   ✓   |    ✓     | `components/issues/FloatingCommentButton.test.tsx`, `components/issues/AddCommentForm.test.tsx`, `issue-comment-actions.test.ts`, `e2e/smoke/issues-crud.spec.ts`, `e2e/full/issue-detail-mobile-composer.spec.ts` |
+| Issue list / filters / pagination       |  ✓   |      ✓      |   ✓   |    ✓     | `components/issues/IssueListPagination.test.tsx`, `issue-list-summary.test.ts`, `e2e/smoke/issue-list.spec.ts`, `e2e/full/issue-list-extended.spec.ts`                                                             |
+| Metadata (status / severity / assignee) |  ✓   |      ✓      |       |    ✓     | `m/[initials]/i/[issueNumber]/issue-field-rows.test.tsx`, `components/issues/AssigneePicker.test.tsx`, `issue-services.test.ts`, `e2e/full/status-overhaul.spec.ts`                                                |
+| Watch / subscribe                       |  ✓   |      ✓      |       |          | `test/unit/components/issues/WatchButton.test.tsx`, `notifications.test.ts`                                                                                                                                        |
+| Export (CSV)                            |  ✓   |             |       |          | `(app)/issues/export-action.test.ts`, `lib/export/csv.test.ts`, `components/issues/view/IssueView.test.tsx`                                                                                                        |
+| Summary widgets                         |  ✓   |      ✓      |       |          | `components/issues/IssueSummaryWidgets.test.tsx`, `issue-list-summary.test.ts`                                                                                                                                     |
+| Issue / comment images                  |  ✓   |      ✓      |   ✓   |          | `server/actions/images.test.ts`, `report-image-dedup.test.ts`, `e2e/smoke/image-upload.spec.ts`                                                                                                                    |
+| Reassign issue to another machine       |      |      ✓      |       |    ✓     | `issue-services.test.ts`, `e2e/full/issues-reassign-machine.spec.ts`                                                                                                                                               |
 
 ## Machines
 
@@ -189,13 +189,13 @@ a blank Full-E2E cell is often correct by design) is in the
 
 ## Shared UI primitives & utilities
 
-| Feature surface                           | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                  |
-| ----------------------------------------- | :--: | :---------: | :---: | :------: | ----------------------------------------------------------------------------------------------------- |
-| UI primitives (button, input, selects…)   |  ✓   |             |       |          | `components/ui/button.test.tsx`, `components/ui/multi-select.test.tsx`                                |
-| Form scaffolding (save / cancel / revert) |  ✓   |             |       |          | `components/save-cancel-buttons.test.tsx`, `test/unit/components/InlineEditableFieldPresets.test.tsx` |
-| Rich text / TipTap / markdown             |  ✓   |             |       |    ✓     | `lib/tiptap/render.test.ts`, `lib/markdown.test.ts`, `e2e/full/rich-text.spec.ts`                     |
-| Pure utilities (dates, url, result…)      |  ✓   |             |       |          | `lib/dates.test.ts`, `lib/url.test.ts`, `lib/result.test.ts`, `lib/sanitize-html-config.test.ts`      |
-| Rate limiting / DB errors                 |  ✓   |      ✓      |       |          | `lib/rate-limit.test.ts`, `lib/db/postgres-errors.test.ts`, `transaction-tripwire.test.ts`            |
+| Feature surface                           | Unit | Integration | Smoke | Full E2E | Representative tests                                                                                                           |
+| ----------------------------------------- | :--: | :---------: | :---: | :------: | ------------------------------------------------------------------------------------------------------------------------------ |
+| UI primitives (button, input, selects…)   |  ✓   |             |       |          | `components/ui/button.test.tsx`, `components/ui/multi-select.test.tsx`                                                         |
+| Form scaffolding (save / cancel / revert) |  ✓   |             |       |          | `components/save-cancel-buttons.test.tsx`, `test/unit/components/InlineEditableFieldPresets.test.tsx`                          |
+| Rich text / TipTap / markdown             |  ✓   |      ✓      |       |    ✓     | `lib/tiptap/render.test.ts`, `components/editor/EditorToolbar.test.tsx`, `mention-names.test.ts`, `e2e/full/rich-text.spec.ts` |
+| Pure utilities (dates, url, result…)      |  ✓   |             |       |          | `lib/dates.test.ts`, `lib/url.test.ts`, `lib/result.test.ts`, `lib/sanitize-html-config.test.ts`                               |
+| Rate limiting / DB errors                 |  ✓   |      ✓      |       |          | `lib/rate-limit.test.ts`, `lib/db/postgres-errors.test.ts`, `transaction-tripwire.test.ts`                                     |
 
 ## Observability, config & tooling
 

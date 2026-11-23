@@ -1,54 +1,67 @@
 import { test, expect } from "../support/fixtures.js";
 import {
+  machineSelectValue,
   showIssueSection,
   updateIssueField,
   visibleIssueFieldControl,
-  selectMachine,
 } from "../support/actions.js";
 import { cleanupTestEntities } from "../support/cleanup.js";
 import { seededMachines, TEST_USERS } from "../support/constants.js";
-import { fillReportForm } from "../support/page-helpers.js";
+import {
+  fillReportForm,
+  submitFormAndWaitForRedirect,
+} from "../support/page-helpers.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 
 test.describe("Status Overhaul E2E", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
+  let createdTitle: string | null = null;
+
   test.beforeEach(() => {
+    createdTitle = null;
     test.setTimeout(60000);
   });
 
   test.afterEach(async () => {
+    if (!createdTitle) {
+      return;
+    }
     await cleanupTestEntities({
-      issueTitlePrefix: "E2E Status Overhaul Test",
+      issueTitlePrefix: createdTitle,
     });
+    createdTitle = null;
   });
 
-  test("should create issue and verify all 4 badges", async ({ page }) => {
+  test("creates issue with metadata, updates status and assignee, and records activity", async ({
+    page,
+  }, testInfo) => {
     const machine = seededMachines.addamsFamily;
+    createdTitle = `E2E Status Overhaul ${testInfo.project.name}-${testInfo.workerIndex}-${Date.now()}`;
 
-    // 1. Create Issue
+    // 1. Create Issue with pre-selected machine
     await page.goto(`/report/detailed?machine=${machine.initials}`);
-
-    // Verify the page rendered with authenticated state before filling the form.
-    // The priority select is only visible for members/admins, so its presence
-    // confirms the server component saw the auth cookie correctly.
     await expect(page.getByTestId("issue-priority-select")).toBeVisible();
+    await expect(machineSelectValue(page)).toHaveValue(machine.id);
 
-    await selectMachine(page, machine.id);
     await fillReportForm(page, {
-      title: "E2E Status Overhaul Test",
+      title: createdTitle,
       severity: "unplayable",
       priority: "high",
       frequency: "frequent",
     });
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
+    await submitFormAndWaitForRedirect(
+      page,
+      page.getByRole("button", { name: "Submit Issue Report" }),
+      {
+        awayFrom: "/report/detailed",
+        expectedIssueTitle: createdTitle,
+      }
+    );
 
-    // 2. Verify redirect and badges
-    // Use a generous timeout: Server Action redirects can be slow on Mobile Chrome
-    // in CI due to cookie propagation timing.
-    await expect(page).toHaveURL(/\/m\/TAF\/i\/[0-9]+/, { timeout: 30000 });
+    await expect(page).toHaveURL(/\/m\/TAF\/i\/[0-9]+$/);
 
-    // The field rows live in Details (its own tab on phones).
+    // 2. Verify initial Details fields
     await showIssueSection(page, "Details");
     await expect(visibleIssueFieldControl(page, "status")).toContainText(
       /New/i
@@ -62,29 +75,57 @@ test.describe("Status Overhaul E2E", () => {
     await expect(visibleIssueFieldControl(page, "frequency")).toContainText(
       /Frequent/i
     );
+    const assigneePicker = page.getByTestId("assignee-picker-trigger");
+    await expect(assigneePicker).toContainText("Unassigned");
 
-    // 3. Update Status
+    // 3. Update Status and self-assign via "Me"
     await updateIssueField(page, "status", "in_progress");
-
-    // 4. Verify the status row shows the new value
     await expect(visibleIssueFieldControl(page, "status")).toContainText(
       /In Progress/i
     );
 
-    // 5. Activity (on the Issue tab on phones) records the change as one
-    // system line, attributed to the member who made it.
-    await showIssueSection(page, "Issue");
-    const statusEvent = page
-      .getByTestId("issue-timeline")
-      .getByTestId(/^timeline-item-/)
-      .filter({
-        has: page
-          .getByTestId("system-event-text")
-          .filter({ hasText: "changed status New → In Progress" }),
-      });
-    await expect(statusEvent).toBeVisible();
-    await expect(statusEvent.getByTestId("system-event-actor")).toHaveText(
+    const meOption = page.getByTestId("assignee-option-me");
+    await expect(async () => {
+      if (!(await meOption.isVisible())) {
+        await assigneePicker.click();
+      }
+      await expect(meOption).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 30000 });
+    await meOption.click();
+    await expect(assigneePicker).toContainText(TEST_USERS.member.name);
+
+    // 4. Reload and verify persistence in Details and header summary line
+    await page.reload();
+    await expect(page.getByTestId("issue-summary-line")).toContainText(
       TEST_USERS.member.name
     );
+    await expect(page.getByTestId("issue-summary-line")).toContainText(
+      "In Progress"
+    );
+    await showIssueSection(page, "Details");
+    await expect(visibleIssueFieldControl(page, "status")).toContainText(
+      /In Progress/i
+    );
+    await expect(page.getByTestId("assignee-picker-trigger")).toContainText(
+      TEST_USERS.member.name
+    );
+
+    // 5. Activity records both changes attributed to the member
+    await showIssueSection(page, "Issue");
+    const timeline = page.getByTestId("issue-timeline");
+    for (const eventText of [
+      "changed status New → In Progress",
+      `assigned ${TEST_USERS.member.name}`,
+    ]) {
+      const eventItem = timeline.getByTestId(/^timeline-item-/).filter({
+        has: page.getByTestId("system-event-text").filter({
+          hasText: eventText,
+        }),
+      });
+      await expect(eventItem).toBeVisible();
+      await expect(eventItem.getByTestId("system-event-actor")).toHaveText(
+        TEST_USERS.member.name
+      );
+    }
   });
 });

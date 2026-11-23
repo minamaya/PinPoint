@@ -1,18 +1,22 @@
 /**
- * E2E Tests for Issues CRUD Flows
+ * Smoke: Authenticated issue creation → issue detail render (Class F + D).
  *
- * Tests complete user workflows for creating and managing issues.
- * Requires Supabase to be running.
+ * Unauthenticated detail render + comment gating:
+ *   e2e/smoke/issue-detail-permissions.spec.ts
+ * Field updates + Activity system events (status, assignee):
+ *   e2e/full/status-overhaul.spec.ts
+ * Action permissions, field row states, and service logic:
+ *   src/test/integration/issue-detail-permissions.test.ts
+ *   src/app/(app)/m/[initials]/i/[issueNumber]/issue-field-rows.test.tsx
  */
 
-import { test, expect, type Page } from "../support/fixtures.js";
+import { test, expect } from "../support/fixtures.js";
 import {
   assertNoHorizontalOverflow,
   assertNoA11yViolations,
-  openListSearch,
   showIssueSection,
 } from "../support/actions.js";
-import { cleanupTestEntities, extractIdFromUrl } from "../support/cleanup.js";
+import { cleanupTestEntities } from "../support/cleanup.js";
 import { seededMachines } from "../support/constants.js";
 import {
   fillReportForm,
@@ -20,18 +24,13 @@ import {
 } from "../support/page-helpers.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 
-const createdIssueIds = new Set<string>();
-
-const rememberIssueId = (page: Page): void => {
-  const issueId = extractIdFromUrl(page.url());
-  if (issueId) {
-    createdIssueIds.add(issueId);
-  }
-};
-
 test.describe("Issues System", () => {
   test.use({ storageState: STORAGE_STATE.member });
+
+  let createdTitle: string | null = null;
+
   test.beforeEach(({}, testInfo) => {
+    createdTitle = null;
     // Mobile Safari can take longer to settle Server Action redirects.
     test.setTimeout(
       testInfo.project.name.includes("Mobile Safari") ? 120000 : 60000
@@ -39,299 +38,86 @@ test.describe("Issues System", () => {
   });
 
   test.afterEach(async () => {
-    if (!createdIssueIds.size) {
+    if (!createdTitle) {
       return;
     }
-    await cleanupTestEntities({
-      issueIds: Array.from(createdIssueIds),
-    });
-    createdIssueIds.clear();
+    await cleanupTestEntities({ issueTitlePrefix: createdTitle });
+    createdTitle = null;
   });
 
-  test.describe("Issue Creation Flow", () => {
-    test("should create an issue for a specific machine", async ({ page }) => {
-      const machineInitials = seededMachines.addamsFamily.initials;
+  test("creates an issue and renders the detail page", async ({
+    page,
+  }, testInfo) => {
+    const machineInitials = seededMachines.addamsFamily.initials;
+    const isMobile = testInfo.project.name.includes("Mobile");
+    createdTitle = `E2E Issues CRUD ${testInfo.project.name}-${testInfo.workerIndex}-${Date.now()}`;
 
-      // Navigate to report page for The Addams Family
-      await page.goto(`/report/detailed?machine=${machineInitials}`);
+    await page.goto(`/report/detailed?machine=${machineInitials}`);
+    await assertNoA11yViolations(page);
 
-      await assertNoA11yViolations(page);
-
-      // Fill out form
-      await fillReportForm(page, {
-        title: "Test flipper not working",
-        description:
-          "The right flipper does not respond when button is pressed",
-        priority: "medium",
-      });
-
-      // Submit form
-      await submitFormAndWaitForRedirect(
-        page,
-        page.getByRole("button", { name: "Submit Issue Report" }),
-        {
-          awayFrom: "/report/detailed",
-          expectedIssueTitle: "Test flipper not working",
-        }
-      );
-
-      // Should redirect to issue detail page in new format
-      await expect(page).toHaveURL(/\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+/);
-
-      // Check H1 contains title using robust locator
-      await expect(
-        page
-          .getByRole("main")
-          .getByRole("heading", { level: 1, name: /Test flipper not working/ })
-      ).toBeVisible();
-
-      rememberIssueId(page);
+    await fillReportForm(page, {
+      title: createdTitle,
+      description: "The right flipper does not respond when button is pressed",
+      priority: "medium",
     });
 
-    test("should create an issue from machine page with pre-filled machine", async ({
+    await submitFormAndWaitForRedirect(
       page,
-    }) => {
-      // Navigate to machines list page with filters reset
-      await page.goto("/m?presence=all");
-      await expect(
-        page.getByRole("heading", { name: "Machines" })
-      ).toBeVisible();
-      // Wait for hydration so the search input's React onChange handler is
-      // bound — without it, fill() triggers a default browser input event but
-      // React's debounced URL update never runs (Mobile Safari/WebKit).
-      // Best-effort with timeout to handle Chromium HMR keeping the network
-      // busy indefinitely in dev.
-      await page
-        .waitForLoadState("networkidle", { timeout: 5000 })
-        .catch(() => undefined);
-
-      const machineSearchInput = await openListSearch(page, "Search machines");
-      await machineSearchInput.fill(seededMachines.addamsFamily.initials);
-      await expect(machineSearchInput).toHaveValue(
-        seededMachines.addamsFamily.initials
-      );
-
-      // Wait for the search to update the URL before clicking results — the
-      // fill() triggers a debounced search + re-render, and clicking during the
-      // re-render can miss the navigation.
-      await expect
-        .poll(() => new URL(page.url()).searchParams.get("q"), {
-          timeout: 10000,
-        })
-        .toBe(seededMachines.addamsFamily.initials);
-
-      // The row's title link is named by the machine's title alone.
-      const addamsFamilyLink = page.getByRole("link", {
-        name: "The Addams Family",
-        exact: true,
-      });
-      await expect(addamsFamilyLink).toBeVisible();
-      await addamsFamilyLink.click();
-      await expect(page).toHaveURL(/\/m\/TAF/); // Expect TAF machine detail page
-
-      // The machine-detail "Report Issue" button was removed in the tabbed
-      // layout redesign. Navigate to the report form directly with the
-      // machine pre-filled (URL contract this spec already asserted on).
-      await page.goto(
-        `/report/detailed?machine=${seededMachines.addamsFamily.initials}`
-      );
-      await page.waitForURL(/\/report\/detailed\?machine=TAF/);
-
-      // Fill out remaining fields
-      await fillReportForm(page, { title: "Display flickering" });
-
-      // Submit
-      await submitFormAndWaitForRedirect(
-        page,
-        page.getByRole("button", { name: "Submit Issue Report" }),
-        {
-          awayFrom: "/report/detailed",
-          expectedIssueTitle: "Display flickering",
-        }
-      );
-
-      // Verify creation
-      await expect(page).toHaveURL(/\/m\/TAF\/i\/[0-9]+/);
-      // Check H1 contains title
-      await expect(
-        page
-          .getByRole("main")
-          .getByRole("heading", { level: 1, name: /Display flickering/ })
-      ).toBeVisible();
-
-      rememberIssueId(page);
-    });
-  });
-
-  test.describe("Issue Detail and Updates", () => {
-    let issueUrl: string;
-    let issueTitle: string;
-    let machineInitials: string;
-    let issueNumber: number;
-
-    test.beforeEach(async ({ page }) => {
-      // Create an issue first to navigate to via UI interaction
-      machineInitials = seededMachines.addamsFamily.initials;
-      issueTitle = `Details ${Date.now()}`;
-      await page.goto(`/report/detailed?machine=${machineInitials}`);
-      await fillReportForm(page, { title: issueTitle, priority: "medium" });
-      await submitFormAndWaitForRedirect(
-        page,
-        page.getByRole("button", { name: "Submit Issue Report" }),
-        {
-          awayFrom: "/report/detailed",
-          expectedIssueTitle: issueTitle,
-        }
-      );
-
-      await expect(page).toHaveURL(/\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+/);
-      issueUrl = page.url();
-      issueNumber = Number(issueUrl.split("/").pop()); // Extract issue number from URL
-      rememberIssueId(page);
-    });
-
-    test("should display issue details", async ({ page }, testInfo) => {
-      // Navigate to the created issue's detail page
-      await page.goto(issueUrl);
-      const isMobile = testInfo.project.name.includes("Mobile");
-
-      // Should be on detail page
-      // Check H1 contains title
-      await expect(
-        page
-          .getByRole("main")
-          .getByRole("heading", { level: 1, name: issueTitle })
-      ).toBeVisible();
-
-      await assertNoA11yViolations(page);
-
-      // Check ID is displayed (in layout above title, not in H1)
-      const idText = `${machineInitials}-${String(issueNumber).padStart(2, "0")}`;
-      await expect(
-        page
-          .getByRole("main")
-          .getByText(idText)
-          .filter({ visible: true })
-          .first()
-      ).toBeVisible();
-
-      // Should show metadata
-      await expect(
-        page.getByTestId("machine-link").filter({ visible: true }).first()
-      ).toBeVisible();
-
-      await expect(page.getByTestId("issue-timeline")).toBeVisible();
-      await expect(
-        page.getByRole("heading", { level: 2, name: "Activity" })
-      ).toBeVisible();
-      // Authenticated mobile composes through the floating "Comment" button;
-      // desktop shows the inline composer at the end of Activity. Either is
-      // the canonical comment composer for its viewport.
-      const floatingComment = page.getByRole("button", {
-        name: "Comment",
-        exact: true,
-      });
-      if (isMobile) {
-        await expect(floatingComment).toBeVisible();
-      } else {
-        await expect(page.getByTestId("issue-comment-form")).toBeVisible();
-        await expect(floatingComment).toBeHidden();
+      page.getByRole("button", { name: "Submit Issue Report" }),
+      {
+        awayFrom: "/report/detailed",
+        expectedIssueTitle: createdTitle,
       }
+    );
 
-      // Details: mobile hides it behind the Details tab; desktop shows it in
-      // the right column alongside the Issue content.
-      const fieldRows = page.getByTestId("issue-field-rows");
-      if (isMobile) {
-        await expect(fieldRows).toBeHidden();
-        await showIssueSection(page, "Details");
-      }
-      await expect(fieldRows).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: /^Status: / })
-      ).toBeVisible();
-      await expect(page.getByTestId("issue-context-rows")).toBeVisible();
+    const urlMatch = /\/m\/TAF\/i\/([0-9]+)$/.exec(page.url());
+    expect(urlMatch).not.toBeNull();
+    const issueNumber = Number(urlMatch?.[1]);
 
-      // Verify no horizontal overflow on issue detail page
-      await assertNoHorizontalOverflow(page);
+    await expect(
+      page
+        .getByRole("main")
+        .getByRole("heading", { level: 1, name: createdTitle })
+    ).toBeVisible();
+    await assertNoA11yViolations(page);
+
+    const idText = `${machineInitials}-${String(issueNumber).padStart(2, "0")}`;
+    await expect(
+      page.getByRole("main").getByText(idText).filter({ visible: true }).first()
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("machine-link").filter({ visible: true }).first()
+    ).toBeVisible();
+    await expect(page.getByTestId("issue-timeline")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Activity" })
+    ).toBeVisible();
+
+    const floatingComment = page.getByRole("button", {
+      name: "Comment",
+      exact: true,
     });
+    const inlineCommentForm = page.getByTestId("issue-comment-form");
+    if (isMobile) {
+      await expect(floatingComment).toBeVisible();
+      await expect(inlineCommentForm).toBeHidden();
+    } else {
+      await expect(inlineCommentForm).toBeVisible();
+      await expect(floatingComment).toBeHidden();
+    }
 
-    // Update tests moved to integration/full suite
-  });
-
-  test.describe("Issue Detail Display", () => {
-    let issueUrl: string;
-    let issueTitle: string;
-
-    test.beforeEach(async ({ page }) => {
-      // Create a fresh issue for this worker to avoid parallel test conflicts
-      const machineInitials = seededMachines.humptyDumpty.initials;
-      issueTitle = `Assignee ${Date.now()}`;
-      await page.goto(`/report/detailed?machine=${machineInitials}`);
-      await fillReportForm(page, { title: issueTitle, priority: "medium" });
-      await submitFormAndWaitForRedirect(
-        page,
-        page.getByRole("button", { name: "Submit Issue Report" }),
-        {
-          awayFrom: "/report/detailed",
-          expectedIssueTitle: issueTitle,
-        }
-      );
-
-      await expect(page).toHaveURL(/\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+/);
-      issueUrl = page.url();
-      rememberIssueId(page);
-    });
-
-    test("should display assignee on issue detail page", async ({ page }) => {
-      // Navigate to the freshly created issue
-      await page.goto(issueUrl);
-
-      // Verify we're on the issue detail page
-      await expect(
-        page.getByRole("heading", {
-          level: 1,
-          name: new RegExp(issueTitle),
-        })
-      ).toBeVisible();
-
-      // The Assignee row lives in Details (its own tab on mobile).
+    const fieldRows = page.getByTestId("issue-field-rows");
+    if (isMobile) {
+      await expect(fieldRows).toBeHidden();
       await showIssueSection(page, "Details");
+    }
+    await expect(fieldRows).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Status: / })).toBeVisible();
+    await expect(page.getByTestId("assignee-picker-trigger")).toContainText(
+      "Unassigned"
+    );
+    await expect(page.getByTestId("issue-context-rows")).toBeVisible();
 
-      // Find the assignee picker - initially shows "Unassigned"
-      const assigneePicker = page.getByTestId("assignee-picker-trigger");
-      await expect(assigneePicker).toBeVisible();
-      await expect(assigneePicker).toContainText("Unassigned");
-
-      // Self-assign via the "Me" quick-select (current user is excluded from
-      // the alphabetical list and only appears as "Me" at the top of the picker)
-      const meOption = page.getByTestId("assignee-option-me");
-      await expect(async () => {
-        if (!(await meOption.isVisible())) {
-          await assigneePicker.click();
-        }
-        await expect(meOption).toBeVisible({ timeout: 3000 });
-      }).toPass({ timeout: 30000 });
-      await meOption.click();
-
-      // Verify the assignee name is now displayed
-      await expect(assigneePicker).toContainText("Member User");
-
-      // Reload page to verify persistence
-      await page.reload();
-      await showIssueSection(page, "Details");
-      await expect(page.getByTestId("assignee-picker-trigger")).toContainText(
-        "Member User"
-      );
-
-      // Verify the assignment event appears in Activity (on the Issue tab on
-      // mobile).
-      await showIssueSection(page, "Issue");
-      await expect(
-        page
-          .getByTestId("issue-timeline")
-          .getByTestId("system-event-text")
-          .filter({ hasText: "assigned Member User" })
-      ).toBeVisible();
-    });
+    await assertNoHorizontalOverflow(page);
   });
 });
