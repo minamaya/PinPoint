@@ -13,7 +13,7 @@
 - **Scan hub** — the page a machine's apron-card QR opens. One hub per machine, at its own URL, distinct from the machine page and its tabs. Player-facing: it exists so the person standing at the machine can post a score, report a problem, and see what others have posted — not to maintain the machine.
 - **Scan source** — the `apron` source tag the QR carries. The hub reads it and passes it on to the actions it launches, so scan traffic stays attributable.
 - **Thumb zone** — _Retired 2026-11-23._ The hub has no pinned bar; its action buttons sit in the page flow (§3.4).
-- **PinBrain** — the Collective's Gemini Notebook about playing and repairing pinball machines. PinPoint links to it and has no other integration: Gemini Notebook offers no public query API (verified 2026-11-23; may change).
+- **PinBrain** — the Collective's Gemini Notebook, linked from the hub (PinBrain spec §1).
 
 ## 2. Route & shell
 
