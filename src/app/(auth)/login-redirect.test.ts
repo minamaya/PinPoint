@@ -169,4 +169,22 @@ describe("loginAction - Redirect Logic", () => {
       expect(vi.mocked(redirect)).toHaveBeenCalledWith(nextPath);
     }
   });
+
+  it("should convert a bare username to internal email and redirect to /dashboard", async () => {
+    const mockSupabase = createMockSupabase();
+    mockCreateClient(mockSupabase);
+
+    const formData = new FormData();
+    formData.set("email", "testuser");
+    formData.set("password", "TestPassword123");
+    formData.set("rememberMe", "on");
+
+    await loginAction(undefined, formData);
+
+    expect(mockSupabase.auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "testuser@pinpoint.internal",
+      password: "TestPassword123",
+    });
+    expect(vi.mocked(redirect)).toHaveBeenCalledWith("/dashboard");
+  });
 });
