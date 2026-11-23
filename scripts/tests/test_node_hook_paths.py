@@ -24,6 +24,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 SETTINGS_PATH = REPO_ROOT / ".claude" / "settings.json"
+AGENTS_HOOKS_PATH = REPO_ROOT / ".agents" / "hooks.json"
 CODEX_HOOKS_PATH = REPO_ROOT / ".codex" / "hooks.json"
 CODEX_RULES_PATH = REPO_ROOT / ".codex" / "rules" / "pinpoint.rules"
 
@@ -103,6 +104,47 @@ def test_project_hooks_do_not_register_global_huddle_runtime() -> None:
     assert ".agents/huddle/" not in registered
     assert "huddle-main-watch" not in registered
     assert "huddle-service" not in registered
+
+
+def _antigravity_hook_commands() -> list[str]:
+    config = json.loads(AGENTS_HOOKS_PATH.read_text(encoding="utf-8"))
+    commands: list[str] = []
+    for group in config.values():
+        if not isinstance(group, dict):
+            continue
+        for event in ("SessionStart", "PreInvocation"):
+            for handler in group.get(event, []):
+                if isinstance(handler, dict) and isinstance(
+                    handler.get("command"), str
+                ):
+                    commands.append(handler["command"])
+        for event in ("PreToolUse", "PostToolUse"):
+            for matcher_group in group.get(event, []):
+                if isinstance(matcher_group, dict):
+                    commands.extend(_collect_commands([matcher_group]))
+    return commands
+
+
+def test_antigravity_hooks_json_and_scripts_exist() -> None:
+    assert AGENTS_HOOKS_PATH.is_file(), f"expected {AGENTS_HOOKS_PATH} to exist"
+    commands = _antigravity_hook_commands()
+    assert commands, "expected at least one command in .agents/hooks.json"
+    joined = "\n".join(commands)
+    assert ".agents/huddle/" not in joined
+    assert "huddle-main-watch" not in joined
+    assert "huddle-service" not in joined
+
+    script_paths: set[str] = set()
+    for cmd in commands:
+        for match in re.findall(r"\./hooks/[\w./-]+\.cjs\b", cmd):
+            script_paths.add(match)
+    assert script_paths, (
+        "expected .agents/hooks.json to reference ./hooks/*.cjs scripts"
+    )
+    missing = [
+        p for p in sorted(script_paths) if not (REPO_ROOT / ".agents" / p).is_file()
+    ]
+    assert not missing, f".agents/hooks.json references missing scripts: {missing}"
 
 
 def test_codex_prompts_on_pr_merge_without_blanket_blocking_gh() -> None:
