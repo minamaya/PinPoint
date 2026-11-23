@@ -1,10 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPortal } from "react-dom";
 
 import { CreateMachineForm } from "./create-machine-form";
 import { createMachineAction } from "~/app/(app)/m/actions";
 import { getIscoredGamesAction } from "~/app/(app)/m/iscored-actions";
+import { err } from "~/lib/result";
+import type { OwnerSelectUser } from "~/components/machines/OwnerSelect";
 
 vi.mock("~/app/(app)/m/actions", () => ({
   createMachineAction: vi.fn(),
@@ -18,9 +21,59 @@ vi.mock("~/components/editor/RichTextEditorDynamic", () => ({
   RichTextEditor: () => <div data-testid="mock-rich-text-editor" />,
 }));
 
-vi.mock("~/components/machines/OwnerSelect", () => ({
-  OwnerSelect: () => <div data-testid="mock-owner-select" />,
-}));
+const nestedInviteSubmitted = vi.hoisted(() => vi.fn());
+
+vi.mock("~/components/machines/OwnerSelect", async () => {
+  const { useState } = await import("react");
+  return {
+    OwnerSelect: ({
+      users,
+      onValueChange,
+    }: {
+      users: OwnerSelectUser[];
+      onValueChange?: (id: string) => void;
+    }) => {
+      const [selectedId, setSelectedId] = useState("");
+      const [inviteOpen, setInviteOpen] = useState(false);
+      return (
+        <div data-testid="mock-owner-select">
+          <select
+            name="ownerId"
+            aria-label="Machine Owner"
+            value={selectedId}
+            onChange={(e) => {
+              setSelectedId(e.target.value);
+              onValueChange?.(e.target.value);
+            }}
+          >
+            <option value="">Select an owner</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => setInviteOpen(true)}>
+            Open nested invite
+          </button>
+          {inviteOpen &&
+            createPortal(
+              <form
+                data-testid="mock-portalled-invite-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  nestedInviteSubmitted();
+                }}
+              >
+                <button type="submit">Submit nested invite</button>
+              </form>,
+              document.body
+            )}
+        </div>
+      );
+    },
+  };
+});
 
 // Reports its preselected title the way the real field does on mount, so the
 // Pinball Map block in Integrations sees it.
@@ -236,5 +289,152 @@ describe("CreateMachineForm — a failed create must not revert Availability (PP
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(availabilityTrigger).toHaveTextContent("Pending Arrival");
+  });
+});
+
+describe("CreateMachineForm — promote guest dialog and nested invite form", () => {
+  const guestUser: OwnerSelectUser = {
+    id: "guest-1",
+    name: "Guest Owner",
+    lastName: "Owner",
+    machineCount: 0,
+    status: "active",
+    role: "guest",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("opens the promote dialog on ASSIGNEE_NOT_MEMBER and closes on Cancel without re-submitting", async () => {
+    vi.mocked(createMachineAction).mockResolvedValueOnce(
+      err("ASSIGNEE_NOT_MEMBER", "Selected owner is a guest.", {
+        assignee: {
+          id: guestUser.id,
+          name: guestUser.name,
+          role: "guest",
+          type: "active",
+        },
+      })
+    );
+
+    const user = userEvent.setup();
+    render(<CreateMachineForm allUsers={[guestUser]} canSelectOwner={true} />);
+
+    await user.type(screen.getByLabelText(/Machine Name/), "Black Knight");
+    await user.type(screen.getByLabelText(/Initials/), "BK");
+    await user.selectOptions(
+      screen.getByLabelText("Machine Owner"),
+      guestUser.id
+    );
+    await user.click(screen.getByRole("button", { name: /Create Machine/i }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Promote to member and assign/i,
+    });
+    expect(within(dialog).getByText("Guest Owner")).toBeInTheDocument();
+    expect(within(dialog).getByText("(GUEST)")).toBeInTheDocument();
+    expect(createMachineAction).toHaveBeenCalledTimes(1);
+
+    await user.click(within(dialog).getByRole("button", { name: /Cancel/i }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", {
+          name: /Promote to member and assign/i,
+        })
+      ).not.toBeInTheDocument();
+    });
+    expect(createMachineAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows (INVITED · GUEST) badge when assignee is an invited guest", async () => {
+    vi.mocked(createMachineAction).mockResolvedValueOnce(
+      err("ASSIGNEE_NOT_MEMBER", "Selected owner is a guest.", {
+        assignee: {
+          id: "invited-guest-1",
+          name: "Invited Guest",
+          role: "guest",
+          type: "invited",
+        },
+      })
+    );
+
+    const user = userEvent.setup();
+    render(<CreateMachineForm allUsers={[guestUser]} canSelectOwner={true} />);
+
+    await user.type(screen.getByLabelText(/Machine Name/), "Black Knight");
+    await user.type(screen.getByLabelText(/Initials/), "BK");
+    await user.selectOptions(
+      screen.getByLabelText("Machine Owner"),
+      guestUser.id
+    );
+    await user.click(screen.getByRole("button", { name: /Create Machine/i }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Promote to member and assign/i,
+    });
+    expect(within(dialog).getByText("(INVITED · GUEST)")).toBeInTheDocument();
+  });
+
+  it("re-submits full FormData with forcePromoteUserId on confirm", async () => {
+    vi.mocked(createMachineAction)
+      .mockResolvedValueOnce(
+        err("ASSIGNEE_NOT_MEMBER", "Selected owner is a guest.", {
+          assignee: {
+            id: guestUser.id,
+            name: guestUser.name,
+            role: "guest",
+            type: "active",
+          },
+        })
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { machineId: "m-new", redirectTo: "/m/BK" },
+      });
+
+    const user = userEvent.setup();
+    render(<CreateMachineForm allUsers={[guestUser]} canSelectOwner={true} />);
+
+    await user.type(screen.getByLabelText(/Machine Name/), "Black Knight");
+    await user.type(screen.getByLabelText(/Initials/), "BK");
+    await user.selectOptions(
+      screen.getByLabelText("Machine Owner"),
+      guestUser.id
+    );
+    await user.click(screen.getByRole("button", { name: /Create Machine/i }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Promote to member and assign/i,
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: /Promote and assign/i })
+    );
+
+    await waitFor(() => {
+      expect(createMachineAction).toHaveBeenCalledTimes(2);
+    });
+
+    const secondFd = vi.mocked(createMachineAction).mock.calls[1]?.[1];
+    expect(secondFd).toBeInstanceOf(FormData);
+    expect(secondFd?.get("name")).toBe("Black Knight");
+    expect(secondFd?.get("initials")).toBe("BK");
+    expect(secondFd?.get("ownerId")).toBe(guestUser.id);
+    expect(secondFd?.get("forcePromoteUserId")).toBe(guestUser.id);
+  });
+
+  it("ignores form submissions bubbling from a portalled nested invite form", async () => {
+    const user = userEvent.setup();
+    render(<CreateMachineForm allUsers={[guestUser]} canSelectOwner={true} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open nested invite" })
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Submit nested invite" })
+    );
+
+    expect(nestedInviteSubmitted).toHaveBeenCalledTimes(1);
+    expect(createMachineAction).not.toHaveBeenCalled();
   });
 });

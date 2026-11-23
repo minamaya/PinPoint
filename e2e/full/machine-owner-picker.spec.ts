@@ -1,20 +1,15 @@
 /**
  * E2E Tests: Machine Owner Picker UX (PP-6oi)
  *
- * Verifies the class-F multi-step user journeys for the promote-and-assign
+ * Verifies the class-F multi-step user journey for the promote-and-assign
  * dialog that appears when a guest is selected as machine owner:
+ * submitting `/m/new` with a guest owner triggers `ASSIGNEE_NOT_MEMBER`,
+ * opens the confirmation dialog, and confirming atomically promotes the
+ * guest and redirects to the new machine page.
  *
- * 1. Promote dialog opens when a guest owner is selected and form is submitted
- * 2. Confirming the promote dialog creates the machine and promotes the guest
- *
- * H-class UI state for the OwnerSelect picker (guest visibility filter,
- * checkbox toggle, typed search) is covered by RTL in
- * `src/components/machines/OwnerSelect.test.tsx` per the 2026-05 audit row #28.
- *
- * The InviteUserDialog form-field checks (no role field, sendInvite default)
- * were also removed from this E2E. No replacement test exists yet; audit
- * row #25 (form-resets, P3) tracks creating
- * `src/components/users/InviteUserDialog.test.tsx`.
+ * - Promote dialog open / badge / Cancel UI state: `src/app/(app)/m/new/create-machine-form.test.tsx`
+ * - H-class `OwnerSelect` filtering, selection, and inline invite state: `src/components/machines/OwnerSelect.test.tsx`
+ * - Server Action `forcePromoteUserId` atomicity: `src/test/integration/machine-owner-promotion.test.ts`
  */
 
 import { test, expect, type Page } from "../support/fixtures.js";
@@ -49,15 +44,15 @@ async function openOwnerPicker(page: Page) {
   });
 }
 
-test.describe("Machine Owner Picker — promote-dialog journeys (PP-6oi)", () => {
+test.describe("Machine Owner Picker — promote-dialog journey (PP-6oi)", () => {
   test.use({ storageState: STORAGE_STATE.admin });
 
   test.beforeEach(async () => {
     const testId = Math.random().toString(36).substring(7);
     guestName = `Ownerpick Guest${testId}`;
     // A user created through the auth admin API lands on `guest` by default
-    // (the handle_new_user trigger in supabase/seed.sql), which is what these
-    // journeys need.
+    // (the handle_new_user trigger in supabase/seed.sql), which is what this
+    // journey needs.
     //
     // `@example.com`, NOT `@test.com`: nothing else can reclaim a leaked
     // auth.users row. `db:fast-reset` deliberately never truncates the auth
@@ -115,7 +110,7 @@ test.describe("Machine Owner Picker — promote-dialog journeys (PP-6oi)", () =>
     if (machineError !== null) throw machineError;
   });
 
-  test("promote dialog appears when a guest owner is selected", async ({
+  test("promote dialog confirm creates machine and promotes guest to member", async ({
     page,
   }) => {
     const testId = Math.random().toString(36).substring(7);
@@ -124,60 +119,6 @@ test.describe("Machine Owner Picker — promote-dialog journeys (PP-6oi)", () =>
     // one database apart, and a collision does not just fail the create: the
     // loser's afterEach deletes machines BY INITIALS, so it would delete the
     // winner's machine mid-test. Three characters is 46656.
-    const machineInitials = `OPK${testId.toUpperCase()}`.substring(0, 6);
-
-    testMachines.add(machineInitials);
-
-    await page.goto("/m/new");
-
-    // Fill required fields
-    await page.getByLabel(/Initials/i).fill(machineInitials);
-    await page.getByLabel(/Machine Name/i).fill(`Owner Picker Test ${testId}`);
-    // Every new machine needs a Pinball Map title or Manual Entry (not on
-    // Pinball Map); this spec is not about Pinball Map, so take Manual Entry.
-    await page.getByRole("radio", { name: "Manual Entry" }).click();
-
-    // Open picker and select guest via search (search bypasses the
-    // "Show guests" checkbox filter — more robust on mobile viewports).
-    await openOwnerPicker(page);
-    await selectOwnerBySearch(page, guestName);
-
-    // Owner trigger should show the throwaway guest as selected
-    await expect(page.getByTestId("owner-select")).toContainText(guestName);
-
-    // Submit the form
-    await page.getByRole("button", { name: /Create Machine/i }).click();
-
-    // Promote dialog should appear after the server action round-trip +
-    // React useEffect cycle. Use the config's own CI-aware `expect.timeout`
-    // (30s in CI, 10s locally) instead of a hardcoded value — a fixed 15s
-    // override here previously undercut the CI default by half, right where
-    // Mobile Safari/Mobile Chrome + parallel-worker contention need the most
-    // margin (PP flaky-test report 2026-07-05: this assertion was the #1
-    // flakiest test in CI over the prior week, including one run where it
-    // failed all 3 attempts — original + 2 retries — at the 15s mark).
-    await expect(
-      page.getByRole("heading", { name: /Promote to member and assign/i })
-    ).toBeVisible();
-
-    // Dialog should show "(GUEST)" badge
-    const promoteDialog = page.getByRole("dialog").filter({
-      has: page.getByText("Promote to member and assign"),
-    });
-    await expect(promoteDialog.getByText("(GUEST)")).toBeVisible();
-
-    // Cancel button should close the dialog
-    await promoteDialog.getByRole("button", { name: /Cancel/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /Promote to member and assign/i })
-    ).not.toBeVisible();
-  });
-
-  test("promote dialog confirm creates machine and promotes guest to member", async ({
-    page,
-  }) => {
-    const testId = Math.random().toString(36).substring(7);
-    // 6 chars — see the sibling test for why 5 was too few.
     const machineInitials = `OPC${testId.toUpperCase()}`.substring(0, 6);
 
     testMachines.add(machineInitials);
@@ -204,20 +145,26 @@ test.describe("Machine Owner Picker — promote-dialog journeys (PP-6oi)", () =>
     // Submit
     await page.getByRole("button", { name: /Create Machine/i }).click();
 
-    // Promote dialog should appear after the server action round-trip. Rely
-    // on the config's CI-aware `expect.timeout` (see comment on the sibling
-    // assertion above) rather than a hardcoded override that undercuts it.
+    // Promote dialog should appear after the server action round-trip +
+    // React useEffect cycle. Rely on the config's CI-aware `expect.timeout`
+    // (30s in CI, 10s locally) instead of a hardcoded override that undercuts it.
     await expect(
       page.getByRole("heading", { name: /Promote to member and assign/i })
     ).toBeVisible();
+    const promoteDialog = page.getByRole("dialog").filter({
+      has: page.getByText("Promote to member and assign"),
+    });
+    await expect(promoteDialog.getByText("(GUEST)")).toBeVisible();
 
     await page.getByRole("button", { name: /Promote and assign/i }).click();
 
-    // Should redirect to machine detail page — same reasoning: let this
-    // inherit the global CI-aware expect timeout instead of a hardcoded 15s.
+    // Should redirect to machine detail page and show the promoted owner.
     await expect(page).toHaveURL(new RegExp(`/m/${machineInitials}`));
     await expect(
       page.getByRole("heading", { name: `Owner Picker Confirm ${testId}` })
     ).toBeVisible();
+    await expect(page.getByTestId("machine-owner-card")).toContainText(
+      guestName
+    );
   });
 });
