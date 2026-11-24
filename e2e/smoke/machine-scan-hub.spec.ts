@@ -39,7 +39,7 @@ test("apron scan opens Quick report with AFM and source preserved", async ({
 test.describe("artwork band (PP-o355.60)", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
-  test("shows the band, peeks the next card, and pins the actions while scrolling", async ({
+  test("shows the band with both button rows and peeks Top scores; nothing is pinned", async ({
     page,
   }) => {
     // Answer OPDB image requests locally; the suite never reaches img.opdb.org.
@@ -57,34 +57,49 @@ test.describe("artwork band (PP-o355.60)", () => {
 
     const band = page.getByTestId("hub-artwork-band");
     await expect(band).toBeVisible();
+    // Spec §3.1, §4.5: the identity is not a link; Game details is.
     await expect(
       band.getByRole("link", { name: /medieval madness/i })
+    ).toHaveCount(0);
+    const actions = page.getByRole("navigation", { name: "Machine actions" });
+    await expect(
+      actions.getByRole("link", { name: "Game details" })
     ).toHaveAttribute("href", `/m/${initials}`);
+    await expect(
+      actions.getByRole("link", { name: /ask pinbrain/i })
+    ).toHaveAttribute("target", "_blank");
     const report = page.getByRole("link", { name: "Report a problem" });
     await expect(report).toBeInViewport();
 
-    // Spec §3.7, §5.4: the band leaves at least the top 60px of the card after
-    // Top scores showing above the pinned actions, and never drops below 180px.
+    // Spec §3.7, §5.4: both button rows and the top 60px of Top scores show
+    // above the tab bar on first load, and the band never drops below 180px.
     const layout = await page.evaluate(() => {
       const scores = document.querySelector(
         "section[aria-labelledby=hub-scores-heading]"
       );
-      const next = scores?.nextElementSibling;
-      const actions = document.querySelector('[aria-label="Machine actions"]');
+      const tabBar = document.querySelector('[aria-label="mobile navigation"]');
       const art = document.querySelector("[data-testid=hub-artwork-band]");
       return {
-        nextTop: next?.getBoundingClientRect().top ?? Infinity,
-        actionsTop: actions?.getBoundingClientRect().top ?? 0,
+        scoresTop: scores?.getBoundingClientRect().top ?? Infinity,
+        tabBarTop: tabBar?.getBoundingClientRect().top ?? window.innerHeight,
         bandHeight: art?.getBoundingClientRect().height ?? 0,
       };
     });
-    expect(layout.actionsTop - layout.nextTop).toBeGreaterThanOrEqual(60);
+    expect(layout.tabBarTop - layout.scoresTop).toBeGreaterThanOrEqual(60);
     expect(layout.bandHeight).toBeGreaterThanOrEqual(180);
 
-    // Spec §5.5: the hub scrolls and the actions stay pinned.
-    await page
-      .locator("#main-content")
-      .evaluate((main) => main.scrollTo(0, main.scrollHeight));
-    await expect(report).toBeInViewport();
+    // Spec §5.5: nothing is pinned, so the actions move by exactly the
+    // distance the page scrolls.
+    const moved = await page.locator("#main-content").evaluate((main) => {
+      const actions = document.querySelector('[aria-label="Machine actions"]');
+      const before = actions?.getBoundingClientRect().top ?? 0;
+      main.scrollTo(0, main.scrollHeight);
+      return {
+        scrolled: main.scrollTop,
+        shift: before - (actions?.getBoundingClientRect().top ?? 0),
+      };
+    });
+    expect(moved.scrolled).toBeGreaterThan(0);
+    expect(moved.shift).toBeCloseTo(moved.scrolled, 0);
   });
 });
