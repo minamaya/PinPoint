@@ -58,8 +58,7 @@
 ## Known divergences
 
 | Requirement | Divergence | Resolution |
-| :-- | :-- | :-- |
-| §3.1, §3.4, §3.7, §4.2, §4.5–§4.6, §5.5–§5.6, §6.1 | The action buttons are still pinned above the tab bar with a fade, the identity block still links to the Info page, and there is no Game details or Ask PinBrain button. | PP-4wtr |
+| :---------- | :--------- | :--------- |
 
 ## Changelog
 

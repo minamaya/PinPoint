@@ -2,6 +2,7 @@ import type React from "react";
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 
+import { AskPinBrainButton } from "~/components/machines/AskPinBrainButton";
 import { PersonHoverCard } from "~/components/people/PersonHoverCard";
 import { MachineTagList } from "~/components/tags/MachineTagList";
 import { formatDate } from "~/lib/dates";
@@ -134,7 +135,8 @@ const LABEL =
 
 /**
  * InfoRail — the Info tab's reference cluster: Tags, then the Details card
- * (Model, Pinball Map standing, owner). The machine description is
+ * (Model, Pinball Map standing, owner), Top scores, the tip card, and Ask
+ * PinBrain. The machine description is
  * not here: it leads the main column, because a long one stretched this
  * 320px rail far past the main column's height. Renders as the desktop
  * right rail and folds inline on mobile (the caller controls placement + gap;
@@ -347,6 +349,10 @@ export function InfoRail({
       {topScoresSlot}
 
       {tipSlot}
+
+      {/* Its own full-width row after the tip card, or where the tip card
+          would be (pinbrain spec §2.2–§2.3). */}
+      <AskPinBrainButton className="h-11 w-full md:h-9" />
     </>
   );
 }

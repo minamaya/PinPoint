@@ -2,6 +2,7 @@ import type React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { PINBRAIN_URL } from "~/components/machines/AskPinBrainButton";
 import { InfoRail } from "./info-rail";
 
 // PersonHoverCard pulls in client-only hover machinery; render just the name.
@@ -278,5 +279,42 @@ describe("InfoRail", () => {
     });
     expect(screen.getByTestId("test-top-scores")).toBeInTheDocument();
     expect(screen.getByText("Top Scores Content")).toBeInTheDocument();
+  });
+
+  it("puts Ask PinBrain directly after the tip card (pinbrain spec 2.2)", () => {
+    const { container } = render(
+      <div>
+        <InfoRail
+          owner={null}
+          invitedOwner={null}
+          addedAt={addedAt}
+          modelName={null}
+          manufacturer={null}
+          year={null}
+          credits={{ design: [], art: [], code: [] }}
+          tags={[]}
+          pinballmap={{
+            locationUrl: null,
+            onLineup: null,
+            configIssue: false,
+            manageHref: null,
+          }}
+          tipSlot={<div data-testid="test-tip">Tip</div>}
+        />
+      </div>
+    );
+    const link = screen.getByRole("link", { name: /ask pinbrain/i });
+    expect(link).toHaveAttribute("href", PINBRAIN_URL);
+    expect(link).toHaveAttribute("target", "_blank");
+    const rail = container.firstElementChild;
+    expect(rail?.lastElementChild).toBe(link);
+    expect(link.previousElementSibling).toBe(screen.getByTestId("test-tip"));
+  });
+
+  it("shows Ask PinBrain where the tip card would be when there are no tips (2.3)", () => {
+    renderRail();
+    expect(
+      screen.getByRole("link", { name: /ask pinbrain/i })
+    ).toBeInTheDocument();
   });
 });

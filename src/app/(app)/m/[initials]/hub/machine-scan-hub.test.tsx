@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import { PINBRAIN_URL } from "~/components/machines/AskPinBrainButton";
 import { MachineScanHub } from "./machine-scan-hub";
 
 const machine = {
@@ -34,10 +35,13 @@ describe("MachineScanHub", () => {
       />
     );
 
-    expect(screen.getByRole("link", { name: /details/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Game details" })).toHaveAttribute(
       "href",
       "/m/AFM"
     );
+    const pinbrain = screen.getByRole("link", { name: /ask pinbrain/i });
+    expect(pinbrain).toHaveAttribute("href", PINBRAIN_URL);
+    expect(pinbrain).toHaveAttribute("target", "_blank");
     expect(
       screen.getByRole("link", { name: /report a problem/i })
     ).toHaveAttribute("href", "/report?machine=AFM&source=apron");
@@ -104,6 +108,34 @@ describe("MachineScanHub", () => {
     expect(screen.queryByText(/\+\d+ more/)).not.toBeInTheDocument();
   });
 
+  it("puts both button rows directly after the identity, before Top scores", () => {
+    render(
+      <MachineScanHub
+        machine={machine}
+        scores={[]}
+        scoreHref="https://www.iscored.info/?mode=public&user=apc&game=73"
+        gameHref={null}
+        pinTips={null}
+        fromApron={false}
+      />
+    );
+    const actions = screen.getByRole("navigation", { name: "Machine actions" });
+    expect(
+      within(actions)
+        .getAllByRole("link")
+        .map((link) => link.textContent)
+    ).toEqual([
+      "Post a score",
+      "Report a problem",
+      "Game details",
+      "Ask PinBrain",
+    ]);
+    const scores = screen.getByRole("region", { name: "Top scores" });
+    expect(
+      actions.compareDocumentPosition(scores) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it("puts the identity over the artwork band with an OPDB credit", () => {
     render(
       <MachineScanHub
@@ -124,8 +156,12 @@ describe("MachineScanHub", () => {
     );
     const band = screen.getByTestId("hub-artwork-band");
     expect(
-      within(band).getByRole("link", { name: /attack from mars/i })
-    ).toHaveAttribute("href", "/m/AFM");
+      within(band).getByRole("heading", { level: 1, name: "Attack from Mars" })
+    ).toBeInTheDocument();
+    // Spec §3.1: the identity block is not a link; Game details is (§4.5).
+    expect(
+      within(band).queryByRole("link", { name: /attack from mars/i })
+    ).not.toBeInTheDocument();
     expect(within(band).getByRole("link", { name: "OPDB" })).toHaveAttribute(
       "href",
       "https://img.opdb.org/afm.jpg"
