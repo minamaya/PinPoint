@@ -168,6 +168,32 @@ describe("iscored client", () => {
       expect(scores[0]?.playerName).toBe("Bob");
     });
 
+    it("requests the batch getAllScores endpoint without an unsupported max param (PP-5lcgw)", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(JSON.stringify(mockScoresPayload()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+
+      await getAllScoresForMachine("77956");
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const requestedInput = fetchSpy.mock.calls[0]?.[0];
+      if (typeof requestedInput !== "string") {
+        throw new Error(
+          "expected iScored fetch to be called with a string URL"
+        );
+      }
+      const requestedUrl = new URL(requestedInput);
+      // The getAllScores batch endpoint does not support ?max (see the endpoint
+      // catalog in docs/research/2026-09-15-iscored-api.md and iscored.md §3.1),
+      // so PinPoint must not send it — a silent no-op that implied filtering that never happened.
+      expect(requestedUrl.pathname).toBe("/api/Apcscore/getAllScores");
+      expect(requestedUrl.search).toBe("");
+      expect(requestedUrl.searchParams.has("max")).toBe(false);
+    });
+
     it("parses string scores with commas", async () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
         new Response(JSON.stringify(mockScoresPayload()), {
