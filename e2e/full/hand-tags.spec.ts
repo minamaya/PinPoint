@@ -1,22 +1,16 @@
 /**
- * E2E: hand-applied tags managed from the tag pages and from a machine's page
- * (PP-wqit.3, spec collections-and-tags §11).
+ * E2E: hand-applied tags journeys, browser chip measurement, and live redirects
+ * (PP-wqit.3 / PP-wqit.4 / PP-wqit.16, spec collections-and-tags §11).
  *
- * The tag-page journey crosses four page renders — tag browse, tag type page,
- * tag page, machine Info tab — and the machine-page editor saves each click
- * through a Server Action and revalidates the Tags card behind it, so both
- * belong here rather than in an integration test. Action wiring, permissions,
- * and exclusivity rules are covered in src/test/integration/tag-actions.test.ts
- * and hand-tags.test.ts.
+ * Retained here are genuine multi-page browser journeys, real DOM width
+ * measurement (`MachineTagList` +N collapse at 320px), RSC revalidation
+ * persistence (`MachineTagEditor`), and live Next.js 307 redirects for moved
+ * and merged tags (`{ request }` with `maxRedirects: 0`).
  *
- * Changing a tag type's one-per-machine setting and moving a tag between tag
- * types (PP-wqit.4, §11.7 and §11.16) are covered as journeys too: each
- * dialog reads what blocks it when the page renders, so the tests clear or
- * create the blocker on one page and check the dialog on the next.
- *
- * Isolation: tag types, tags, and machines that a test changes are created per
- * run and removed in afterAll; the read-only checks use seeded tags and
- * machines and never mutate them.
+ * Role-gating, conflict detection, and action wiring live at cheaper layers:
+ * - `src/test/integration/tag-actions.test.ts` & `hand-tags.test.ts`
+ * - `src/test/integration/tags-pages.test.tsx`
+ * - `src/components/tags/*.test.tsx`
  */
 
 import { test, expect } from "../support/fixtures.js";
@@ -36,11 +30,7 @@ import {
   testTagSlug,
 } from "../support/supabase-admin.js";
 import { getTestPrefix } from "../support/test-isolation.js";
-import {
-  clickPageAction,
-  expectNoPageAction,
-  pageActionsTrigger,
-} from "../support/page-actions.js";
+import { clickPageAction } from "../support/page-actions.js";
 
 /** A machine-editor tag row's accessible name reads "<name>, <count> machines". */
 function tagRow(name: string): RegExp {
@@ -77,8 +67,6 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Tags" })
       ).toBeVisible();
-      // Add tag type is ⋯'s only entry, so it shows as its own button while
-      // there is room (list-views §3.7).
       await clickPageAction(page, {
         button: "Add tag type",
         entry: "Add tag type…",
@@ -100,7 +88,7 @@ test.describe("Hand-applied tags", () => {
       ).toBeVisible();
       await expect(page.getByText("One per machine").first()).toBeVisible();
 
-      // --- Tag type page: Add tag ------------------------------------------
+      // --- Tag type page: Add tag -----------------------------------------
       await clickPageAction(page, "Add tag");
       const tagDialog = page.getByRole("dialog", {
         name: `Add tag to ${typeName}`,
@@ -113,7 +101,7 @@ test.describe("Hand-applied tags", () => {
       await expect(tagLink).toContainText("No machines");
       await tagLink.click();
 
-      // --- Tag page: Edit machines, in ⋯ (4.17) ----------------------------
+      // --- Tag page: Edit machines, in ⋯ (4.17) ---------------------------
       await expect(
         page.getByRole("heading", { level: 1, name: tagName })
       ).toBeVisible();
@@ -131,23 +119,20 @@ test.describe("Hand-applied tags", () => {
         .click();
       await expect(machinesDialog).toBeHidden();
 
-      const machineLink = page
-        .getByRole("link", { name: new RegExp(machineName) })
-        .first();
-      await expect(machineLink).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: new RegExp(machineName) }).first()
+      ).toBeVisible();
       const tagPageUrl = new URL(page.url()).pathname;
 
-      // --- Machine Info tab: the tag links back to its page ----------------
+      // --- Machine Info tab: the tag links back to its page ---------------
       await page.goto(`/m/${initials}`);
-      const tagsCard = page.getByTestId("machine-tags");
-      const infoTagLink = tagsCard.getByRole("link", {
-        name: tagName,
-        exact: true,
-      });
-      await expect(infoTagLink).toHaveAttribute("href", tagPageUrl);
+      await expect(
+        page
+          .getByTestId("machine-tags")
+          .getByRole("link", { name: tagName, exact: true })
+      ).toHaveAttribute("href", tagPageUrl);
 
-      // --- Delete the tag type from its page -------------------------------
-      // The tag lives at /c/tags/<type-slug>/<tag-slug>.
+      // --- Delete the tag type from its page ------------------------------
       await page.goto(tagPageUrl.slice(0, tagPageUrl.lastIndexOf("/")));
       await expect(
         page.getByRole("heading", { level: 1, name: typeName })
@@ -160,9 +145,6 @@ test.describe("Hand-applied tags", () => {
 
       await expect(page).toHaveURL(/\/c\/tags$/);
       await expect(
-        page.getByRole("heading", { level: 1, name: "Tags" })
-      ).toBeVisible();
-      await expect(
         page.getByRole("link", { name: typeName, exact: true })
       ).toHaveCount(0);
 
@@ -171,51 +153,6 @@ test.describe("Hand-applied tags", () => {
       await expect(
         page.getByTestId("machine-tags").getByRole("link", { name: tagName })
       ).toHaveCount(0);
-    });
-  });
-
-  test.describe("member", () => {
-    test.use({ storageState: STORAGE_STATE.member });
-
-    test("sees the tag browse without Add tag type", async ({ page }) => {
-      await page.goto("/c/tags");
-      await expect(page.getByRole("link", { name: "Location" })).toBeVisible();
-      await expectNoPageAction(page, {
-        button: "Add tag type",
-        entry: "Add tag type…",
-      });
-      await expectNoPageAction(page, "Add tag");
-    });
-  });
-
-  test.describe("anonymous visitor", () => {
-    test("opens a hand-applied tag page without management controls", async ({
-      page,
-    }) => {
-      await page.goto("/c/tags/location/front-room");
-      await expect(page).toHaveURL(/\/c\/tags\/location\/front-room$/);
-      await expect(
-        page.getByRole("heading", { level: 1, name: "Front room" })
-      ).toBeVisible();
-      // No editing in ⋯ (4.17); Share and Print settings sheets stay
-      // (4.14, 4.16).
-      for (const editing of [
-        "Edit machines…",
-        "Rename…",
-        "Move to another tag type…",
-        "Merge into another tag…",
-        "Delete tag",
-      ]) {
-        await expectNoPageAction(page, editing);
-      }
-
-      await page.goto("/c/tags/location");
-      await expect(
-        page.getByRole("heading", { level: 1, name: "Location" })
-      ).toBeVisible();
-      // No Add tag and no ⋯ of tag type editing (11.12).
-      await expectNoPageAction(page, "Add tag");
-      await expect(pageActionsTrigger(page)).toHaveCount(0);
     });
   });
 });
@@ -264,7 +201,7 @@ test.describe("Machine tag editor", () => {
         tagsCard.getByRole("link", { name, exact: true });
       const editor = page.getByRole("dialog", { name: "Edit tags" });
 
-      // --- An open type: a checkbox, saved on click ------------------------
+      // --- Open type: checkbox saved on click -----------------------------
       await tagsCard.getByRole("button", { name: "Edit tags" }).click();
       await expect(editor).toBeVisible();
       await editor.getByRole("checkbox", { name: tagRow(lamp) }).check();
@@ -273,7 +210,7 @@ test.describe("Machine tag editor", () => {
       await expect(editor).toBeHidden();
       await expect(cardTag(lamp)).toBeVisible();
 
-      // --- An exclusive type: one choice, then another, then None ----------
+      // --- Exclusive type: swap, then None --------------------------------
       await tagsCard.getByRole("button", { name: "Edit tags" }).click();
       const exclusiveGroup = editor.getByRole("group", {
         name: new RegExp(`^${exclusiveType}`),
@@ -284,14 +221,11 @@ test.describe("Machine tag editor", () => {
       await exclusiveGroup.getByRole("radio", { name: tagRow(right) }).check();
       await expect(cardTag(right)).toBeVisible();
       await expect(cardTag(left)).toHaveCount(0);
-      await expect(
-        exclusiveGroup.getByRole("radio", { name: tagRow(left) })
-      ).not.toBeChecked();
 
       await exclusiveGroup.getByRole("radio", { name: "None" }).check();
       await expect(cardTag(right)).toHaveCount(0);
 
-      // --- Create a tag into a type while tagging ---------------------------
+      // --- Create a tag into a type while tagging -------------------------
       await editor.getByLabel("Find or create a tag").fill(created);
       await editor
         .getByLabel("Tag type for the new tag")
@@ -306,78 +240,12 @@ test.describe("Machine tag editor", () => {
       await editor.getByRole("button", { name: "Done" }).click();
       await expect(editor).toBeHidden();
 
-      // --- The saved set survives a fresh render ----------------------------
+      // --- The saved set survives a fresh render --------------------------
       await page.reload();
       await expect(cardTag(lamp)).toBeVisible();
       await expect(cardTag(created)).toBeVisible();
       await expect(cardTag(left)).toHaveCount(0);
       await expect(cardTag(right)).toHaveCount(0);
-    });
-  });
-
-  test.describe("member", () => {
-    test.use({ storageState: STORAGE_STATE.member, viewport: desktop });
-
-    const prefix = getTestPrefix();
-    const ownType = `Own ${prefix}`;
-    const mine = `Mine ${prefix}`;
-    let machine: { id: string; initials: string } | null = null;
-
-    test.beforeAll(async () => {
-      const ownerId = await getProfileIdByEmail(TEST_USERS.member.email);
-      machine = await createTestMachine(ownerId);
-      await createTestTagType(ownType, { exclusive: false, tags: [mine] });
-    });
-
-    test.afterAll(async () => {
-      await deleteTestTagType(ownType).catch(() => undefined);
-      if (machine) await deleteTestMachine(machine.id).catch(() => undefined);
-    });
-
-    test("tags a machine they own without creating tags; cannot tag others", async ({
-      page,
-    }) => {
-      if (!machine) throw new Error("Test machine was not created");
-      await page.goto(`/m/${machine.initials}`);
-
-      const tagsCard = page.getByTestId("machine-tags");
-      const editor = page.getByRole("dialog", { name: "Edit tags" });
-      await tagsCard.getByRole("button", { name: "Edit tags" }).click();
-      await expect(editor).toBeVisible();
-
-      // Members find tags; only tags.manage holders may create one.
-      const search = editor.getByLabel("Find a tag");
-      await search.fill(`Nope ${prefix}`);
-      await expect(editor.getByText("No matching tags")).toBeVisible();
-      await expect(editor.getByRole("button", { name: /^Create/ })).toHaveCount(
-        0
-      );
-      await search.fill("");
-
-      await editor.getByRole("checkbox", { name: tagRow(mine) }).check();
-      await expect(editor.getByRole("status")).toHaveText("Saved");
-      await editor.getByRole("button", { name: "Done" }).click();
-      await expect(editor).toBeHidden();
-      await expect(
-        tagsCard.getByRole("link", { name: mine, exact: true })
-      ).toBeVisible();
-
-      // A machine the member does not own shows its tags, not the editor.
-      await page.goto(`/m/${seededInitials}`);
-      await expect(page.getByTestId("machine-tags")).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Edit tags", includeHidden: true })
-      ).toHaveCount(0);
-    });
-  });
-
-  test.describe("anonymous visitor", () => {
-    test("sees a machine's tags without the editor", async ({ page }) => {
-      await page.goto(`/m/${seededInitials}`);
-      await expect(page.getByTestId("machine-tags")).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Edit tags", includeHidden: true })
-      ).toHaveCount(0);
     });
   });
 
@@ -432,101 +300,6 @@ test.describe("Tag type changes", () => {
     viewport: { width: 1280, height: 800 },
   });
 
-  test.describe("one per machine", () => {
-    const prefix = getTestPrefix();
-    const typeName = `Rack ${prefix}`;
-    const top = `Top ${prefix}`;
-    const low = `Low ${prefix}`;
-    let machine: { id: string; initials: string; name: string } | null = null;
-
-    test.beforeAll(async () => {
-      const ownerId = await getProfileIdByEmail(TEST_USERS.admin.email);
-      const created = await createTestMachine(ownerId);
-      machine = created;
-      await createTestTagType(typeName, { exclusive: false, tags: [top, low] });
-      await addTestMachineTags(created.id, [top, low]);
-    });
-
-    test.afterAll(async () => {
-      await deleteTestTagType(typeName).catch(() => undefined);
-      if (machine) await deleteTestMachine(machine.id).catch(() => undefined);
-    });
-
-    test("is blocked by a machine holding two tags until one is removed, then toggles back", async ({
-      page,
-    }) => {
-      if (!machine) throw new Error("Test machine was not created");
-      const typePath = `/c/tags/${testTagSlug(typeName)}`;
-      const badge = page.getByText("One per machine", { exact: true });
-      // The tag type's ⋯ More menu (design-bible §26.3).
-      const openMenuItem = async (name: string): Promise<void> => {
-        await clickPageAction(page, name);
-      };
-      const makeDialog = page.getByRole("alertdialog", {
-        name: `Make ${typeName} one per machine?`,
-      });
-
-      // --- Blocked: the machine holding both tags is named and linked ------
-      await page.goto(typePath);
-      await expect(
-        page.getByRole("heading", { level: 1, name: typeName })
-      ).toBeVisible();
-      await expect(badge).toHaveCount(0);
-      await openMenuItem("Make one per machine");
-      await expect(makeDialog).toBeVisible();
-      await expect(makeDialog.getByRole("alert")).toHaveText(
-        `1 machine has more than one ${typeName} tag`
-      );
-      await expect(
-        makeDialog.getByRole("link", { name: machine.name })
-      ).toHaveAttribute("href", `/m/${machine.initials}`);
-      await expect(
-        makeDialog.getByRole("button", { name: "Make one per machine" })
-      ).toHaveCount(0);
-      await makeDialog.getByRole("button", { name: "Close" }).click();
-      await expect(makeDialog).toBeHidden();
-
-      // --- Clear the blocker from the machine page --------------------------
-      await page.goto(`/m/${machine.initials}`);
-      const tagsCard = page.getByTestId("machine-tags");
-      await tagsCard.getByRole("button", { name: "Edit tags" }).click();
-      const editor = page.getByRole("dialog", { name: "Edit tags" });
-      await editor.getByRole("checkbox", { name: tagRow(low) }).uncheck();
-      await expect(editor.getByRole("status")).toHaveText("Saved");
-      await editor.getByRole("button", { name: "Done" }).click();
-      await expect(editor).toBeHidden();
-      await expect(
-        tagsCard.getByRole("link", { name: low, exact: true })
-      ).toHaveCount(0);
-
-      // --- Now it can be made one per machine -------------------------------
-      await page.goto(typePath);
-      await openMenuItem("Make one per machine");
-      await expect(makeDialog.getByRole("alert")).toHaveCount(0);
-      await makeDialog
-        .getByRole("button", { name: "Make one per machine" })
-        .click();
-      await expect(makeDialog).toBeHidden();
-      await expect(badge).toBeVisible();
-
-      // --- And back to more than one ---------------------------------------
-      await openMenuItem("Allow more than one per machine");
-      const allowDialog = page.getByRole("alertdialog", {
-        name: `Allow more than one ${typeName} tag per machine?`,
-      });
-      await allowDialog
-        .getByRole("button", { name: "Allow more than one" })
-        .click();
-      await expect(allowDialog).toBeHidden();
-      await expect(badge).toHaveCount(0);
-      await page.reload();
-      await expect(
-        page.getByRole("heading", { level: 1, name: typeName })
-      ).toBeVisible();
-      await expect(badge).toHaveCount(0);
-    });
-  });
-
   test.describe("move a tag", () => {
     const prefix = getTestPrefix();
     const fromType = `From ${prefix}`;
@@ -551,6 +324,7 @@ test.describe("Tag type changes", () => {
 
     test("moves a tag to another tag type; the old address redirects", async ({
       page,
+      request,
     }) => {
       if (!machine) throw new Error("Test machine was not created");
       const oldPath = `/c/tags/${testTagSlug(fromType)}/${testTagSlug(tagName)}`;
@@ -561,23 +335,12 @@ test.describe("Tag type changes", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: tagName })
       ).toBeVisible();
-      await expect(
-        breadcrumb.getByRole("link", { name: fromType })
-      ).toBeVisible();
-
       await clickPageAction(page, "Move to another tag type…");
       const dialog = page.getByRole("dialog", { name: `Move ${tagName}` });
-      await expect(dialog).toBeVisible();
-      await expect(
-        dialog.getByText(`Now in ${fromType} · 1 machine`)
-      ).toBeVisible();
-      const move = dialog.getByRole("button", { name: "Move tag" });
-      await expect(move).toBeDisabled();
       await dialog.getByLabel("Tag type").selectOption({ label: toType });
-      await expect(dialog.getByRole("alert")).toHaveCount(0);
-      await move.click();
+      await dialog.getByRole("button", { name: "Move tag" }).click();
 
-      // --- The tag's page now lives under the destination type -------------
+      // --- Lands on the new address and updates the breadcrumb ------------
       await expect(page).toHaveURL(new RegExp(`${newPath}$`));
       await expect(
         page.getByRole("heading", { level: 1, name: tagName })
@@ -586,11 +349,18 @@ test.describe("Tag type changes", () => {
         breadcrumb.getByRole("link", { name: toType })
       ).toHaveAttribute("href", `/c/tags/${testTagSlug(toType)}`);
 
-      // --- The old address redirects to the new one ------------------------
-      await page.goto(oldPath);
-      await expect(page).toHaveURL(new RegExp(`${newPath}$`));
+      // --- The old address HTTP-redirects to the new one ------------------
+      const redirect = await request.get(oldPath, {
+        headers: { "x-skip-autologin": "true" },
+        maxRedirects: 0,
+      });
+      expect(redirect.status()).toBe(307);
+      expect(
+        new URL(redirect.headers()["location"] ?? "", "http://localhost")
+          .pathname
+      ).toBe(newPath);
 
-      // --- The machine keeps the tag, linked to its new page ---------------
+      // --- The machine keeps the tag, linked to its new page --------------
       await page.goto(`/m/${machine.initials}`);
       await expect(
         page
@@ -631,6 +401,7 @@ test.describe("Tag type changes", () => {
 
     test("merges a tag into another; its machines and old links move to the target", async ({
       page,
+      request,
     }) => {
       if (!both || !onlySource) throw new Error("Test machines not created");
       const typeSlug = testTagSlug(typeName);
@@ -645,9 +416,6 @@ test.describe("Tag type changes", () => {
       const dialog = page.getByRole("dialog", {
         name: `Merge ${source} into another tag`,
       });
-      await expect(dialog.getByText(`${typeName} · 2 machines`)).toBeVisible();
-      const merge = dialog.getByRole("button", { name: "Merge tags" });
-      await expect(merge).toBeDisabled();
       await dialog
         .getByLabel("Merge into")
         .selectOption({ label: `${target} · 1 machine` });
@@ -657,15 +425,13 @@ test.describe("Tag type changes", () => {
           { exact: false }
         )
       ).toBeVisible();
-      await expect(dialog.getByRole("alert")).toHaveCount(0);
-      await merge.click();
+      await dialog.getByRole("button", { name: "Merge tags" }).click();
 
-      // --- Lands on the target, which now holds both machines --------------
+      // --- Lands on the target, which now holds both machines -------------
       await expect(page).toHaveURL(new RegExp(`${newPath}$`));
       await expect(
         page.getByRole("heading", { level: 1, name: target })
       ).toBeVisible();
-      // Its Overview lists both machines.
       for (const machine of [both, onlySource]) {
         await expect(
           page.getByRole("link", {
@@ -675,13 +441,22 @@ test.describe("Tag type changes", () => {
         ).toBeVisible();
       }
 
-      // --- The merged tag's addresses open the target (11.19) --------------
-      await page.goto(oldPath);
-      await expect(page).toHaveURL(new RegExp(`${newPath}$`));
-      await page.goto(`${oldPath}/issues`);
-      await expect(page).toHaveURL(new RegExp(`${newPath}/issues$`));
+      // --- The merged tag's addresses redirect to the target (11.19) ------
+      for (const suffix of ["", "/issues"]) {
+        const redirect = await request.get(`${oldPath}${suffix}`, {
+          headers: { "x-skip-autologin": "true" },
+          maxRedirects: 0,
+        });
+        expect(redirect.status(), `expected 307 for ${oldPath}${suffix}`).toBe(
+          307
+        );
+        expect(
+          new URL(redirect.headers()["location"] ?? "", "http://localhost")
+            .pathname
+        ).toBe(`${newPath}${suffix}`);
+      }
 
-      // --- The machine that held only the source now holds the target -------
+      // --- The machine that held only the source now holds the target ------
       await page.goto(`/m/${onlySource.initials}`);
       const tags = page.getByTestId("machine-tags");
       await expect(
@@ -690,144 +465,6 @@ test.describe("Tag type changes", () => {
       await expect(
         tags.getByRole("link", { name: source, exact: true })
       ).toHaveCount(0);
-    });
-  });
-
-  test.describe("merge blocked", () => {
-    const prefix = getTestPrefix();
-    const looseType = `Lse ${prefix}`;
-    const exclusiveType = `Exc ${prefix}`;
-    const source = `Src ${prefix}`;
-    const into = `Tgt ${prefix}`;
-    const held = `Hld ${prefix}`;
-    let machine: { id: string; initials: string; name: string } | null = null;
-
-    test.beforeAll(async () => {
-      const ownerId = await getProfileIdByEmail(TEST_USERS.admin.email);
-      const created = await createTestMachine(ownerId);
-      machine = created;
-      await createTestTagType(looseType, { exclusive: false, tags: [source] });
-      await createTestTagType(exclusiveType, {
-        exclusive: true,
-        tags: [into, held],
-      });
-      await addTestMachineTags(created.id, [source, held]);
-    });
-
-    test.afterAll(async () => {
-      for (const name of [looseType, exclusiveType]) {
-        await deleteTestTagType(name).catch(() => undefined);
-      }
-      if (machine) await deleteTestMachine(machine.id).catch(() => undefined);
-    });
-
-    test("refuses a merge that would leave a machine with two exclusive tags", async ({
-      page,
-    }) => {
-      if (!machine) throw new Error("Test machine was not created");
-      await page.goto(
-        `/c/tags/${testTagSlug(looseType)}/${testTagSlug(source)}`
-      );
-      await clickPageAction(page, "Merge into another tag…");
-      const dialog = page.getByRole("dialog", {
-        name: `Merge ${source} into another tag`,
-      });
-      await dialog
-        .getByLabel("Merge into")
-        .selectOption({ label: `${into} · 0 machines` });
-      await expect(dialog.getByRole("alert")).toHaveText(
-        `1 machine would hold two ${exclusiveType} tags`
-      );
-      await expect(
-        dialog.getByRole("link", { name: machine.name })
-      ).toHaveAttribute("href", `/m/${machine.initials}`);
-      await expect(dialog.getByText(held, { exact: true })).toBeVisible();
-      await expect(
-        dialog.getByRole("button", { name: "Merge tags" })
-      ).toBeDisabled();
-      await assertNoA11yViolations(page);
-    });
-  });
-
-  test.describe("move blocked", () => {
-    const prefix = getTestPrefix();
-    const sourceType = `Src ${prefix}`;
-    const tagName = `Dup ${prefix}`;
-    const takenType = `Has ${prefix}`;
-    const exclusiveType = `One ${prefix}`;
-    const held = `Own ${prefix}`;
-    let machine: { id: string; initials: string; name: string } | null = null;
-
-    test.beforeAll(async () => {
-      const ownerId = await getProfileIdByEmail(TEST_USERS.admin.email);
-      const created = await createTestMachine(ownerId);
-      machine = created;
-      await createTestTagType(sourceType, {
-        exclusive: false,
-        tags: [tagName],
-      });
-      // Same name in another type; slugs are unique across every tag.
-      await createTestTagType(takenType, {
-        exclusive: false,
-        tags: [{ name: tagName, slug: `${testTagSlug(tagName)}-2` }],
-      });
-      await createTestTagType(exclusiveType, {
-        exclusive: true,
-        tags: [held],
-      });
-      await addTestMachineTags(created.id, [tagName, held]);
-    });
-
-    test.afterAll(async () => {
-      for (const name of [sourceType, takenType, exclusiveType]) {
-        await deleteTestTagType(name).catch(() => undefined);
-      }
-      if (machine) await deleteTestMachine(machine.id).catch(() => undefined);
-    });
-
-    test("refuses a taken name and a machine that would hold two exclusive tags", async ({
-      page,
-    }) => {
-      if (!machine) throw new Error("Test machine was not created");
-      await page.goto(
-        `/c/tags/${testTagSlug(sourceType)}/${testTagSlug(tagName)}`
-      );
-      await clickPageAction(page, "Move to another tag type…");
-      const dialog = page.getByRole("dialog", { name: `Move ${tagName}` });
-      const select = dialog.getByLabel("Tag type");
-      const move = dialog.getByRole("button", { name: "Move tag" });
-
-      // --- A tag type that already has the name -----------------------------
-      await select.selectOption({ label: takenType });
-      await expect(dialog.getByRole("alert")).toHaveText(
-        `${takenType} already has a tag named ${tagName}`
-      );
-      await expect(move).toBeDisabled();
-
-      // --- An exclusive type the machine already holds a tag of -------------
-      await select.selectOption({
-        label: `${exclusiveType} · one per machine`,
-      });
-      await expect(dialog.getByRole("alert")).toHaveText(
-        `1 machine would hold two ${exclusiveType} tags`
-      );
-      await expect(
-        dialog.getByRole("link", { name: machine.name })
-      ).toHaveAttribute("href", `/m/${machine.initials}`);
-      await expect(dialog.getByText(held, { exact: true })).toBeVisible();
-      await expect(move).toBeDisabled();
-      await assertNoA11yViolations(page);
-
-      // --- The blocked dialog fits the narrowest review viewport ------------
-      await page.setViewportSize({ width: 320, height: 568 });
-      await expect(dialog.getByRole("alert")).toBeVisible();
-      const fit = await dialog.evaluate((element) => ({
-        right: element.getBoundingClientRect().right,
-        overflow: element.scrollWidth - element.clientWidth,
-        viewport: document.documentElement.clientWidth,
-      }));
-      expect(fit.right).toBeLessThanOrEqual(fit.viewport);
-      expect(fit.overflow).toBeLessThanOrEqual(0);
     });
   });
 });

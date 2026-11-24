@@ -1,12 +1,14 @@
 /**
  * E2E: Collection edit sharing via account collaborators (PP-wqit.7).
  *
- * Full journey: the owner (Member User) grants Technician User editor access;
- * the editor sees the collection under "Shared with you" and can edit its
- * machines but not delete/share; the owner revokes; the editor loses access.
+ * Full journey: the owner (Member User) creates a collection with a machine and
+ * grants Technician User editor access; the editor sees the collection under
+ * "Shared with you" and can edit its machines but not delete/share; the owner
+ * revokes; the editor loses access on both My Collections and direct URL.
  *
- * Two seeded accounts drive this — the owner runs in the file's default
- * `member` storageState; the editor runs in a second `technician` context.
+ * Action-level auth and page-level gating are also guarded in:
+ * - `src/test/integration/collections-actions.test.ts`
+ * - `src/test/integration/collections-pages.test.tsx`
  */
 
 import { test, expect, attachHydrationWait } from "../support/fixtures.js";
@@ -31,17 +33,20 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
 
     // --- Owner creates a collection with one machine ----------------------
     await page.goto("/c/collections");
-    await page.getByTestId("create-collection-trigger").click();
-    await page.getByLabel("Name").fill(name);
-    await page.getByTestId("create-collection-submit").click();
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}/);
-    const collectionUrl = page.url();
-
+    await expect(async () => {
+      await page.keyboard.press("Escape");
+      await page.getByTestId("create-collection-trigger").click();
+      const nameField = page.getByLabel("Name");
+      await expect(nameField).toBeVisible({ timeout: 5_000 });
+      await nameField.fill(name);
+    }).toPass({ timeout: 15_000 });
     await page.getByTestId("collection-machines-multiselect").click();
     await page.getByPlaceholder("Search machines…").fill("Attack from Mars");
     await page.getByRole("option", { name: /Attack from Mars/ }).click();
     await page.keyboard.press("Escape");
-    await page.getByTestId("collection-add-machines").click();
+    await page.getByTestId("create-collection-submit").click();
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}/);
+    const collectionUrl = page.url();
     await expect(
       page.getByRole("link", { name: "Attack from Mars", exact: true })
     ).toBeVisible();
@@ -51,9 +56,8 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
     await page.getByTestId("collab-add-trigger").click();
     await page.getByPlaceholder("Search members…").fill("Technician");
     await page.getByRole("option", { name: new RegExp(EDITOR_NAME) }).click();
-    // The editor now appears in the People-with-access list.
     await expect(page.getByLabel(`Remove ${EDITOR_NAME}`)).toBeVisible();
-    await page.keyboard.press("Escape"); // close the Share dialog
+    await page.keyboard.press("Escape");
 
     // --- Editor sees it under "Shared with you" and can edit --------------
     const editorCtx = await browser.newContext({
@@ -65,9 +69,7 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
       await expect(
         ed.getByRole("heading", { name: "Shared with you" })
       ).toBeVisible();
-      // Scope every assertion to THIS run's uniquely-named row — parallel
-      // workers each create a Member-User-owned "…EditShare" collection, so a
-      // global getByText("Shared by Member User") is a strict-mode violation.
+      // Scope to this run's uniquely named row across parallel workers.
       const sharedLink = ed.getByRole("link", { name: new RegExp(name) });
       await expect(sharedLink).toBeVisible();
       await expect(sharedLink).toContainText("Shared by Member User");
@@ -75,8 +77,6 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
 
       await sharedLink.click();
       await expect(ed).toHaveURL(/\/c\/[0-9a-f-]{36}/);
-      // Editor gets Edit collection in ⋯ but NOT Share (owner-only, 4.15)
-      // and NOT Delete collection (owner-only, 4.17).
       await expectPageAction(ed, "Edit collection…");
       await expectNoPageAction(ed, "Share");
       await expectNoPageAction(ed, "Delete collection");
@@ -84,8 +84,6 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
       // Editor adds a machine and saves.
       await clickPageAction(ed, "Edit collection…");
       await ed.getByTestId("collection-machines-multiselect").click();
-      // The populated Overview also has the Machine View search. The picker
-      // input is portaled after it, so target the open picker's search.
       await ed.getByPlaceholder("Search machines…").last().fill("Hyperball");
       await ed.getByRole("option", { name: /Hyperball/ }).click();
       await ed.keyboard.press("Escape");
@@ -93,35 +91,26 @@ test.describe("Collection edit sharing (PP-wqit.7)", () => {
       await expect(
         ed.getByRole("link", { name: "Hyperball", exact: true })
       ).toBeVisible();
-    } finally {
-      await editorCtx.close();
-    }
 
-    // --- Owner revokes access ---------------------------------------------
-    await page.goto(collectionUrl);
-    await clickPageAction(page, "Share");
-    await page.getByLabel(`Remove ${EDITOR_NAME}`).click();
-    await expect(page.getByLabel(`Remove ${EDITOR_NAME}`)).toHaveCount(0);
-    await page.keyboard.press("Escape");
+      // --- Owner revokes access -------------------------------------------
+      await page.goto(collectionUrl);
+      await clickPageAction(page, "Share");
+      await page.getByLabel(`Remove ${EDITOR_NAME}`).click();
+      await expect(page.getByLabel(`Remove ${EDITOR_NAME}`)).toHaveCount(0);
+      await page.keyboard.press("Escape");
 
-    // --- Revoked editor can no longer reach it ----------------------------
-    const revokedCtx = await browser.newContext({
-      storageState: STORAGE_STATE.technician,
-    });
-    try {
-      const rv = attachHydrationWait(await revokedCtx.newPage());
-      await rv.goto("/c/collections");
+      // --- Revoked editor can no longer reach it --------------------------
+      await ed.goto("/c/collections");
       await expect(
-        rv.getByRole("link", { name: new RegExp(name) })
+        ed.getByRole("link", { name: new RegExp(name) })
       ).toHaveCount(0);
-      // Direct navigation 404s (a uuid is not a capability for a non-collaborator).
-      const response = await rv.goto(collectionUrl);
+      const response = await ed.goto(collectionUrl);
       expect(response?.status()).toBe(404);
       await expect(
-        rv.getByRole("heading", { name: "Page not found" })
+        ed.getByRole("heading", { name: "Page not found" })
       ).toBeVisible();
     } finally {
-      await revokedCtx.close();
+      await editorCtx.close();
     }
   });
 });

@@ -1,15 +1,15 @@
 /**
- * E2E Tests: Personal collections (PP-wqit.1, Wave 0a)
+ * E2E Tests: Personal collections (PP-wqit.1, Wave 0a & Wave 0b)
  *
- * Smoke coverage for the private, owner-only collections flow: create a
- * collection from the "My Collections" list, add a machine via the owner
- * multi-select, and confirm the Overview / Issues / Timeline tabs render
- * without 500. Also asserts a freshly-created (empty) collection shows its
- * empty state. "Renders without 500" smoke — deeper behavior is covered by
- * integration tests (collections-actions / collections-user).
+ * Smoke journey for the personal collections flow: open "My Collections" from
+ * the user menu, create a collection, confirm its empty state, add a machine
+ * via the inline picker, browse Overview / Issues / Timeline without 500, then
+ * enable a View Link and verify anonymous read-only vs. owner-full access.
  *
- * Fixtures: the seeded member owns Attack from Mars (AFM) — see the owner-machines
- * spec — so it's a stable choice for the add-machine step.
+ * Deeper page/gating and action contracts live at cheaper layers:
+ * - Server Actions: `src/test/integration/collections-actions.test.ts`
+ * - Page loaders & gating: `src/test/integration/collections-pages.test.tsx`
+ * - Dialog & inline picker UI: `src/components/collections/*.test.tsx`
  */
 
 import { test, expect, attachHydrationWait } from "../support/fixtures.js";
@@ -24,8 +24,9 @@ import {
 test.describe("Personal collections (PP-wqit.1)", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
-  test("create a collection, add a machine, and browse its tabs", async ({
+  test("create a collection, add a machine, browse its tabs, and share a view link anonymously", async ({
     page,
+    browser,
   }) => {
     const name = `${getTestPrefix()} Faves`;
 
@@ -63,14 +64,12 @@ test.describe("Personal collections (PP-wqit.1)", () => {
     await page.keyboard.press("Escape"); // close the multi-select popover
     await page.getByTestId("collection-add-machines").click();
 
-    // Overview now renders the shared Machine View in either responsive mode.
+    // Overview now renders the shared Machine View and owner breadcrumb.
     await expect(
       page.getByRole("link", { name: "Attack from Mars", exact: true })
     ).toBeVisible();
     const title = page.getByRole("heading", { level: 1, name, exact: true });
     await expect(title).toBeVisible();
-    // The owner's breadcrumb leads back to My Collections
-    // (collections-and-tags 4.8).
     await expect(
       page
         .getByRole("navigation", { name: "Breadcrumb" })
@@ -85,38 +84,9 @@ test.describe("Personal collections (PP-wqit.1)", () => {
     await page.getByTestId("collection-tab-timeline").click();
     await expect(page).toHaveURL(/\/timeline$/);
     await expect(title).toBeVisible();
-  });
 
-  test("share a collection and open the view link anonymously (Wave 0b)", async ({
-    page,
-    browser,
-  }) => {
-    const name = `${getTestPrefix()} Shared`;
-
-    // Owner creates a collection with a machine so the shared Overview has content.
-    await page.goto("/c/collections");
-    // Same retry-with-fill pattern as the create test above (PP-2b3r).
-    await expect(async () => {
-      await page.keyboard.press("Escape");
-      await page.getByTestId("create-collection-trigger").click();
-      const nameField = page.getByLabel("Name");
-      await expect(nameField).toBeVisible({ timeout: 5_000 });
-      await nameField.fill(name);
-    }).toPass({ timeout: 15_000 });
-    await page.getByTestId("create-collection-submit").click();
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}/);
-    await page.getByTestId("collection-machines-multiselect").click();
-    await page.getByPlaceholder("Search machines…").fill("Attack from Mars");
-    await page.getByRole("option", { name: /Attack from Mars/ }).click();
-    await page.keyboard.press("Escape");
-    await page.getByTestId("collection-add-machines").click();
-    await expect(
-      page.getByRole("link", { name: "Attack from Mars", exact: true })
-    ).toBeVisible();
-
-    // Enable view sharing and grab the generated link. Share is a page
-    // action, or an entry in ⋯ once the row folds it (collections-and-tags
-    // 4.15, 4.18).
+    // Enable view sharing and open the link anonymously — no login redirect,
+    // read-only Overview without breadcrumb or owner controls.
     await clickPageAction(page, "Share");
     await page.getByTestId("collection-share-toggle").click();
     const shareUrl = await page
@@ -124,10 +94,6 @@ test.describe("Personal collections (PP-wqit.1)", () => {
       .inputValue();
     expect(shareUrl).toMatch(/\/c\/[^/]+$/);
 
-    // A genuinely signed-out context opens the link — no login redirect, and
-    // the read-only Overview renders without any owner controls. Force an empty
-    // storageState: under this file's `test.use({ storageState: member })`, a
-    // bare newContext() inherits the member session (it would NOT be anonymous).
     const anon = await browser.newContext({
       storageState: { cookies: [], origins: [] },
     });
@@ -138,8 +104,6 @@ test.describe("Personal collections (PP-wqit.1)", () => {
         anonPage.getByRole("link", { name: "Attack from Mars", exact: true })
       ).toBeVisible();
       await expect(anonPage).toHaveURL(/\/c\/[^/]+$/);
-      // Collections links to My Collections, which an anonymous visitor
-      // cannot open, so the title stands alone (4.8).
       await expect(
         anonPage.getByRole("heading", { level: 1, name, exact: true })
       ).toBeVisible();
@@ -152,8 +116,7 @@ test.describe("Personal collections (PP-wqit.1)", () => {
       await anon.close();
     }
 
-    // The OWNER opening their own share link still sees full controls — access
-    // is permission-based, not URL-based (the token only widens who can read).
+    // The owner opening their own share link still sees full controls.
     await page.goto(shareUrl);
     await expectPageAction(page, "Share");
     await expectPageAction(page, "Edit collection…");
