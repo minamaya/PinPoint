@@ -304,7 +304,9 @@ test.describe("Tag type changes", () => {
     const prefix = getTestPrefix();
     const fromType = `From ${prefix}`;
     const toType = `To ${prefix}`;
+    const exclusiveType = `One ${prefix}`;
     const tagName = `Mv ${prefix}`;
+    const held = `Own ${prefix}`;
     let machine: { id: string; initials: string } | null = null;
 
     test.beforeAll(async () => {
@@ -313,12 +315,14 @@ test.describe("Tag type changes", () => {
       machine = created;
       await createTestTagType(fromType, { exclusive: false, tags: [tagName] });
       await createTestTagType(toType, { exclusive: false, tags: [] });
-      await addTestMachineTags(created.id, [tagName]);
+      await createTestTagType(exclusiveType, { exclusive: true, tags: [held] });
+      await addTestMachineTags(created.id, [tagName, held]);
     });
 
     test.afterAll(async () => {
       await deleteTestTagType(fromType).catch(() => undefined);
       await deleteTestTagType(toType).catch(() => undefined);
+      await deleteTestTagType(exclusiveType).catch(() => undefined);
       if (machine) await deleteTestMachine(machine.id).catch(() => undefined);
     });
 
@@ -337,7 +341,30 @@ test.describe("Tag type changes", () => {
       ).toBeVisible();
       await clickPageAction(page, "Move to another tag type…");
       const dialog = page.getByRole("dialog", { name: `Move ${tagName}` });
-      await dialog.getByLabel("Tag type").selectOption({ label: toType });
+      const select = dialog.getByLabel("Tag type");
+
+      // --- Blocked exclusive conflict dialog fits 320px and passes axe ----
+      await select.selectOption({
+        label: `${exclusiveType} · one per machine`,
+      });
+      await expect(dialog.getByRole("alert")).toHaveText(
+        `1 machine would hold two ${exclusiveType} tags`
+      );
+      await expect(
+        dialog.getByRole("button", { name: "Move tag" })
+      ).toBeDisabled();
+      await page.setViewportSize({ width: 320, height: 568 });
+      const fit = await dialog.evaluate((element) => ({
+        right: element.getBoundingClientRect().right,
+        overflow: element.scrollWidth - element.clientWidth,
+        viewport: document.documentElement.clientWidth,
+      }));
+      expect(fit.right).toBeLessThanOrEqual(fit.viewport);
+      expect(fit.overflow).toBeLessThanOrEqual(0);
+      await assertNoA11yViolations(page);
+
+      await page.setViewportSize({ width: 1024, height: 768 });
+      await select.selectOption({ label: toType });
       await dialog.getByRole("button", { name: "Move tag" }).click();
 
       // --- Lands on the new address and updates the breadcrumb ------------
