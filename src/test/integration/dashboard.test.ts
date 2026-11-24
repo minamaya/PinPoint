@@ -647,3 +647,155 @@ describe("loadDashboardData: Removed machines", () => {
     expect(data.totalOpenIssues).toBe(1);
   });
 });
+
+describe("loadDashboardData: sections, limits, and anonymous mode", () => {
+  setupTestDb();
+
+  it("returns uncapped myIssuesCount while capping assignedIssues and recentIssues at 10", async () => {
+    const db = await getTestDb();
+    const [me, other] = await db
+      .insert(userProfiles)
+      .values([
+        createTestUser({ firstName: "Dash", lastName: "Member" }),
+        createTestUser({ firstName: "Other", lastName: "User" }),
+      ])
+      .returning();
+    if (!me || !other) throw new Error("user seed failed");
+
+    await db.insert(machines).values(createTestMachine({ initials: "DS" }));
+
+    const base = new Date("2026-03-01T00:00:00Z").getTime();
+    const assignedOpen = Array.from({ length: 12 }, (_, idx) =>
+      createTestIssue("DS", {
+        issueNumber: idx + 1,
+        title: `Assigned ${String(idx + 1)}`,
+        assignedTo: me.id,
+        reportedBy: other.id,
+        status: idx % 2 === 0 ? "new" : "in_progress",
+        severity: "minor",
+        createdAt: new Date(base + idx * 1000),
+      })
+    );
+    const assignedClosed = createTestIssue("DS", {
+      issueNumber: 13,
+      title: "Assigned Closed",
+      assignedTo: me.id,
+      status: "fixed",
+      severity: "minor",
+      createdAt: new Date(base + 13_000),
+    });
+    const otherOpen = createTestIssue("DS", {
+      issueNumber: 14,
+      title: "Other Open",
+      assignedTo: other.id,
+      status: "confirmed",
+      severity: "major",
+      createdAt: new Date(base + 14_000),
+    });
+    await db
+      .insert(issues)
+      .values([...assignedOpen, assignedClosed, otherOpen]);
+
+    const data = await loadDashboardData(asDbOrTx(db), me.id);
+
+    expect(data.userProfile?.name).toBe("Dash Member");
+    expect(data.myIssuesCount).toBe(12);
+    expect(data.assignedIssues).toHaveLength(10);
+    expect(data.assignedIssues[0]?.title).toBe("Assigned 12");
+    expect(data.assignedIssues[9]?.title).toBe("Assigned 3");
+    expect(data.recentIssues).toHaveLength(10);
+    expect(data.recentIssues[0]?.title).toBe("Other Open");
+    expect(data.totalOpenIssues).toBe(13);
+    expect(data.machinesNeedingService).toBe(1);
+  });
+
+  it("caps newestMachines and recentlyFixedMachines at 3 and excludes machines with open major issues", async () => {
+    const db = await getTestDb();
+    const base = new Date("2026-04-01T00:00:00Z").getTime();
+    await db.insert(machines).values([
+      createTestMachine({
+        initials: "M1",
+        name: "Machine 1",
+        createdAt: new Date(base + 1000),
+      }),
+      createTestMachine({
+        initials: "M2",
+        name: "Machine 2",
+        createdAt: new Date(base + 2000),
+      }),
+      createTestMachine({
+        initials: "M3",
+        name: "Machine 3",
+        createdAt: new Date(base + 3000),
+      }),
+      createTestMachine({
+        initials: "M4",
+        name: "Machine 4",
+        createdAt: new Date(base + 4000),
+      }),
+      createTestMachine({
+        initials: "SB",
+        name: "Still Broken",
+        createdAt: new Date(base + 500),
+      }),
+    ]);
+
+    await db.insert(issues).values([
+      createTestIssue("M1", {
+        issueNumber: 1,
+        severity: "major",
+        status: "fixed",
+        updatedAt: new Date(base + 10_000),
+      }),
+      createTestIssue("M2", {
+        issueNumber: 1,
+        severity: "unplayable",
+        status: "wont_fix",
+        updatedAt: new Date(base + 20_000),
+      }),
+      createTestIssue("M3", {
+        issueNumber: 1,
+        severity: "major",
+        status: "fixed",
+        updatedAt: new Date(base + 30_000),
+      }),
+      createTestIssue("M4", {
+        issueNumber: 1,
+        severity: "major",
+        status: "fixed",
+        updatedAt: new Date(base + 40_000),
+      }),
+      // SB had a closed major issue more recently, plus an open unplayable issue.
+      createTestIssue("SB", {
+        issueNumber: 1,
+        severity: "major",
+        status: "fixed",
+        updatedAt: new Date(base + 50_000),
+      }),
+      createTestIssue("SB", {
+        issueNumber: 2,
+        severity: "unplayable",
+        status: "new",
+        updatedAt: new Date(base + 60_000),
+      }),
+    ]);
+
+    const data = await loadDashboardData(asDbOrTx(db));
+
+    expect(data.userProfile).toBeUndefined();
+    expect(data.assignedIssues).toEqual([]);
+    expect(data.myIssuesCount).toBe(0);
+    expect(data.newestMachines.map((m) => m.initials)).toEqual([
+      "M4",
+      "M3",
+      "M2",
+    ]);
+    expect(data.recentlyFixedMachines.map((m) => m.initials)).toEqual([
+      "M4",
+      "M3",
+      "M2",
+    ]);
+    expect(data.machinesNeedingService).toBe(1);
+    expect(data.totalOpenIssues).toBe(1);
+  });
+});

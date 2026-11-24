@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import { createTestMachine, createTestUser } from "~/test/helpers/factories";
-import { issues, machines, userProfiles } from "~/server/db/schema";
+import {
+  issueComments,
+  issues,
+  machines,
+  userProfiles,
+} from "~/server/db/schema";
 import { getPermissionState } from "~/lib/permissions/helpers";
 import { type OwnershipContext } from "~/lib/permissions/helpers";
 import { type AccessLevel } from "~/lib/permissions/matrix";
@@ -359,11 +364,13 @@ describe("issue action permission wiring — action-level integration (PP-x4li.1
     guestOwnedIssueId = guestIssue.id;
   });
 
-  async function mockAuth(userId: string) {
+  async function mockAuth(userId: string | null) {
     const { createClient } = await import("~/lib/supabase/server");
     vi.mocked(createClient).mockResolvedValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } } }),
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: userId ? { id: userId } : null },
+        }),
       },
     } as unknown as Awaited<ReturnType<typeof createClient>>);
   }
@@ -428,5 +435,211 @@ describe("issue action permission wiring — action-level integration (PP-x4li.1
     const result = await updateIssueFrequencyAction(undefined, formData);
 
     expect(result.ok).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // assignIssueAction — permission + unassign + timeline persistence
+  // -------------------------------------------------------------------------
+  it("allows assignIssueAction for a member to assign and unassign, recording timeline events", async () => {
+    await mockAuth(MEMBER_USER_ID);
+    const { assignIssueAction } = await import("~/app/(app)/issues/actions");
+
+    const assignData = new FormData();
+    assignData.append("issueId", memberIssueId);
+    assignData.append("assignedTo", MACHINE_OWNER_ID);
+    const assignResult = await assignIssueAction(undefined, assignData);
+    expect(assignResult).toEqual({
+      ok: true,
+      value: { issueId: memberIssueId },
+    });
+
+    const db = await getTestDb();
+    const afterAssign = await db.query.issues.findFirst({
+      where: eq(issues.id, memberIssueId),
+    });
+    expect(afterAssign?.assignedTo).toBe(MACHINE_OWNER_ID);
+
+    const eventsAfterAssign = await db.query.issueComments.findMany({
+      where: eq(issueComments.issueId, memberIssueId),
+      orderBy: desc(issueComments.createdAt),
+    });
+    expect(eventsAfterAssign[0]?.eventData).toMatchObject({
+      type: "assigned",
+      assigneeId: MACHINE_OWNER_ID,
+    });
+
+    // Empty string clears assignedTo back to null.
+    const unassignData = new FormData();
+    unassignData.append("issueId", memberIssueId);
+    unassignData.append("assignedTo", "");
+    const unassignResult = await assignIssueAction(undefined, unassignData);
+    expect(unassignResult).toEqual({
+      ok: true,
+      value: { issueId: memberIssueId },
+    });
+
+    const afterUnassign = await db.query.issues.findFirst({
+      where: eq(issues.id, memberIssueId),
+    });
+    expect(afterUnassign?.assignedTo).toBeNull();
+  });
+
+  it("denies assignIssueAction for a guest (even on own issue) and unauthenticated callers", async () => {
+    const db = await getTestDb();
+    const { assignIssueAction } = await import("~/app/(app)/issues/actions");
+
+    await mockAuth(GUEST_REPORTER_ID);
+    const guestForm = new FormData();
+    guestForm.append("issueId", guestOwnedIssueId);
+    guestForm.append("assignedTo", MEMBER_USER_ID);
+    const guestResult = await assignIssueAction(undefined, guestForm);
+    expect(guestResult.ok).toBe(false);
+    if (!guestResult.ok) {
+      expect(guestResult.code).toBe("FORBIDDEN");
+    }
+
+    await mockAuth(null);
+    const anonForm = new FormData();
+    anonForm.append("issueId", guestOwnedIssueId);
+    anonForm.append("assignedTo", MEMBER_USER_ID);
+    const anonResult = await assignIssueAction(undefined, anonForm);
+    expect(anonResult.ok).toBe(false);
+    if (!anonResult.ok) {
+      expect(anonResult.code).toBe("UNAUTHORIZED");
+    }
+
+    const row = await db.query.issues.findFirst({
+      where: eq(issues.id, guestOwnedIssueId),
+    });
+    expect(row?.assignedTo).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // updateIssuePriorityAction — triage permission
+  // -------------------------------------------------------------------------
+  it("allows updateIssuePriorityAction for a member and denies a guest on their own issue", async () => {
+    const db = await getTestDb();
+    const { updateIssuePriorityAction } =
+      await import("~/app/(app)/issues/actions");
+
+    await mockAuth(MEMBER_USER_ID);
+    const memberForm = new FormData();
+    memberForm.append("issueId", memberIssueId);
+    memberForm.append("priority", "high");
+    const memberResult = await updateIssuePriorityAction(undefined, memberForm);
+    expect(memberResult.ok).toBe(true);
+
+    const updated = await db.query.issues.findFirst({
+      where: eq(issues.id, memberIssueId),
+    });
+    expect(updated?.priority).toBe("high");
+
+    await mockAuth(GUEST_REPORTER_ID);
+    const guestForm = new FormData();
+    guestForm.append("issueId", guestOwnedIssueId);
+    guestForm.append("priority", "high");
+    const guestResult = await updateIssuePriorityAction(undefined, guestForm);
+    expect(guestResult.ok).toBe(false);
+    if (!guestResult.ok) {
+      expect(guestResult.code).toBe("FORBIDDEN");
+    }
+
+    const unchanged = await db.query.issues.findFirst({
+      where: eq(issues.id, guestOwnedIssueId),
+    });
+    expect(unchanged?.priority).toBe("low");
+  });
+
+  // -------------------------------------------------------------------------
+  // updateIssueSeverityAction & updateIssueTitleAction — reporting ownership
+  // -------------------------------------------------------------------------
+  it("allows guest reporting updates on own issue but denies on another user's issue", async () => {
+    const db = await getTestDb();
+    const { updateIssueSeverityAction, updateIssueTitleAction } =
+      await import("~/app/(app)/issues/actions");
+
+    await mockAuth(GUEST_REPORTER_ID);
+    const ownSeverity = new FormData();
+    ownSeverity.append("issueId", guestOwnedIssueId);
+    ownSeverity.append("severity", "unplayable");
+    expect((await updateIssueSeverityAction(undefined, ownSeverity)).ok).toBe(
+      true
+    );
+
+    const ownTitle = new FormData();
+    ownTitle.append("issueId", guestOwnedIssueId);
+    ownTitle.append("title", "  Flipper\n  stuck  ");
+    expect((await updateIssueTitleAction(undefined, ownTitle)).ok).toBe(true);
+
+    const updated = await db.query.issues.findFirst({
+      where: eq(issues.id, guestOwnedIssueId),
+    });
+    expect(updated?.severity).toBe("unplayable");
+    expect(updated?.title).toBe("Flipper stuck");
+
+    const otherSeverity = new FormData();
+    otherSeverity.append("issueId", memberIssueId);
+    otherSeverity.append("severity", "unplayable");
+    const deniedSeverity = await updateIssueSeverityAction(
+      undefined,
+      otherSeverity
+    );
+    expect(deniedSeverity.ok).toBe(false);
+    if (!deniedSeverity.ok) {
+      expect(deniedSeverity.code).toBe("FORBIDDEN");
+    }
+
+    const otherTitle = new FormData();
+    otherTitle.append("issueId", memberIssueId);
+    otherTitle.append("title", "Hijacked");
+    const deniedTitle = await updateIssueTitleAction(undefined, otherTitle);
+    expect(deniedTitle.ok).toBe(false);
+    if (!deniedTitle.ok) {
+      expect(deniedTitle.code).toBe("FORBIDDEN");
+    }
+
+    const untouched = await db.query.issues.findFirst({
+      where: eq(issues.id, memberIssueId),
+    });
+    expect(untouched?.severity).toBe("minor");
+    expect(untouched?.title).toBe("Member-reported action test issue");
+  });
+
+  // -------------------------------------------------------------------------
+  // Issue detail _data.ts loaders — privacy & roster exclusions
+  // -------------------------------------------------------------------------
+  it("getAssigneeRoster excludes guests and omits emails; getIssueForDetail omits reporterEmail", async () => {
+    const db = await getTestDb();
+    await db.insert(issues).values({
+      machineInitials: "PAT",
+      issueNumber: 12,
+      title: "Closed PAT issue",
+      severity: "minor",
+      priority: "low",
+      frequency: "intermittent",
+      status: "fixed",
+      reportedBy: null,
+      reporterName: "Guest Reporter",
+      reporterEmail: "secret@example.com",
+    });
+
+    const { getAssigneeRoster, getIssueForDetail, getOtherOpenIssues } =
+      await import("~/app/(app)/m/[initials]/i/[issueNumber]/_data");
+
+    const roster = await getAssigneeRoster();
+    expect(roster.map((u) => u.id).sort()).toEqual(
+      [MEMBER_USER_ID, MACHINE_OWNER_ID].sort()
+    );
+    for (const entry of roster) {
+      expect(Object.keys(entry).sort()).toEqual(["id", "name"]);
+    }
+
+    const detail = await getIssueForDetail("PAT", 12);
+    expect(detail).toBeDefined();
+    expect(detail && "reporterEmail" in detail).toBe(false);
+
+    const otherOpen = await getOtherOpenIssues("PAT", 10, 5);
+    expect(otherOpen.count).toBe(1);
+    expect(otherOpen.issues.map((i) => i.issueNumber)).toEqual([11]);
   });
 });

@@ -130,14 +130,3 @@ export async function cleanupTestEntities(
     await sql.end();
   }
 }
-
-export function extractIdFromUrl(url: string): string | null {
-  const segments = url.split("/").filter(Boolean);
-  const possibleId = segments.at(-1);
-  if (!possibleId) {
-    return null;
-  }
-  const uuidPattern =
-    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/u;
-  return uuidPattern.test(possibleId) ? possibleId : null;
-}
