@@ -10,10 +10,12 @@ import React from "react";
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { redirect } from "next/navigation";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import { machineApronCards, machines, userProfiles } from "~/server/db/schema";
 import { createTestMachine, createTestUser } from "~/test/helpers/factories";
 import MachineApronCardPage from "~/app/(app)/m/[initials]/(tabs)/apron/page";
+import MachineDetailLayout from "~/app/(app)/m/[initials]/(tabs)/layout";
 import type { ApronCardTabProps } from "~/components/machines/apron/ApronCardTab";
 
 const mockGetUser = vi.fn();
@@ -44,6 +46,25 @@ const mockTab = vi.fn<(p: ApronCardTabProps) => React.ReactElement>(() => (
 ));
 vi.mock("~/components/machines/apron/ApronCardTab", () => ({
   ApronCardTab: (p: ApronCardTabProps) => mockTab(p),
+}));
+
+const mockTabStrip = vi.fn<
+  (p: { canSeeApronCards: boolean; canManage: boolean }) => React.ReactElement
+>(() => <div data-testid="machine-tab-strip" />);
+vi.mock("~/components/machines/MachineTabStrip", () => ({
+  MachineTabStrip: (p: { canSeeApronCards: boolean; canManage: boolean }) =>
+    mockTabStrip(p),
+}));
+vi.mock("~/components/machines/MachineHeaderSwitch", () => ({
+  MachineHeaderSwitch: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+vi.mock("~/components/machines/MachineArtworkHero", () => ({
+  MachineArtworkHero: () => <div />,
+}));
+vi.mock("~/components/machines/MachineDetailHeader", () => ({
+  MachineDetailHeader: () => <div />,
 }));
 
 const PARAMS = Promise.resolve({ initials: "GZ" });
@@ -91,7 +112,41 @@ describe("Machine Apron card tab page", () => {
   ] as const)("sends %s back to the machine page", async (_label, role) => {
     const userId = role ? await makeUser(role) : null;
     await expect(renderAs(userId)).rejects.toThrow(RedirectError);
+    expect(redirect).toHaveBeenCalledWith("/m/GZ");
     expect(mockTab).not.toHaveBeenCalled();
+  });
+
+  it("hides the Apron card tab in layout for signed-out and guest visitors, and shows it to members", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    render(
+      await MachineDetailLayout({
+        params: PARAMS,
+        children: <div data-testid="child" />,
+      })
+    );
+    expect(mockTabStrip.mock.calls.at(-1)?.[0]?.canSeeApronCards).toBe(false);
+
+    mockTabStrip.mockClear();
+    const guestId = await makeUser("guest");
+    mockGetUser.mockResolvedValue({ data: { user: { id: guestId } } });
+    render(
+      await MachineDetailLayout({
+        params: PARAMS,
+        children: <div data-testid="child" />,
+      })
+    );
+    expect(mockTabStrip.mock.calls.at(-1)?.[0]?.canSeeApronCards).toBe(false);
+
+    mockTabStrip.mockClear();
+    const memberId = await makeUser("member");
+    mockGetUser.mockResolvedValue({ data: { user: { id: memberId } } });
+    render(
+      await MachineDetailLayout({
+        params: PARAMS,
+        children: <div data-testid="child" />,
+      })
+    );
+    expect(mockTabStrip.mock.calls.at(-1)?.[0]?.canSeeApronCards).toBe(true);
   });
 
   it("shows a member who does not own the machine Preview and Export only", async () => {

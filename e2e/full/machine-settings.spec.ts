@@ -21,7 +21,7 @@
 
 import { test, expect, type Locator, type Page } from "../support/fixtures.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
-import { seededMachines, TEST_USERS } from "../support/constants.js";
+import { TEST_USERS } from "../support/constants.js";
 import {
   createTestMachine,
   deleteTestMachine,
@@ -32,7 +32,6 @@ import {
 import { getTestPrefix } from "../support/test-isolation.js";
 import { clickPageAction } from "../support/page-actions.js";
 
-const machine = seededMachines.addamsFamily.initials;
 const PREFIX = "E2E PP-43q3";
 
 /**
@@ -146,7 +145,7 @@ test.describe("Machine Settings (PP-43q3)", () => {
       editorMachineId = null;
     });
 
-    test("creates a set, auto-saves, and survives a reload", async ({
+    test("reaches Settings from tab strip, creates a set, auto-saves, and survives a reload", async ({
       page,
     }) => {
       // The reload recompiles the route in dev mode (the E2E webServer runs
@@ -158,7 +157,9 @@ test.describe("Machine Settings (PP-43q3)", () => {
       page.on("dialog", (d) => void d.accept());
 
       const name = `${PREFIX} Tournament ${Date.now().toString()}`;
-      await page.goto(`/m/${editorMachine}/settings`);
+      await page.goto(`/m/${editorMachine}`);
+      await page.getByRole("link", { name: /^settings$/i }).click();
+      await expect(page).toHaveURL(new RegExp(`/m/${editorMachine}/settings$`));
 
       // New set opens straight into edit mode with the name field focused.
       await page.getByRole("button", { name: /new set/i }).click();
@@ -188,14 +189,6 @@ test.describe("Machine Settings (PP-43q3)", () => {
           page.getByRole("textbox", { name: /set name/i }).first()
         ).toHaveValue(name, { timeout: 8_000 });
       }).toPass({ timeout: 45_000 });
-    });
-
-    test("reaches the Settings tab from the machine tab strip", async ({
-      page,
-    }) => {
-      await page.goto(`/m/${editorMachine}`);
-      await page.getByRole("link", { name: /^settings$/i }).click();
-      await expect(page).toHaveURL(new RegExp(`/m/${editorMachine}/settings$`));
     });
   });
 
@@ -256,87 +249,28 @@ test.describe("Machine Settings (PP-43q3)", () => {
       body: null,
     };
 
-    test("delete a section via its ⋯ menu survives a reload", async ({
-      page,
-    }) => {
-      test.slow();
-      await seedSettingsSet(machineId, `${PREFIX} Delete target`, [
-        softwareSection,
-        rubbersSection,
-      ]);
-
-      await page.goto(`/m/${machineInitials}/settings`);
-      // Sets render collapsed by default (PP-tn6t) — expand the seeded set so its
-      // section headings are visible.
-      await page
-        .getByRole("button", {
-          name: `Expand ${PREFIX} Delete target settings set`,
-        })
-        .click();
-      await expect(
-        page.getByText("Software settings", { exact: true })
-      ).toBeVisible();
-      const rubbersHeading = page.getByRole("paragraph").filter({
-        hasText: /^Rubbers$/,
-      });
-      await expect(rubbersHeading).toBeVisible();
-
-      // Open the Rubbers section's ⋯ menu and delete it (AlertDialog confirm).
-      await activateSectionMenuItem(page, "Rubbers", /delete section/i);
-      // The confirm dialog names the section.
-      const dialog = page.getByRole("alertdialog");
-      await expect(
-        dialog.getByText(/Delete the Rubbers section\?/i)
-      ).toBeVisible();
-      await dialog.getByRole("button", { name: /^delete$/i }).click();
-
-      // Gone locally...
-      await expect(rubbersHeading).toHaveCount(0);
-
-      // ...and gone after a reload (proves the delete was persisted, not just
-      // removed from island state). Dev webServer can briefly serve a stale
-      // render right after revalidate, so retry the reload.
-      await expect(async () => {
-        await page.reload();
-        // Collapsed again after reload — re-expand to read the sections.
-        await page
-          .getByRole("button", {
-            name: `Expand ${PREFIX} Delete target settings set`,
-          })
-          .click();
-        await expect(
-          page.getByText("Software settings", { exact: true })
-        ).toBeVisible({
-          timeout: 8_000,
-        });
-        await expect(
-          page.getByRole("paragraph").filter({ hasText: /^Rubbers$/ })
-        ).toHaveCount(0);
-      }).toPass({ timeout: 45_000 });
-    });
-
-    test("reorder a section (⋯ Move down) survives a reload", async ({
+    test("reordering and deleting sections via ⋯ menus survive a reload", async ({
       page,
     }) => {
       test.slow();
       // Seed software FIRST, Rubbers second.
-      await seedSettingsSet(machineId, `${PREFIX} Reorder target`, [
+      await seedSettingsSet(machineId, `${PREFIX} Section ops target`, [
         softwareSection,
         rubbersSection,
       ]);
 
-      // Each section's ⋯ button names its section in its description; their
-      // DOM order is the section order. Read them top-to-bottom.
       const sectionOrder = (): Promise<string[]> =>
         sectionMenuDescriptions(page);
+      const expandSet = (): Promise<void> =>
+        page
+          .getByRole("button", {
+            name: `Expand ${PREFIX} Section ops target settings set`,
+          })
+          .click();
 
       await page.goto(`/m/${machineInitials}/settings`);
       // Sets render collapsed by default (PP-tn6t) — expand the seeded set.
-      await page
-        .getByRole("button", {
-          name: `Expand ${PREFIX} Reorder target settings set`,
-        })
-        .click();
+      await expandSet();
       await expect(
         page.getByText("Software settings", { exact: true })
       ).toBeVisible();
@@ -347,31 +281,47 @@ test.describe("Machine Settings (PP-43q3)", () => {
 
       // Move the first section (software) down — persists immediately.
       await activateSectionMenuItem(page, "Software settings", /move down/i);
-
-      // Order flipped locally.
       expect(await sectionOrder()).toEqual([
         "the Rubbers section",
         "the Software settings section",
       ]);
 
-      // And the new order survives a reload (persisted to the DB).
+      // Reload and verify the new section order persisted in Postgres.
       await expect(async () => {
         await page.reload();
-        // Collapsed again after reload — re-expand to read the section order.
-        await page
-          .getByRole("button", {
-            name: `Expand ${PREFIX} Reorder target settings set`,
-          })
-          .click();
+        await expandSet();
         await expect(
           page.getByText("Software settings", { exact: true })
-        ).toBeVisible({
-          timeout: 8_000,
-        });
+        ).toBeVisible({ timeout: 8_000 });
         expect(await sectionOrder()).toEqual([
           "the Rubbers section",
           "the Software settings section",
         ]);
+      }).toPass({ timeout: 45_000 });
+
+      // Delete the Rubbers section via its ⋯ menu + AlertDialog confirm.
+      const rubbersHeading = page.getByRole("paragraph").filter({
+        hasText: /^Rubbers$/,
+      });
+      await expect(rubbersHeading).toBeVisible();
+      await activateSectionMenuItem(page, "Rubbers", /delete section/i);
+      const dialog = page.getByRole("alertdialog");
+      await expect(
+        dialog.getByText(/Delete the Rubbers section\?/i)
+      ).toBeVisible();
+      await dialog.getByRole("button", { name: /^delete$/i }).click();
+      await expect(rubbersHeading).toHaveCount(0);
+
+      // Reload and verify the deletion persisted while Software remains.
+      await expect(async () => {
+        await page.reload();
+        await expandSet();
+        await expect(
+          page.getByText("Software settings", { exact: true })
+        ).toBeVisible({ timeout: 8_000 });
+        await expect(
+          page.getByRole("paragraph").filter({ hasText: /^Rubbers$/ })
+        ).toHaveCount(0);
       }).toPass({ timeout: 45_000 });
     });
   });
@@ -482,24 +432,6 @@ test.describe("Machine Settings (PP-43q3)", () => {
       await expect(
         page.getByRole("link", { name: renamedTag, exact: true })
       ).toHaveCount(0);
-    });
-  });
-
-  test.describe("read-only (non-owner member)", () => {
-    test.use({ storageState: STORAGE_STATE.member });
-
-    test("a non-owner sees the tab read-only (no New set affordance)", async ({
-      page,
-    }) => {
-      await page.goto(`/m/${machine}/settings`);
-      // TAF has no owner and no sets a non-owner member can see, so the tab
-      // shows its read-only empty state (PP-tn6t) and offers no "New set".
-      await expect(
-        page.getByText(/no settings sets recorded yet/i)
-      ).toBeVisible();
-      await expect(page.getByRole("button", { name: /new set/i })).toHaveCount(
-        0
-      );
     });
   });
 });

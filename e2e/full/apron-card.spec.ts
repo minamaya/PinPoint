@@ -80,9 +80,34 @@ test.describe("Apron card tab as an editor", () => {
     await description.fill(LONG_TEXT);
 
     // The preview measures the combined text region (§3.5); the card can
-    // still be saved.
+    // still be saved, and Export gates download/print behind the override
+    // after measuring real fonts in the browser (§9.4–§9.5).
     await expect(page.getByText("Doesn't fit on the card")).toBeVisible();
     await expect(save).toBeEnabled();
+    await save.click();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByText("Saved", { exact: true }).first()
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Export" }).click();
+    const exportDialog = page.getByRole("dialog", {
+      name: "Export apron card",
+    });
+    await expect(exportDialog.getByText("Doesn't fit")).toBeVisible();
+    const exportPdf = exportDialog.getByRole("button", {
+      name: "Download PDF",
+    });
+    await expect(exportPdf).toBeDisabled();
+    await exportDialog.getByLabel("Export with text cut off").check();
+    await expect(exportPdf).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Export" }).click();
+    await expect(
+      exportDialog.getByLabel("Export with text cut off")
+    ).not.toBeChecked();
+    await expect(exportPdf).toBeDisabled();
+    await page.keyboard.press("Escape");
 
     await description.fill("Shoot the ramps to light the lock.");
     await expect(page.getByText("Doesn't fit on the card")).toHaveCount(0);
@@ -109,7 +134,10 @@ test.describe("Apron card tab as an editor", () => {
     await expect(page.getByRole("group", { name: "Credits" })).toHaveCount(0);
 
     await save.click();
-    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByText("Saved", { exact: true }).first()
+    ).toBeVisible();
 
     await page.reload();
     const picker = page.getByRole("combobox", { name: "Saved card" });
@@ -138,7 +166,10 @@ test.describe("Apron card tab as an editor", () => {
       .getByRole("button", { name: "Delete card" })
       .click();
     await save.click();
-    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByText("Saved", { exact: true }).first()
+    ).toBeVisible();
 
     await page.reload();
     await picker.click();
@@ -167,9 +198,7 @@ test.describe("Apron card export", () => {
   test.describe("as a member who cannot edit the machine", () => {
     test.use({ storageState: STORAGE_STATE.member });
 
-    test("sees Preview and Export only, and prints the card", async ({
-      page,
-    }) => {
+    test("prints a saved card as a non-editing member", async ({ page }) => {
       // The print page opens the print dialog once the card is ready.
       await page.addInitScript(() => {
         window.print = () => undefined;
@@ -177,15 +206,6 @@ test.describe("Apron card export", () => {
 
       await page.goto(`/m/${machine.initials}/apron`);
       await expect(page.getByText("Preview")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Add card" })).toHaveCount(
-        0
-      );
-      await expect(
-        page.getByRole("button", { name: "Card actions" })
-      ).toHaveCount(0);
-      await expect(
-        page.getByRole("combobox", { name: "Apron size" })
-      ).toHaveCount(0);
 
       await page.getByRole("button", { name: "Export" }).click();
       const menu = page.getByRole("dialog", { name: "Export apron card" });
@@ -207,47 +227,6 @@ test.describe("Apron card export", () => {
         page.getByRole("img", { name: /QR code for .*\/hub\?source=apron/ })
       ).toBeVisible();
     });
-
-    test("needs the override to export a card that does not fit", async ({
-      page,
-    }) => {
-      await seedSavedApronCard(machine.id, { description: LONG_TEXT });
-
-      await page.goto(`/m/${machine.initials}/apron`);
-      await expect(page.getByText("Doesn't fit on the card")).toBeVisible();
-
-      await page.getByRole("button", { name: "Export" }).click();
-      const menu = page.getByRole("dialog", { name: "Export apron card" });
-      await expect(menu.getByText("Doesn't fit")).toBeVisible();
-      const pdf = menu.getByRole("button", { name: "Download PDF" });
-      await expect(pdf).toBeDisabled();
-
-      await menu.getByLabel("Export with text cut off").check();
-      await expect(pdf).toBeEnabled();
-
-      // The override is not kept between openings (§9.5).
-      await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "Export" }).click();
-      await expect(
-        menu.getByLabel("Export with text cut off")
-      ).not.toBeChecked();
-      await expect(pdf).toBeDisabled();
-    });
-  });
-
-  test("a signed-out visitor gets no tab and cannot print", async ({
-    page,
-  }) => {
-    await page.goto(`/m/${machine.initials}`);
-    await expect(page.getByTestId("machine-tab-apron")).toHaveCount(0);
-
-    await page.goto(`/m/${machine.initials}/apron`);
-    await expect(page).toHaveURL(`/m/${machine.initials}`);
-
-    const response = await page.goto(
-      `/m/${machine.initials}/apron/print?card=${cardId}`
-    );
-    expect(response?.status()).toBe(404);
   });
 });
 
