@@ -250,6 +250,91 @@ describe("issue Details field rows", () => {
     ).toBeInTheDocument();
   });
 
+  it("Assignee: selecting Me saves currentUserId and announces the new assignee", async () => {
+    vi.mocked(assignIssueAction).mockResolvedValue({
+      ok: true,
+      value: { issueId: "issue-1" },
+    });
+    const user = userEvent.setup();
+    renderRow(
+      <AssignIssueForm
+        issueId="issue-1"
+        assignedToId={null}
+        users={[
+          { id: "user-1", name: "Member User" },
+          { id: "user-2", name: "Pat Tech" },
+        ]}
+        currentUserId="user-1"
+        accessLevel="member"
+        ownershipContext={reporter}
+      />
+    );
+
+    await user.click(screen.getByTestId("assignee-picker-trigger"));
+    await user.click(screen.getByTestId("assignee-option-me"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Assignee changed to Member User"
+      );
+    });
+    expect(assignIssueAction).toHaveBeenCalledTimes(1);
+    const assignFormData = vi.mocked(assignIssueAction).mock.calls[0]?.[1];
+    expect(assignFormData?.get("issueId")).toBe("issue-1");
+    expect(assignFormData?.get("assignedTo")).toBe("user-1");
+  });
+
+  it("Assignee: unassigning submits an empty assignedTo string and announces Unassigned", async () => {
+    vi.mocked(assignIssueAction).mockResolvedValue({
+      ok: true,
+      value: { issueId: "issue-1" },
+    });
+    const user = userEvent.setup();
+    renderRow(
+      <AssignIssueForm
+        issueId="issue-1"
+        assignedToId="user-2"
+        users={[
+          { id: "user-1", name: "Member User" },
+          { id: "user-2", name: "Pat Tech" },
+        ]}
+        currentUserId="user-1"
+        accessLevel="member"
+        ownershipContext={reporter}
+      />
+    );
+
+    await user.click(screen.getByTestId("assignee-picker-trigger"));
+    await user.click(screen.getByTestId("assignee-option-unassigned"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Assignee changed to Unassigned"
+      );
+    });
+    const unassignFormData = vi.mocked(assignIssueAction).mock.calls[0]?.[1];
+    expect(unassignFormData?.get("assignedTo")).toBe("");
+  });
+
+  it("Assignee: a guest sees the assigned person read-only without a picker, even on their own issue", () => {
+    renderRow(
+      <AssignIssueForm
+        issueId="issue-1"
+        assignedToId="user-2"
+        users={[{ id: "user-2", name: "Pat Tech" }]}
+        currentUserId="guest-1"
+        accessLevel="guest"
+        ownershipContext={{ userId: "guest-1", reporterId: "guest-1" }}
+      />
+    );
+
+    const readonlyRow = screen.getByTestId("assignee-readonly");
+    expect(readonlyRow).toHaveTextContent("Pat Tech");
+    expect(
+      screen.queryByTestId("assignee-picker-trigger")
+    ).not.toBeInTheDocument();
+  });
+
   it("a guest can change status on their own issue but not on someone else's", () => {
     const { unmount } = render(
       <TooltipProvider>
