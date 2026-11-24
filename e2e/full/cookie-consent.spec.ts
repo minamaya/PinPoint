@@ -1,8 +1,10 @@
 /**
- * Smoke Test: Cookie Consent Banner
+ * E2E Test: Cookie Consent Banner
  *
- * Verifies the cookie consent banner appears on first visit,
- * can be dismissed, and stays dismissed on subsequent visits.
+ * Verifies RootLayout mounts the cookie consent banner when enabled and that
+ * dismissing it persists across a full browser reload. Copy, /privacy link,
+ * and client cookie state logic are covered in `CookieConsentBanner.test.tsx`
+ * and `src/lib/cookies/client.test.ts`.
  *
  * Uses /m (public machines list) instead of / (landing page) for faster,
  * more reliable hydration on mobile viewports in CI.
@@ -33,23 +35,15 @@ test.describe("Cookie Consent Banner", () => {
     },
   });
 
-  test("appears on first visit and dismisses on click", async ({ page }) => {
+  test("appears on first visit, dismisses on click, and stays dismissed across reload", async ({
+    page,
+  }) => {
     await page.goto("/m", { waitUntil: "domcontentloaded" });
 
-    // Banner should be visible after client hydration
     const banner = page.getByRole("region", {
       name: /cookie consent/i,
     });
     await expect(banner).toBeVisible();
-
-    // Verify text content
-    await expect(banner).toContainText(
-      "PinPoint uses cookies for authentication"
-    );
-
-    // Verify "Learn more" links to privacy policy
-    const learnMore = banner.getByRole("link", { name: /learn more/i });
-    await expect(learnMore).toHaveAttribute("href", "/privacy");
 
     // Remove the Next.js dev overlay that intercepts pointer events on mobile
     // viewports. Under `next dev` (local runs) the <nextjs-portal> overlay
@@ -59,14 +53,9 @@ test.describe("Cookie Consent Banner", () => {
       document.querySelectorAll("nextjs-portal").forEach((el) => el.remove());
     });
 
-    // Click "Got it" to dismiss
-    const gotItButton = banner.getByRole("button", { name: /got it/i });
-    await gotItButton.click();
-
-    // Banner should disappear
+    await banner.getByRole("button", { name: /got it/i }).click();
     await expect(banner).not.toBeVisible();
 
-    // Reload — banner should stay dismissed (cookie persists)
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(banner).not.toBeVisible();
   });

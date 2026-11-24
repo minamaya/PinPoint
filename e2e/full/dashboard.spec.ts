@@ -1,8 +1,10 @@
 /**
  * E2E Tests: Member Dashboard
  *
- * Critical journey: Dashboard displays assigned issues, recent issues,
- * newest games, recently fixed games, and quick stats after login.
+ * Critical journey: Dashboard async Server Component displays all sections
+ * (quick stats, assigned issues, newest games, recently fixed games, recent
+ * issues) and navigates via Quick Stats into the filtered Issues list.
+ * Query logic is covered at the integration layer in `dashboard.test.ts`.
  */
 
 import { test, expect, type Page } from "../support/fixtures.js";
@@ -29,7 +31,9 @@ function ensureCardsOrEmpty(
 test.describe("Member Dashboard", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
-  test("dashboard loads with all sections", async ({ page }) => {
+  test("dashboard loads all sections and navigates to filtered list via Quick Stats", async ({
+    page,
+  }) => {
     await page.goto("/dashboard");
 
     // Quick Stats
@@ -54,14 +58,9 @@ test.describe("Member Dashboard", () => {
     await expect(
       page.getByRole("heading", { name: "Issues Assigned to Me" })
     ).toBeVisible();
-    const assignedEmptyState = page.getByText("No issues assigned to you");
-    const assignedCards = page.getByTestId("assigned-issue-card");
-    const assignedCardsCount = await assignedCards.count();
-    const assignedEmptyStateCount = await assignedEmptyState.count();
-
     ensureCardsOrEmpty(
-      assignedCardsCount,
-      assignedEmptyStateCount,
+      await page.getByTestId("assigned-issue-card").count(),
+      await page.getByText("No issues assigned to you").count(),
       "Assigned issues"
     );
 
@@ -69,14 +68,9 @@ test.describe("Member Dashboard", () => {
     await expect(
       page.getByRole("heading", { name: "Newest Games" })
     ).toBeVisible();
-    const newestEmptyState = page.getByText("No machines yet");
-    const newestMachinesList = page.getByTestId("newest-machines-list");
-    const newestMachinesCount = await newestMachinesList.locator("a").count();
-    const newestEmptyStateCount = await newestEmptyState.count();
-
     ensureCardsOrEmpty(
-      newestMachinesCount,
-      newestEmptyStateCount,
+      await page.getByTestId("newest-machines-list").locator("a").count(),
+      await page.getByText("No machines yet").count(),
       "Newest games"
     );
 
@@ -84,14 +78,12 @@ test.describe("Member Dashboard", () => {
     await expect(
       page.getByRole("heading", { name: "Recently Fixed Games" })
     ).toBeVisible();
-    const fixedEmptyState = page.getByText("No recently fixed machines");
-    const fixedMachinesList = page.getByTestId("recently-fixed-machines-list");
-    const fixedMachinesCount = await fixedMachinesList.locator("a").count();
-    const fixedEmptyStateCount = await fixedEmptyState.count();
-
     ensureCardsOrEmpty(
-      fixedMachinesCount,
-      fixedEmptyStateCount,
+      await page
+        .getByTestId("recently-fixed-machines-list")
+        .locator("a")
+        .count(),
+      await page.getByText("No recently fixed machines").count(),
       "Recently fixed games"
     );
 
@@ -99,27 +91,13 @@ test.describe("Member Dashboard", () => {
     await expect(
       page.getByRole("heading", { name: "Recently Reported Issues" })
     ).toBeVisible();
-    const recentEmptyState = page.getByText("No issues reported yet");
-    const recentCards = page.getByTestId("recent-issue-card");
-    const recentCardsCount = await recentCards.count();
-    const recentEmptyStateCount = await recentEmptyState.count();
-
     ensureCardsOrEmpty(
-      recentCardsCount,
-      recentEmptyStateCount,
+      await page.getByTestId("recent-issue-card").count(),
+      await page.getByText("No issues reported yet").count(),
       "Recent issues"
     );
-  });
 
-  test("stat cards navigate to filtered lists", async ({ page }) => {
-    await page.goto("/dashboard");
-
-    const quickStats = page.getByTestId("quick-stats");
-
-    // Verify all stat card links point to the correct filtered URLs via href
-    // (avoids costly navigate-back-navigate cycles for each card)
-
-    // Open Issues — href check only
+    // Stat card links & cross-page navigation
     const openIssuesCard = quickStats
       .getByRole("link")
       .filter({ hasText: "Open Issues" });
@@ -128,7 +106,6 @@ test.describe("Member Dashboard", () => {
       /\/issues\?status=new,confirmed,in_progress,need_parts,need_help,wait_owner/
     );
 
-    // Machines Needing Service — href check only
     const machinesCard = quickStats
       .getByRole("link")
       .filter({ hasText: "Machines Needing Service" });
@@ -137,16 +114,15 @@ test.describe("Member Dashboard", () => {
       /\/m\?status=needs_service,unplayable/
     );
 
-    // Assigned to Me — actually click to verify end-to-end navigation
     const assignedCard = quickStats
       .getByRole("link")
       .filter({ hasText: "Assigned to Me" });
-    // Verify href contains assignee UUID and status filter
     await expect(assignedCard).toHaveAttribute(
       "href",
       /\/issues\?assignee=[a-f0-9-]+&status=new,confirmed,in_progress,need_parts,need_help,wait_owner/
     );
     await assignedCard.click();
+
     // The Issues list rewrites the link to its canonical URL (list-views
     // §9.3): the open statuses are its Page Preset, so only the assignee stays.
     await expect(page).toHaveURL(/\/issues\?assignee=[a-f0-9-]+$/);

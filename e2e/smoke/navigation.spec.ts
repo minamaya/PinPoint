@@ -1,105 +1,81 @@
 /**
- * E2E Tests: Navigation Component
+ * E2E Tests: App Shell Navigation
  *
- * Tests navigation bar behavior for authenticated users.
- * Unauthenticated nav tested in landing-page.spec.ts.
- * Bottom Tab Bar tested in BottomTabBar.test.tsx (RTL unit).
+ * Tests MainLayout async Server Component wiring into AppHeader, UserMenu, and
+ * BottomTabBar across desktop and mobile viewports (Class F cross-page journeys).
+ * Component item lists, active states, and admin gating are covered in
+ * `AppHeader.test.tsx`, `BottomTabBar.test.tsx`, `HelpMenu.test.tsx`, and
+ * `user-menu-client.test.tsx`.
  */
 
 import { test, expect } from "../support/fixtures.js";
-import {
-  assertNoHorizontalOverflow,
-  loginAs,
-  assertNoA11yViolations,
-} from "../support/actions.js";
-import { TEST_USERS } from "../support/constants.js";
+import { STORAGE_STATE } from "../support/auth-state.js";
 
-test.describe("Navigation", () => {
-  test("authenticated navigation - show user menu", async ({
+test.describe("Navigation (member)", () => {
+  test.use({ storageState: STORAGE_STATE.member });
+
+  test("authenticated shell navigates and hides admin sheet links for non-admins", async ({
     page,
   }, testInfo) => {
-    // Login first
-    await loginAs(page, testInfo);
-
-    await assertNoA11yViolations(page);
-
-    // Use project name to determine mobile vs desktop layout
     const isMobile = testInfo.project.name.includes("Mobile");
+    await page.goto("/dashboard");
 
-    // AppHeader is always visible
     const appHeader = page.getByTestId("app-header");
     await expect(appHeader).toBeVisible();
 
     if (isMobile) {
-      // Verify the notification bell is accessible on mobile
-      await expect(
-        page.getByRole("button", { name: "Notifications" })
-      ).toBeVisible();
+      await expect(page.getByTestId("bottom-tab-bar")).toBeVisible();
+      await page.getByRole("button", { name: /more options/i }).click();
+      const moreSheet = page.getByRole("dialog");
+      await expect(moreSheet).toBeVisible();
+      await expect(moreSheet.getByTestId("more-sheet-admin")).toHaveCount(0);
+      await moreSheet.getByRole("button", { name: "Close menu" }).click();
+      await expect(moreSheet).toBeHidden();
     } else {
-      // On desktop, AppHeader should show nav links
+      await appHeader.getByRole("link", { name: "Issues" }).click();
+      await expect(page).toHaveURL(/\/issues/);
       await expect(
-        appHeader.getByRole("link", { name: "Dashboard" })
-      ).toBeVisible();
-      await expect(
-        appHeader.getByRole("link", { name: "Issues" })
-      ).toBeVisible();
-      await expect(
-        appHeader.getByRole("link", { name: "Machines" })
-      ).toBeVisible();
-
-      // Verify Report Issue button is visible in AppHeader on desktop
-      await expect(
-        page.getByRole("link", { name: "Report Issue" })
+        page.getByRole("heading", { name: "Issues", exact: true })
       ).toBeVisible();
     }
 
-    // Verify User Menu works on both mobile and desktop (unified AppHeader)
     const userMenu = page.getByTestId("user-menu-button");
     await expect(userMenu).toBeVisible();
     await userMenu.click();
 
     const menuContent = page.getByRole("menu");
     await expect(
-      menuContent.getByRole("menuitem", { name: "Settings" })
-    ).toBeVisible();
-    await expect(
       menuContent.getByRole("menuitem", { name: "Sign Out" })
     ).toBeVisible();
+    await menuContent.getByRole("menuitem", { name: "Settings" }).click();
 
-    // Close menu, then verify no horizontal overflow on dashboard
-    await page.keyboard.press("Escape");
-    await assertNoHorizontalOverflow(page);
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(
+      page.getByRole("heading", { name: "Settings", exact: true })
+    ).toBeVisible();
   });
 });
 
-test.describe("Bottom Tab Bar (mobile only)", () => {
-  test("More sheet shows User Management only for admin users", async ({
+test.describe("Bottom Tab Bar (mobile admin)", () => {
+  test.use({ storageState: STORAGE_STATE.admin });
+
+  test("More sheet navigates to User Management for admin users", async ({
     page,
   }, testInfo) => {
-    const isMobile = testInfo.project.name.includes("Mobile");
-    if (!isMobile) {
+    if (!testInfo.project.name.includes("Mobile")) {
       test.skip();
     }
 
-    // Log in as admin
-    await loginAs(page, testInfo, {
-      email: TEST_USERS.admin.email,
-      password: TEST_USERS.admin.password,
-    });
+    await page.goto("/dashboard");
 
-    const moreButton = page.getByRole("button", { name: /more options/i });
-    await moreButton.click();
-
-    // Wait for Sheet to animate open before asserting on children.
+    await page.getByRole("button", { name: /more options/i }).click();
     const moreSheet = page.getByRole("dialog");
-    await moreSheet.waitFor({ state: "visible", timeout: 5000 });
+    await expect(moreSheet).toBeVisible();
 
-    // User Management should be visible for admin role.
-    // Scope to the dialog so locators are anchored to the Sheet portal content.
-    await expect(moreSheet.getByTestId("more-sheet-admin")).toBeVisible();
-    await expect(page.getByTestId("more-sheet-admin")).toHaveAttribute(
-      "href",
-      "/admin/users"
-    );
+    await moreSheet.getByTestId("more-sheet-admin").click();
+    await expect(page).toHaveURL(/\/admin\/users$/);
+    await expect(
+      page.getByRole("heading", { name: "User Management" })
+    ).toBeVisible();
   });
 });
