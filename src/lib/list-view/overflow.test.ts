@@ -325,11 +325,13 @@ describe("planListHeader (list-views §8.16–§8.19)", () => {
     editWidth: 0,
     editCompactWidth: 0,
     pagerWidths: { full: 130, compact: 70 },
-    controlsWidth: 200,
+    sortWidth: 120,
+    controlsWidth: 78,
     gap: 2,
   };
   // Five tabs (550) and More views (100) with five gaps between them = 660;
-  // the pager (130) and the controls (200) each add their own gap.
+  // the pager (130) and the controls (sort 120, then Display 78) each add
+  // their own gap.
   const everything = 660 + 132 + 202;
 
   it("shows every tab, More views, and the full compact pager when they fit", () => {
@@ -339,6 +341,7 @@ describe("planListHeader (list-views §8.16–§8.19)", () => {
       visibleTabs: [0, 1, 2, 3, 4],
       showMoreViews: true,
       pager: "full",
+      sortInDisplay: false,
       compactEdit: false,
     });
   });
@@ -360,6 +363,7 @@ describe("planListHeader (list-views §8.16–§8.19)", () => {
       visibleTabs: [0, 1, 2, 3],
       showMoreViews: true,
       pager: "full",
+      sortInDisplay: false,
       compactEdit: false,
     });
   });
@@ -384,21 +388,42 @@ describe("planListHeader (list-views §8.16–§8.19)", () => {
     ).toBe("hidden");
   });
 
-  it("shortens Discard changes only after the pager is gone", () => {
+  it("moves Sort into Display only after the pager is gone", () => {
+    // The Applied View's tab and More views (202), a gap, then Sort, a
+    // gap, and Display (200): exactly what fits without the pager.
+    const appliedOnly = 100 + 2 + 100 + 2 + 200;
+    expect(
+      planListHeader({ ...base, available: FIT_TOLERANCE + appliedOnly })
+    ).toMatchObject({ pager: "hidden", sortInDisplay: false });
+    expect(
+      planListHeader({ ...base, available: FIT_TOLERANCE + appliedOnly - 1 })
+    ).toMatchObject({ pager: "hidden", sortInDisplay: true });
+  });
+
+  it("shortens Discard changes only after Sort has moved into Display", () => {
     const edited = { ...base, editWidth: 200, editCompactWidth: 150 };
-    const appliedOnly = 100 + 2 + 100 + 2 + 202;
+    // The Applied View's tab and More views, without Sort.
+    const appliedOnly = 100 + 2 + 100 + 2 + 80;
     expect(
       planListHeader({
         ...edited,
         available: FIT_TOLERANCE + appliedOnly + 202,
       })
-    ).toMatchObject({ pager: "hidden", compactEdit: false });
+    ).toMatchObject({
+      pager: "hidden",
+      sortInDisplay: true,
+      compactEdit: false,
+    });
     expect(
       planListHeader({
         ...edited,
         available: FIT_TOLERANCE + appliedOnly + 152,
       })
-    ).toMatchObject({ pager: "hidden", compactEdit: true });
+    ).toMatchObject({
+      pager: "hidden",
+      sortInDisplay: true,
+      compactEdit: true,
+    });
   });
 
   it("keeps no tab in place when there is no Applied View", () => {
@@ -418,6 +443,7 @@ describe("planListHeader (list-views §8.16–§8.19)", () => {
       visibleTabs: [],
       showMoreViews: true,
       pager: "hidden",
+      sortInDisplay: false,
       compactEdit: false,
     });
     expect(
@@ -432,6 +458,7 @@ describe("planListHeader (list-views §8.16–§8.19)", () => {
         visibleTabs: [0],
         showMoreViews: true,
         pager: "hidden",
+        sortInDisplay: true,
         compactEdit: true,
       }
     );

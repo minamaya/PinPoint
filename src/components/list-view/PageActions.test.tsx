@@ -1,10 +1,4 @@
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Download, MapPin, Plus, Printer, Share2 } from "lucide-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -251,7 +245,7 @@ describe("PageActions (list-views §3.7–§3.10, §8.11, §8.12)", () => {
     expect(menuLabels(menu)).toEqual(["Print settings sheets"]);
   });
 
-  it("keeps a running action busy once it folds into ⋯: a spinner, and disabled", async () => {
+  it("shows a running action's spinner and busy label on ⋯ once it folds in, and disables ⋯ (design-bible §26.2)", () => {
     mockPhone(false);
     stubLayout(40);
     const onSelect = vi.fn();
@@ -263,6 +257,7 @@ describe("PageActions (list-views §3.7–§3.10, §8.11, §8.12)", () => {
             label: "Share",
             icon: Share2,
             busy: true,
+            busyLabel: "Sharing…",
             onSelect,
           },
         ]}
@@ -270,12 +265,78 @@ describe("PageActions (list-views §3.7–§3.10, §8.11, §8.12)", () => {
         foldSteps={[["share"]]}
       />
     );
-    const menu = await openMenu();
-    const share = within(menu).getByRole("menuitem", { name: "Share" });
-    expect(share).toHaveAttribute("aria-disabled", "true");
-    expect(share.querySelector(".animate-spin")).not.toBeNull();
-    fireEvent.click(share);
-    expect(onSelect).not.toHaveBeenCalled();
+    const more = screen.getByRole("button", { name: "Sharing…" });
+    expect(more).toBeDisabled();
+    expect(more).toHaveAttribute("aria-busy", "true");
+    expect(more.querySelector(".animate-spin")).not.toBeNull();
+  });
+
+  it("shows Exporting… on Export while the file builds, and disables it (design-bible §26.2)", () => {
+    mockPhone(false);
+    stubLayout(400);
+    render(
+      <PageActions
+        actions={[]}
+        menu={[
+          [
+            {
+              ...exportEntry,
+              icon: Download,
+              buttonLabel: "Export",
+              busy: true,
+              busyLabel: "Exporting…",
+            },
+          ],
+        ]}
+        foldSteps={[]}
+      />
+    );
+    const button = screen.getByRole("button", { name: "Exporting…" });
+    expect(button).toHaveTextContent("Exporting…");
+    expect(button).toBeDisabled();
+    expect(button.querySelector(".animate-spin")).not.toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Export" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Exporting… on More while an Export inside it builds, and disables More", () => {
+    mockPhone(false);
+    stubLayout(400);
+    render(
+      <PageActions
+        actions={[pinballMap]}
+        menu={[[{ ...exportEntry, busy: true, busyLabel: "Exporting…" }]]}
+        foldSteps={[["pinball-map"]]}
+      />
+    );
+    const more = screen.getByRole("button", { name: "Exporting…" });
+    expect(more).toHaveTextContent("Exporting…");
+    expect(more).toBeDisabled();
+    expect(more.querySelector(".animate-spin")).not.toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "More" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("returns More to itself once the export finishes", () => {
+    mockPhone(false);
+    stubLayout(400);
+    const { rerender } = render(
+      <PageActions
+        actions={[pinballMap]}
+        menu={[[{ ...exportEntry, busy: true, busyLabel: "Exporting…" }]]}
+        foldSteps={[["pinball-map"]]}
+      />
+    );
+    rerender(
+      <PageActions
+        actions={[pinballMap]}
+        menu={[[{ ...exportEntry, busy: false, busyLabel: "Exporting…" }]]}
+        foldSteps={[["pinball-map"]]}
+      />
+    );
+    expect(screen.getByRole("button", { name: "More" })).toBeEnabled();
   });
 
   it("shows no ⋯ while it holds nothing", () => {

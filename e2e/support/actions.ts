@@ -482,7 +482,9 @@ export async function setListFilterOptions(
         name: `Filter by ${filterLabel.toLowerCase()}`,
       });
     } else {
-      await openDropdownMenu(toolbar.getByRole("button", { name: /^More\b/ }));
+      await openDropdownMenu(
+        toolbar.getByRole("button", { name: /^More filters\b/ })
+      );
       options = page.getByRole("dialog", { name: "More filters" });
       await options
         .getByRole("button")

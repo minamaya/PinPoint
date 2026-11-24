@@ -1,6 +1,6 @@
 "use client";
 
-import type React from "react";
+import * as React from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -63,9 +63,14 @@ export function NameTooltip({
   /** The button, including any menu or sheet trigger around it. */
   children: React.ReactNode;
 }): React.JSX.Element {
+  // Controlled so a press can close it: a menu trigger inside prevents the
+  // pointerdown default, which stops Radix closing the tooltip itself, and
+  // the tooltip would sit over the menu it opened. Radix does not reopen it
+  // until the pointer leaves and comes back.
+  const [open, setOpen] = React.useState(false);
   return (
     <TooltipProvider delayDuration={300}>
-      <Tooltip>
+      <Tooltip open={open} onOpenChange={setOpen}>
         <TooltipTrigger
           asChild
           onFocus={(event) => {
@@ -73,7 +78,10 @@ export function NameTooltip({
             if (isReturningFocus(event)) event.preventDefault();
           }}
         >
-          <span className={cn("inline-flex shrink-0", className)}>
+          <span
+            className={cn("inline-flex shrink-0", className)}
+            onPointerDownCapture={() => setOpen(false)}
+          >
             {children}
           </span>
         </TooltipTrigger>

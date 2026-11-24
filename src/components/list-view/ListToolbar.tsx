@@ -150,18 +150,16 @@ function FilterDropdown({
 }
 
 /**
- * The face of More filters: "More", then a badge counting the filters it
- * holds that differ from the Page Preset, or no badge when none do (§4.10).
- * It reads "More filters", then "2 changed": the name comes from the face,
- * so the visible "More" starts it (WCAG Label in Name) and the badge's
- * digit is spoken in words rather than run onto the label.
+ * The face of More filters (list-views §1): its name, then a badge counting
+ * the filters it holds that differ from the Page Preset, or no badge when
+ * none do (§4.10). It reads "More filters", then "2 changed": the name
+ * comes from the face (WCAG Label in Name) and the badge's digit is spoken
+ * in words rather than run onto the label.
  */
 function MoreFiltersFace({ changed }: { changed: number }): React.JSX.Element {
   return (
     <>
-      <span>
-        More <span className="sr-only">filters</span>
-      </span>
+      <span>More filters</span>
       {changed > 0 ? (
         <>
           <span className="sr-only">{`, ${changed} changed`}</span>

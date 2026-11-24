@@ -513,7 +513,7 @@ describe("IssueView", () => {
     const user = userEvent.setup();
     renderView();
 
-    await user.click(screen.getByTestId("list-view-options-trigger"));
+    await user.click(screen.getByTestId("list-display-trigger"));
     expect(
       screen.getAllByRole("menuitemradio").map((item) => item.textContent)
     ).toEqual(["25", "50", "100"]);
@@ -666,7 +666,7 @@ describe("IssueView", () => {
     const user = userEvent.setup();
     renderView();
 
-    await user.click(screen.getByRole("button", { name: "View options" }));
+    await user.click(screen.getByRole("button", { name: "Display" }));
     await user.click(screen.getByRole("menuitemradio", { name: "50" }));
 
     expect(navigation.replace).toHaveBeenLastCalledWith("/issues?pageSize=50", {

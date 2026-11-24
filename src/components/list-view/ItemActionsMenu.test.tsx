@@ -99,7 +99,7 @@ describe("ItemActionsMenu", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
-  it("disables an entry with its reason, and a busy one, without running them", async () => {
+  it("disables an entry with its reason without running it", async () => {
     const onSelect = vi.fn();
     render(
       <ItemActionsMenu
@@ -113,7 +113,7 @@ describe("ItemActionsMenu", () => {
               disabledReason: "Save the set first",
               onSelect,
             },
-            { key: "export", label: "Export", busy: true, onSelect },
+            { key: "export", label: "Export", onSelect },
           ],
         ]}
       />
@@ -124,11 +124,23 @@ describe("ItemActionsMenu", () => {
       description: "Save the set first",
     });
     expect(duplicate).toHaveAttribute("aria-disabled", "true");
-    const busy = within(menu).getByRole("menuitem", { name: "Export" });
-    expect(busy).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(duplicate);
-    fireEvent.click(busy);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("spins and disables ⋯ while one of its entries runs (design-bible §26.2)", () => {
+    render(
+      <ItemActionsMenu
+        label="Issue list actions"
+        sections={[
+          [{ key: "export", label: "Export", busy: true, onSelect: vi.fn() }],
+        ]}
+      />
+    );
+    const trigger = screen.getByRole("button", { name: "Issue list actions" });
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveAttribute("aria-busy", "true");
+    expect(trigger.querySelector(".animate-spin")).not.toBeNull();
   });
 
   it("opens a submenu of further entries", async () => {

@@ -270,7 +270,7 @@ describe("MachineView", () => {
     expect(screen.queryByTestId("machine-row-service-age")).toBeNull();
   });
 
-  it("shows the same two-line rows at every width, with page size alone in View options", async () => {
+  it("shows the same two-line rows at every width, with page size alone in Display", async () => {
     const user = userEvent.setup();
     renderView();
 
@@ -279,7 +279,7 @@ describe("MachineView", () => {
     expect(list).not.toHaveClass("md:hidden");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "View options" }));
+    await user.click(screen.getByRole("button", { name: "Display" }));
     expect(screen.queryAllByRole("menuitemcheckbox")).toHaveLength(0);
     expect(
       screen.getAllByRole("menuitemradio").map((item) => item.textContent)
@@ -580,7 +580,7 @@ describe("MachineView", () => {
     const current = (): HTMLElement =>
       within(tabs).getByRole("link", { current: "page" });
 
-    await user.click(screen.getByRole("button", { name: "View options" }));
+    await user.click(screen.getByRole("button", { name: "Display" }));
     await user.click(screen.getByRole("menuitemradio", { name: "50" }));
 
     expect(navigation.replace).toHaveBeenLastCalledWith(
@@ -708,7 +708,7 @@ describe("MachineView", () => {
     });
     const tabs = screen.getByRole("navigation", { name: "Saved views" });
 
-    await user.click(screen.getByRole("button", { name: "View options" }));
+    await user.click(screen.getByRole("button", { name: "Display" }));
     await user.click(screen.getByRole("menuitemradio", { name: "50" }));
     expect(
       within(tabs).getByRole("link", { current: "page" })
@@ -876,7 +876,7 @@ describe("MachineView", () => {
       result: result({ state: { ...presetState, page: 3 }, totalCount: 100 }),
     });
 
-    await user.click(screen.getByRole("button", { name: "View options" }));
+    await user.click(screen.getByRole("button", { name: "Display" }));
     await user.click(screen.getByRole("menuitemradio", { name: "50" }));
     expect(navigation.replace).toHaveBeenLastCalledWith("/m?pageSize=50", {
       scroll: false,

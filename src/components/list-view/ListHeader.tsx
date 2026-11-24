@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUpDown, Check, ChevronDown, Columns3 } from "lucide-react";
+import { ArrowUpDown, Check, ChevronDown, Settings2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,7 @@ import { cn } from "~/lib/utils";
 import { listHeaderIconButtonClass } from "./classes";
 import { isPlainClick } from "./links";
 import { CompactPager, RangeTextFace } from "./ListPager";
+import { NameTooltip } from "./NameTooltip";
 import {
   offersManageViews,
   sortDirectionOptions,
@@ -59,6 +60,53 @@ function TabFace({
   );
 }
 
+/** Sort by and Order, in the sort control or in Display (§5.6). */
+function SortChoices({ sort }: { sort: ListSortModel }): React.JSX.Element {
+  return (
+    <>
+      <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+      <DropdownMenuRadioGroup
+        value={sort.field}
+        onValueChange={(field) =>
+          sort.onChange(field, sort.preferredDirection(field))
+        }
+      >
+        {sort.fields.map((field) => (
+          <DropdownMenuRadioItem key={field.value} value={field.value}>
+            {field.label}
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>Order</DropdownMenuLabel>
+      <DropdownMenuRadioGroup
+        value={sort.dir}
+        onValueChange={(dir) => {
+          if (dir === "asc" || dir === "desc") sort.onChange(sort.field, dir);
+        }}
+      >
+        {sortDirectionOptions(sort).map((dir) => (
+          <DropdownMenuRadioItem key={dir.value} value={dir.value}>
+            {dir.label}
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+    </>
+  );
+}
+
+/** The sort control's face, live and in the measurement lane. */
+function SortFace({ sort }: { sort: ListSortModel }): React.JSX.Element {
+  return (
+    <>
+      <ArrowUpDown aria-hidden="true" className="size-3.5" />
+      <span className="sr-only">Sort: </span>
+      {sort.label}
+      <ChevronDown aria-hidden="true" className="size-3.5" />
+    </>
+  );
+}
+
 /** The sort control (list-views §5.5; machine-views §3.14). */
 function SortMenu({ sort }: { sort: ListSortModel }): React.JSX.Element {
   return (
@@ -68,61 +116,49 @@ function SortMenu({ sort }: { sort: ListSortModel }): React.JSX.Element {
         className={cn(ghostButtonClass, "text-foreground")}
         data-testid="list-sort-trigger"
       >
-        <ArrowUpDown aria-hidden="true" className="size-3.5" />
-        <span className="sr-only">Sort: </span>
-        {sort.label}
-        <ChevronDown aria-hidden="true" className="size-3.5" />
+        <SortFace sort={sort} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={sort.field}
-          onValueChange={(field) =>
-            sort.onChange(field, sort.preferredDirection(field))
-          }
-        >
-          {sort.fields.map((field) => (
-            <DropdownMenuRadioItem key={field.value} value={field.value}>
-              {field.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Order</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={sort.dir}
-          onValueChange={(dir) => {
-            if (dir === "asc" || dir === "desc") sort.onChange(sort.field, dir);
-          }}
-        >
-          {sortDirectionOptions(sort).map((dir) => (
-            <DropdownMenuRadioItem key={dir.value} value={dir.value}>
-              {dir.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        <SortChoices sort={sort} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-/** View options (list-views §5.6, §5.7): the page size. */
-function ViewOptionsMenu({
+/** Display's accessible name and tooltip (list-views §5.5). */
+export const DISPLAY_MENU_LABEL = "Display";
+
+/**
+ * Display (list-views §5.5–§5.7): the page size, with Sort above it once
+ * the List Header has folded Sort in (§8.17).
+ */
+function DisplayMenu({
   display,
+  sort,
 }: {
   display: ListDisplayModel;
+  /** Sort, when it has moved into Display; null while it is its own control. */
+  sort: ListSortModel | null;
 }): React.JSX.Element {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        type="button"
-        aria-label="View options"
-        className={iconButtonClass}
-        data-testid="list-view-options-trigger"
-      >
-        <Columns3 aria-hidden="true" className="size-4" />
-      </DropdownMenuTrigger>
+      <NameTooltip label={DISPLAY_MENU_LABEL}>
+        <DropdownMenuTrigger
+          type="button"
+          aria-label={DISPLAY_MENU_LABEL}
+          className={iconButtonClass}
+          data-testid="list-display-trigger"
+        >
+          <Settings2 aria-hidden="true" className="size-4" />
+        </DropdownMenuTrigger>
+      </NameTooltip>
       <DropdownMenuContent align="end" className="w-56">
+        {sort ? (
+          <>
+            <SortChoices sort={sort} />
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuLabel>Rows per page</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={String(display.pageSize)}
@@ -139,14 +175,6 @@ function ViewOptionsMenu({
   );
 }
 
-function MoreViewsCount({ count }: { count: number }): React.JSX.Element {
-  return (
-    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-semibold text-foreground tabular-nums">
-      {count}
-    </span>
-  );
-}
-
 function MoreViewsMenu({
   views,
   overflowBuiltIns,
@@ -156,10 +184,6 @@ function MoreViewsMenu({
   overflowBuiltIns: readonly ListViewEntry[];
   onManage: () => void;
 }): React.JSX.Element {
-  // What More views lists that is not a tab right now (§5.1).
-  const count =
-    overflowBuiltIns.length +
-    views.savedViews.filter((view) => view.id !== views.appliedId).length;
   const entry = (view: ListViewEntry): React.JSX.Element => {
     const current = view.id === views.appliedId;
     return (
@@ -188,14 +212,6 @@ function MoreViewsMenu({
         data-testid="list-more-views"
       >
         More views
-        {count > 0 ? (
-          <>
-            <span className="sr-only">, {count}</span>
-            <span aria-hidden="true">
-              <MoreViewsCount count={count} />
-            </span>
-          </>
-        ) : null}
         <ChevronDown aria-hidden="true" className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
@@ -314,7 +330,8 @@ interface ListHeaderProps {
  * tabs in a "Saved views" navigation landmark (§12.3), More views, Save and
  * Discard changes beside an Edited Saved View or Save view when there is no
  * Applied View, then the compact pager, sort, any host list action, and
- * View options. Hidden below md, where the phone header takes over (§7.3).
+ * Display, which takes Sort in when the header is crowded (§8.17). Hidden
+ * below md, where the phone header takes over (§7.3).
  */
 export function ListHeader({
   views,
@@ -378,6 +395,7 @@ export function ListHeader({
             full: width("pager-full"),
             compact: width("pager-compact"),
           },
+          sortWidth: width("sort"),
           controlsWidth: width("controls"),
           gap: GAP,
         })
@@ -385,6 +403,7 @@ export function ListHeader({
           visibleTabs: tabs.map((_, index) => index),
           showMoreViews: moreViewsAlways,
           pager: "full" as const,
+          sortInDisplay: false,
           compactEdit: false,
         };
   const visible = new Set(plan.visibleTabs);
@@ -392,14 +411,6 @@ export function ListHeader({
     (_, index) => !visible.has(index)
   );
   const showMoreViews = plan.showMoreViews || overflowBuiltIns.length > 0;
-
-  const controls = (
-    <>
-      <SortMenu sort={sort} />
-      {listAction}
-      <ViewOptionsMenu display={display} />
-    </>
-  );
 
   return (
     <div
@@ -467,15 +478,24 @@ export function ListHeader({
             />
           </>
         ) : null}
+        {plan.sortInDisplay ? null : (
+          <span className="mr-0.5 flex">
+            <SortMenu sort={sort} />
+          </span>
+        )}
         <div data-measure="controls" className="flex items-center gap-0.5">
-          {controls}
+          {listAction}
+          <DisplayMenu
+            display={display}
+            sort={plan.sortInDisplay ? sort : null}
+          />
         </div>
       </div>
 
       {/* Exact widths of the controls that come and go, as static faces
           kept out of the accessibility tree and clipped so they never widen
-          the page (CORE-RESP-002 boundary). The live sort, list action, and
-          View options group measures itself. */}
+          the page (CORE-RESP-002 boundary). The live list action and
+          Display group measures itself. */}
       <div
         aria-hidden="true"
         className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
@@ -501,7 +521,6 @@ export function ListHeader({
           className={cn("absolute w-max", tabClass)}
         >
           More views
-          <MoreViewsCount count={9} />
           <ChevronDown className="size-3.5" />
         </span>
         <span data-measure="edit" className="absolute flex w-max items-center">
@@ -539,6 +558,12 @@ export function ListHeader({
           <span className="size-8" />
           <span className="size-8" />
           <span className="mx-1.5 h-5 w-px" />
+        </span>
+        <span
+          data-measure="sort"
+          className={cn("absolute w-max", ghostButtonClass)}
+        >
+          <SortFace sort={sort} />
         </span>
         <span data-measure="pager-compact" className="absolute flex w-max">
           <span className="size-8" />
