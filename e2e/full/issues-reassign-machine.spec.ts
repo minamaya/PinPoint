@@ -1,9 +1,13 @@
 /**
  * E2E Tests for Issue Machine Reassignment (PP-3hb)
  *
- * Verifies the "Move to another machine" action on the issue detail page —
- * the header's Move button from `md` up, the ⋯ "More" menu below
- * it. NN #11 — every clickable element gets clicked in an E2E test.
+ * Verifies the Class-F cross-page journey for moving an issue to another
+ * machine (report -> Move dialog -> server redirect -> updated detail & Activity).
+ * Permission gating (`issues.reassign`), Server Action errors, and dialog UI
+ * states live in:
+ *   - src/test/integration/issue-reassign.test.tsx
+ *   - src/app/(app)/m/[initials]/i/[issueNumber]/editable-issue-title.test.tsx
+ *   - src/app/(app)/m/[initials]/i/[issueNumber]/reassign-machine-form.test.tsx
  */
 
 import { test, expect, type Page, type TestInfo } from "../support/fixtures.js";
@@ -14,11 +18,7 @@ import {
   submitFormAndWaitForRedirect,
 } from "../support/page-helpers.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
-import {
-  hasIssueSectionTabs,
-  openDropdownMenu,
-  openMoveIssueDialog,
-} from "../support/actions.js";
+import { openMoveIssueDialog } from "../support/actions.js";
 
 // Stem shared across all tests in this file. Cleanup matches on title rather
 // than URL because issues live at /m/<initials>/i/<number>, not
@@ -129,45 +129,6 @@ test.describe("Issue reassignment", () => {
             ),
           })
       ).toBeVisible();
-    });
-  });
-
-  test.describe("as member without machine ownership", () => {
-    test.use({ storageState: STORAGE_STATE.member });
-
-    test("does not expose the reassign action when the member does not own the machine", async ({
-      page,
-    }, testInfo) => {
-      // Member is not the owner of TAF in the seed data, so userCanReassign
-      // is false and the page renders no Move action. As the reporter the
-      // member can still edit the title, so on mobile the ⋯ menu exists but
-      // offers only "Edit title".
-      const fromInitials = seededMachines.addamsFamily.initials;
-      const issueTitle = uniqueTitle(testInfo, "Member view");
-
-      await createIssueOnMachine(page, fromInitials, issueTitle);
-
-      await expect(
-        page.getByRole("heading", { level: 1, name: issueTitle })
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Move to another machine" })
-      ).toHaveCount(0);
-
-      if (hasIssueSectionTabs(page)) {
-        // By test id: the open menu aria-hides its own trigger.
-        await openDropdownMenu(page.getByTestId("issue-actions-menu-trigger"));
-        await expect(
-          page.getByRole("menuitem", { name: "Edit title" })
-        ).toBeVisible();
-        await expect(
-          page.getByRole("menuitem", { name: "Move to another machine" })
-        ).toHaveCount(0);
-      } else {
-        await expect(
-          page.getByRole("button", { name: "Edit title" })
-        ).toBeVisible();
-      }
     });
   });
 });

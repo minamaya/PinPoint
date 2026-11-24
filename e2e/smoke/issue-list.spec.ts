@@ -1,3 +1,11 @@
+/**
+ * Smoke E2E: /issues page render, a11y, search/filter round-trip, and CSV export.
+ *
+ * "My machines" quick-select and out-of-range page clamping live in:
+ *   - src/components/issues/view/IssueView.test.tsx (URL state & UI controls)
+ *   - src/test/integration/issue-view.test.ts & issue-list-page.test.ts (queries)
+ *   - src/test/integration/issues-page.test.tsx (RSC clamping)
+ */
 import { test, expect, type Page } from "../support/fixtures.js";
 import {
   assertNoHorizontalOverflow,
@@ -37,7 +45,9 @@ test.describe("Issue List Features", () => {
       .waitForLoadState("networkidle", { timeout: 5000 })
       .catch(() => undefined);
 
-    await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Issues", exact: true })
+    ).toBeVisible();
     await assertNoA11yViolations(page);
 
     // 2. Search for Issue 1
@@ -80,46 +90,6 @@ test.describe("Issue List Features", () => {
 
     // Verify no horizontal overflow on issues list page
     await assertNoHorizontalOverflow(page);
-  });
-
-  test('should show and activate "My machines" quick-select in Machine filter', async ({
-    page,
-  }) => {
-    // Admin user owns: BK (Black Knight), GDZ (Godzilla), GDZ3 (Godzilla), HD (Humpty Dumpty), MM (Medieval Madness)
-    // "My machines" selects all owned machines.
-    await page.goto("/issues");
-
-    await setListFilterOptions(page, "Machine", ["My machines"]);
-
-    // URL should contain the admin's owned machine initials
-    await page.waitForURL(/[?&]machine=/);
-    const machineParam =
-      new URL(page.url()).searchParams.get("machine")?.split(",") ?? [];
-    expect(machineParam).toEqual(
-      expect.arrayContaining(["BK", "GDZ", "HD", "MM"])
-    );
-  });
-
-  test("an out-of-range page shows the last page", async ({ page }) => {
-    // A page past the end shows the last page (list-views §6.3), rather
-    // than an empty list with no way back.
-    await page.goto("/issues?page=999");
-
-    await expect(
-      page.getByRole("list", { name: "Issues" }).getByRole("listitem").first()
-    ).toBeVisible();
-    // The last page ends at the total.
-    await expect
-      .poll(async () => {
-        const text = (await resultCount(page).textContent()) ?? "";
-        const match = /^Showing \d+ to (\d+) of (\d+) issues?$/.exec(text);
-        return match !== null && match[1] === match[2];
-      })
-      .toBe(true);
-    // The URL names the page shown, never the out-of-range one.
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get("page"))
-      .not.toBe("999");
   });
 
   // Export, the page's only action, is its own button rather than ⋯'s

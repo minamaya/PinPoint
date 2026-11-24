@@ -351,15 +351,25 @@ describe("IssueView", () => {
     expect(screen.getByRole("checkbox", { name: "Me" })).not.toBeChecked();
   });
 
-  it("offers My machines for Machine, selecting the viewer's machines (issues-list §4.5)", async () => {
+  it("offers My machines for Machine, selecting every non-removed machine the viewer owns (issues-list §4.5)", async () => {
     const user = userEvent.setup();
-    renderView();
+    renderView({ result: result({ myMachines: ["TZ", "AFM"] }) });
 
     await user.click(screen.getByTestId("list-filter-machine"));
     await user.click(screen.getByRole("checkbox", { name: "My machines" }));
-    expect(navigation.replace).toHaveBeenLastCalledWith("/issues?machine=TZ", {
-      scroll: false,
-    });
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      "/issues?machine=AFM%2CTZ",
+      {
+        scroll: false,
+      }
+    );
+
+    cleanup();
+    renderView({ result: result({ myMachines: [] }) });
+    await user.click(screen.getByTestId("list-filter-machine"));
+    expect(
+      screen.queryByRole("checkbox", { name: "My machines" })
+    ).not.toBeInTheDocument();
   });
 
   it("leaves out Me, My machines, Watching, and My issues for anonymous visitors (issues-list §4.9, §6.3)", async () => {
@@ -738,5 +748,70 @@ describe("IssueView", () => {
     expect(window.sessionStorage.getItem("pinpoint:list-return:/issues")).toBe(
       "/issues?q=gate&page=2"
     );
+  });
+
+  it("rewrites an out-of-range page in the URL to the clamped page and shows the last range (list-views §6.3)", () => {
+    navigation.searchParams = new URLSearchParams("page=999");
+    renderView({
+      result: result({
+        totalCount: 30,
+        state: { ...preset, page: 2, pageSize: 25 },
+      }),
+    });
+
+    expect(navigation.replace).toHaveBeenLastCalledWith("/issues?page=2", {
+      scroll: false,
+    });
+    expect(screen.getByRole("status", { hidden: true })).toHaveTextContent(
+      "Showing 26 to 30 of 30 issues"
+    );
+
+    cleanup();
+    navigation.replace.mockClear();
+    navigation.searchParams = new URLSearchParams("page=999");
+    renderView({
+      result: result({
+        totalCount: 3,
+        state: { ...preset, page: 1, pageSize: 25 },
+      }),
+    });
+    expect(navigation.replace).toHaveBeenLastCalledWith("/issues", {
+      scroll: false,
+    });
+  });
+
+  it("filters by a Severity or Status Summary Widget Segment and returns to page 1 (issue-widgets §3.3, widgets §6.1, §6.2)", async () => {
+    const user = userEvent.setup();
+    renderView({
+      result: result({
+        state: { ...preset, page: 3 },
+        summary: {
+          byStatusGroup: { new: 2, in_progress: 1 },
+          bySeverity: { cosmetic: 0, minor: 0, major: 3, unplayable: 0 },
+          byPriority: { low: 0, medium: 0, high: 3 },
+        },
+      }),
+    });
+
+    const severityWidget = screen.getByRole("region", { name: "Severity" });
+    await user.click(
+      within(severityWidget).getByRole("button", { name: "3 Major" })
+    );
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      "/issues?severity=major",
+      { scroll: false }
+    );
+
+    const statusWidget = screen.getByRole("region", { name: "Status" });
+    await user.click(
+      within(statusWidget).getByRole("button", { name: "2 New" })
+    );
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      "/issues?status=new%2Cconfirmed&severity=major",
+      { scroll: false }
+    );
+    expect(
+      within(statusWidget).getByRole("button", { name: "2 New" })
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });

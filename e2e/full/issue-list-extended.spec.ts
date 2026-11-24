@@ -1,9 +1,18 @@
+/**
+ * E2E Tests: Issue List Extended Journeys & Layout
+ *
+ * Covers browser-only CSS hit-testing (stretched row overlay vs machine link),
+ * container-query responsive Summary Widget breakpoints, and multi-page
+ * filter/return-to-list navigation. Read-only row assertions, segment filter
+ * wiring, and server summary totals live in:
+ *   - src/components/issues/view/IssueViewRows.test.tsx
+ *   - src/components/issues/view/IssueView.test.tsx
+ *   - src/components/issues/view/IssueSummaryWidgets.test.tsx
+ *   - src/test/integration/issue-list-summary.test.ts
+ */
 import { test, expect, type Locator, type Page } from "../support/fixtures.js";
 import { openListSearch, setListFilterOptions } from "../support/actions.js";
-import { cleanupTestEntities } from "../support/cleanup.js";
 import { seededIssue, seededMachines } from "../support/constants.js";
-import { fillReportForm } from "../support/page-helpers.js";
-import { getTestIssueTitle } from "../support/test-isolation.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 
 /**
@@ -21,66 +30,29 @@ function resultCount(page: Page): Locator {
 }
 
 test.describe("Issue List Features - Extended", () => {
-  // Admin holds every permission, so read-only rows prove no role can edit
   test.use({ storageState: STORAGE_STATE.admin });
-
-  // Track issue title prefix for cleanup across tests that create issues
-  let createdIssueTitlePrefix: string | undefined;
 
   test.beforeEach(() => {
     test.setTimeout(60000);
-    createdIssueTitlePrefix = undefined;
   });
 
-  test.afterEach(async () => {
-    if (createdIssueTitlePrefix) {
-      await cleanupTestEntities({
-        issueTitlePrefix: createdIssueTitlePrefix,
-      });
-    }
-  });
-
-  test("rows are read-only links to the issue and its machine", async ({
+  test("clicking the machine link opens the machine and clicking row padding opens the issue", async ({
     page,
   }) => {
-    // Rows never change an issue (issues-list §3.11), even for an admin. The
-    // whole row links to the issue, and the machine name to the machine
-    // (§3.12).
-
-    // Create a unique test issue to avoid parallel worker conflicts
-    const issueTitle = getTestIssueTitle("Read-only Row Test");
-    createdIssueTitlePrefix = issueTitle;
+    // Whole row links to the issue via ::after overlay, while the machine name
+    // sits above it and navigates to the machine (issues-list §3.12).
+    const issue = seededIssue("TAF");
     const machine = seededMachines.addamsFamily;
+    const query = new URLSearchParams({ q: issue.title }).toString();
 
-    await page.goto(`/report/detailed?machine=${machine.initials}`);
-    await fillReportForm(page, { title: issueTitle, priority: "low" });
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
-    await expect(page).toHaveURL(/\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+/);
-    const issuePath = new URL(page.url()).pathname;
-
-    // Navigate to issues list and search for our unique issue
-    await page.goto("/issues");
-    const search = await openListSearch(page, "Search issues");
-    await search.fill(issueTitle);
-    await search.press("Enter");
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get("q"), { timeout: 15000 })
-      .toBe(issueTitle);
+    await page.goto(`/issues?${query}`);
     await expect(resultCount(page)).toHaveText("Showing 1 to 1 of 1 issue");
 
     const row = page
       .getByRole("list", { name: "Issues" })
       .getByRole("listitem")
-      .filter({ has: page.getByRole("link", { name: issueTitle }) });
+      .filter({ has: page.getByRole("link", { name: issue.title }) });
     await expect(row).toBeVisible();
-
-    // No edit controls: the values are read-only text, and the only
-    // interactive elements are the issue link and the machine link.
-    await expect(row.getByRole("button")).toHaveCount(0);
-    await expect(row.getByRole("combobox")).toHaveCount(0);
-    await expect(row.getByRole("link")).toHaveCount(2);
-    await expect(row.getByTestId("issue-priority")).toHaveText("Priority: Low");
-    await expect(row.getByRole("img", { name: "Unassigned" })).toBeAttached();
 
     // The machine name opens the machine, not the issue.
     await row.getByRole("link", { name: machine.name }).click();
@@ -91,135 +63,45 @@ test.describe("Issue List Features - Extended", () => {
     // A click anywhere on the row, away from the title, opens the issue: the
     // row's top-left corner is padding the title link's overlay covers.
     await row.click({ position: { x: 4, y: 4 } });
-    await expect(page).toHaveURL(new RegExp(`${issuePath}$`));
-  });
-
-  test("a Severity Segment filters the list to its issues", async ({
-    page,
-  }, testInfo) => {
-    test.skip(
-      testInfo.project.name.includes("Mobile"),
-      "Phones show only the Status widget (widgets §2.7); the phone Status Segment test covers Segment selection there"
-    );
-    await page.goto("/issues");
-    const severity = page.getByRole("region", { name: "Severity" });
-    await expect(severity).toBeVisible();
-
-    // Zero-count Segments are left out of the breakdown (widgets §5.5) and
-    // pairs that do not fit roll into "N other" from the end (§5.6), so the
-    // first pair on the line is a selectable Segment.
-    const levelPattern = "(Unplayable|Major|Minor|Cosmetic)";
-    const first = severity
-      .getByRole("button", { name: new RegExp(`^\\d+ ${levelPattern}$`) })
-      .first();
-    await expect(first).toBeVisible();
-    const label = ((await first.textContent()) ?? "")
-      .trim()
-      .replace(/^\d+ /, "");
-    const segment = severity.getByRole("button", {
-      name: new RegExp(`^\\d+ ${label}$`),
-    });
-    await segment.click();
-
     await expect(page).toHaveURL(
-      new RegExp(`[?&]severity=${label.toLowerCase()}(?:&|$)`)
+      new RegExp(`/m/${machine.initials}/i/${String(issue.num)}$`)
     );
-    await expect(segment).toHaveAttribute("aria-pressed", "true");
-    // The widgets count open issues on On the Floor machines (issue-widgets
-    // §2.2, §4.2), the list's default view, so the selected Segment's count
-    // equals the filtered total. Poll both together, so a render that lands
-    // between the reads (another worker's new issue) cannot split them.
-    await expect
-      .poll(
-        async () => {
-          const count = Number.parseInt(
-            ((await segment.textContent()) ?? "").trim(),
-            10
-          );
-          const showing = await resultCount(page).textContent();
-          const noun = count === 1 ? "issue" : "issues";
-          return showing?.endsWith(` of ${count} ${noun}`) ?? false;
-        },
-        { message: "the selected Segment's count equals the filtered total" }
-      )
-      .toBe(true);
   });
 
   // Summary Widgets sit side by side at every width, each at least 240px
   // wide, and whole widgets drop from the right when the row cannot hold
   // them (widgets §2.3, §2.7). There is no Summary Row and no toggle.
-  test.describe("Summary Widgets", () => {
-    test.describe("at a desktop width", () => {
-      test.use({ viewport: { width: 1024, height: 768 } });
+  test("Summary Widgets sit side by side at desktop width and drop from the right as the row narrows", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto("/issues");
 
-      test("Status, Severity, and Priority sit side by side", async ({
-        page,
-      }) => {
-        await page.goto("/issues");
-        const widgets = ["Status", "Severity", "Priority"].map((name) =>
-          page.getByRole("region", { name })
-        );
-        const tops: number[] = [];
-        for (const widget of widgets) {
-          await expect(widget).toBeVisible();
-          const box = await widget.boundingBox();
-          expect(box).not.toBeNull();
-          if (box) tops.push(box.y);
-        }
-        expect(new Set(tops).size).toBe(1);
-        await expect(
-          page.getByRole("button", { name: /^Summary: / })
-        ).toHaveCount(0);
-      });
-    });
+    const status = page.getByRole("region", { name: "Status" });
+    const severity = page.getByRole("region", { name: "Severity" });
+    const priority = page.getByRole("region", { name: "Priority" });
 
-    test.describe("on a wide phone with room for two widgets", () => {
-      test.use({ viewport: { width: 600, height: 900 } });
+    const tops: number[] = [];
+    for (const widget of [status, severity, priority]) {
+      await expect(widget).toBeVisible();
+      const box = await widget.boundingBox();
+      expect(box).not.toBeNull();
+      if (box) tops.push(box.y);
+    }
+    expect(new Set(tops).size).toBe(1);
+    await expect(page.getByRole("button", { name: /^Summary: / })).toHaveCount(
+      0
+    );
 
-      test("Priority drops from the right", async ({ page }) => {
-        await page.goto("/issues");
-        await expect(
-          page.getByRole("region", { name: "Status" })
-        ).toBeVisible();
-        await expect(
-          page.getByRole("region", { name: "Severity" })
-        ).toBeVisible();
-        await expect(
-          page.getByRole("region", { name: "Priority" })
-        ).toBeHidden();
-      });
-    });
+    await page.setViewportSize({ width: 600, height: 900 });
+    await expect(status).toBeVisible();
+    await expect(severity).toBeVisible();
+    await expect(priority).toBeHidden();
 
-    test.describe("on a phone with room for one widget", () => {
-      test.use({ viewport: { width: 375, height: 812 } });
-
-      test("only Status shows, and a Status Segment filters the list", async ({
-        page,
-      }) => {
-        await page.goto("/issues");
-        const status = page.getByRole("region", { name: "Status" });
-        await expect(status).toBeVisible();
-        await expect(
-          page.getByRole("region", { name: "Severity" })
-        ).toBeHidden();
-        await expect(
-          page.getByRole("region", { name: "Priority" })
-        ).toBeHidden();
-        await expect(
-          page.getByRole("button", { name: /^Summary: / })
-        ).toHaveCount(0);
-
-        // A Status Segment is a status group; selecting it sets the Status
-        // filter to every status in the group (issue-widgets §3.3).
-        const segment = status
-          .getByRole("button", { name: /^\d+ (New|In Progress)$/ })
-          .first();
-        await expect(segment).toBeVisible();
-        await segment.click();
-        await expect(page).toHaveURL(/[?&]status=/);
-        await expect(segment).toHaveAttribute("aria-pressed", "true");
-      });
-    });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(status).toBeVisible();
+    await expect(severity).toBeHidden();
+    await expect(priority).toBeHidden();
   });
 
   test("should persist filters when navigating to issue detail and back", async ({
