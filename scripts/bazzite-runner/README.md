@@ -14,7 +14,7 @@ The supervisor on Bazzite rewrites each lease every 30 seconds with a time 90 se
 
 A routed job asks for the label `pinpoint-run-<run id>`; the build, integration and E2E jobs add `-l` and get a 4 vCPU / 8 GB VM instead of 2 vCPU / 3 GB. The supervisor registers each VM as a just-in-time runner carrying only that label, so a VM can take only its own run's jobs.
 
-Room: up to two runs at once (`GH_RUNNER_MAX_RUNS`), of which at most one is a PR run (`GH_RUNNER_PR_RUNS`), so a PR run never takes the merge queue's place. Merge-queue jobs start first.
+Room: up to two runs at once (`GH_RUNNER_MAX_RUNS`), of which at most one is a PR run (`GH_RUNNER_PR_RUNS`), so a PR run never takes the merge queue's place. Five VMs at once (`GH_RUNNER_MAX_VMS`), of which PR runs hold at most three (`GH_RUNNER_PR_VMS`), so a merge-queue run that arrives finds room. Merge-queue jobs start first. A run's VMs share its labels, so the supervisor starts one VM per queued job that none of the run's idle VMs will take, whichever job each VM was started for.
 
 ### Lease values
 
