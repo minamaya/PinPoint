@@ -211,6 +211,56 @@ describe("CreateMachineForm — iScored picker integration", () => {
       expect(initialsInput).toHaveValue("");
     });
   });
+
+  it("submits selected ownerId and navigates to result.value.redirectTo on success", async () => {
+    const originalLocation = Object.getOwnPropertyDescriptor(
+      window,
+      "location"
+    );
+    const assignMock = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign: assignMock },
+    });
+
+    try {
+      const user = userEvent.setup();
+      const adminOwner: OwnerSelectUser = {
+        id: "admin-1",
+        name: "Admin User",
+        lastName: "User",
+        machineCount: 1,
+        status: "active",
+        role: "admin",
+      };
+      render(<CreateMachineForm allUsers={[adminOwner]} canSelectOwner />);
+
+      await user.type(
+        screen.getByLabelText(/Machine Name/),
+        "Medieval Madness"
+      );
+      await user.type(screen.getByLabelText(/Initials/), "MM");
+      await user.selectOptions(
+        screen.getByLabelText("Machine Owner"),
+        adminOwner.id
+      );
+      await user.click(screen.getByRole("button", { name: /Create Machine/i }));
+
+      await waitFor(() => {
+        expect(createMachineAction).toHaveBeenCalled();
+        expect(assignMock).toHaveBeenCalledWith("/m/MM");
+      });
+
+      const fd = vi.mocked(createMachineAction).mock.calls[0]?.[1];
+      expect(fd?.get("ownerId")).toBe(adminOwner.id);
+    } finally {
+      if (originalLocation) {
+        Object.defineProperty(window, "location", originalLocation);
+      } else {
+        Reflect.deleteProperty(window, "location");
+      }
+    }
+  });
 });
 
 describe("CreateMachineForm — opened from a lineup entry (pinballmap 4.11)", () => {

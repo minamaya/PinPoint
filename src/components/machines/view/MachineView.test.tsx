@@ -461,14 +461,36 @@ describe("MachineView", () => {
 
     // A Playability Segment also sets Presence to On the Floor (§4.3), keeps
     // search, and returns to page 1 (widgets §6.2).
-    await user.click(
-      within(playability).getByRole("button", { name: "1 Needs Service" })
-    );
+    const segment = within(playability).getByRole("button", {
+      name: "1 Needs Service",
+    });
+    expect(segment).toHaveAttribute("aria-pressed", "false");
+    await user.click(segment);
     expect(navigation.replace).toHaveBeenLastCalledWith(
       // On the Floor is the Collections Page Preset, so it leaves the URL.
       "/m?q=mars&status=needs_service",
       { scroll: false }
     );
+  });
+
+  it("marks an active Playability Segment pressed and labels the Playability filter button", () => {
+    renderView({
+      result: result({
+        state: {
+          ...presetState,
+          presence: ["on_the_floor"],
+          status: ["needs_service"],
+        },
+      }),
+    });
+
+    const playability = screen.getByRole("region", { name: "Playability" });
+    expect(
+      within(playability).getByRole("button", { name: "1 Needs Service" })
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Playability: Needs Service" })
+    ).toBeInTheDocument();
   });
 
   it("lists Segments in spec order (machine-widgets §3.2, §4.2)", () => {

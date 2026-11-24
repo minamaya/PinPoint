@@ -1,13 +1,13 @@
 /**
  * E2E Tests: A person's machines (spec collections-and-tags 6.4–6.5)
  *
- * A person's machines are the Machines list filtered by Owner; Owner
- * Collections are retired. Smoke coverage for the account-menu entry point,
- * the permanent redirects from old Owner Collection links (which must work
- * for anonymous visitors), and the owner-name link on a machine's Info tab.
+ * Smoke coverage for the account-menu My Machines journey (with overflow +
+ * axe-core a11y checks) and permanent 308 redirects from retired Owner
+ * Collection links (next.config.ts).
  *
- * Fixtures: the seeded member user owns SC, HB, EBD, AFM, SM, GDZ2 (see
- * supabase/seed-users.mjs ownerMap); The Addams Family belongs to the admin.
+ * Owner-filtered RSC rendering and InfoRail owner profile links live in:
+ *   - `src/test/integration/machines-page.test.tsx`
+ *   - `src/app/(app)/m/[initials]/(tabs)/info-rail-owner-link.test.tsx`
  */
 
 import { test, expect } from "../support/fixtures.js";
@@ -15,6 +15,7 @@ import { STORAGE_STATE } from "../support/auth-state.js";
 import {
   assertNoA11yViolations,
   assertNoHorizontalOverflow,
+  machineViewRow,
   retryNavClick,
 } from "../support/actions.js";
 import { seededMachines, seededMember } from "../support/constants.js";
@@ -42,48 +43,10 @@ test.describe("A person's machines", () => {
         },
         /\/m\?owner=me$/
       );
-      await expect(
-        page.getByRole("link", { name: ownedMachine, exact: true })
-      ).toBeVisible();
-      await expect(
-        page.getByRole("link", { name: otherOwnersMachine, exact: true })
-      ).toHaveCount(0);
+      await expect(machineViewRow(page, ownedMachine)).toBeVisible();
+      await expect(machineViewRow(page, otherOwnersMachine)).toHaveCount(0);
       await assertNoHorizontalOverflow(page);
       await assertNoA11yViolations(page);
-    });
-
-    test("owner name on machine info links to the owner's profile", async ({
-      page,
-    }) => {
-      // AFM is owned by the member user (seed-users.mjs ownerMap).
-      await page.goto(`/m/${seededMachines.attackFromMars.initials}`);
-      // Scope to the owner block: the page also renders the machine description,
-      // and a description with links would make a bare getByRole("link")
-      // ambiguous.
-      //
-      // Retry the click rather than clicking once (PP-j1qm). Playwright runs
-      // against `next dev`, and the trace from a CI failure shows the click
-      // landing and then `[Fast Refresh] done in 7608ms` — a rebuild remounts the
-      // React tree mid-navigation, the soft navigation is discarded, and the URL
-      // never changes. Nothing is wrong with the link; the click was thrown away.
-      // Waiting for the page to settle first cannot fix it, because the rebuild
-      // can land after any wait; only re-issuing the click can.
-      //
-      // The hydration fixture this spec now imports (PP-kz47) does not subsume
-      // this, and the retry is not leftover belt-and-braces. That fixture waits
-      // for the FIRST hydration after a navigation; the trace here shows the
-      // click landing on an already-hydrated page that a later rebuild then
-      // remounted. Its own docs draw the same line — it narrows the window
-      // rather than closing it. Removing this retry re-opens PP-j1qm.
-      await retryNavClick(
-        page,
-        async () => {
-          await page.getByTestId("owner-block").getByRole("link").click();
-        },
-        /\/u\//,
-        { timeout: 30_000 }
-      );
-      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     });
   });
 
@@ -113,23 +76,13 @@ test.describe("A person's machines", () => {
           maxRedirects: 0,
         });
         expect(response.status(), `/c/owner/[member]${tab}`).toBe(308);
-        expect(response.headers()["location"]).toMatch(
-          new RegExp(`${list}\\?owner=${memberId}$`)
+        const location = new URL(
+          response.headers()["location"] ?? "",
+          "http://localhost"
         );
+        expect(location.pathname).toBe(list);
+        expect(location.searchParams.get("owner")).toBe(memberId);
       }
-    });
-
-    test("land on Machines showing only that owner's machines", async ({
-      page,
-    }) => {
-      await page.goto(`/c/owner/${memberId}`);
-      await expect(page).toHaveURL(new RegExp(`/m\\?owner=${memberId}$`));
-      await expect(
-        page.getByRole("link", { name: ownedMachine, exact: true })
-      ).toBeVisible();
-      await expect(
-        page.getByRole("link", { name: otherOwnersMachine, exact: true })
-      ).toHaveCount(0);
     });
   });
 });
