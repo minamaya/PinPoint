@@ -28,6 +28,7 @@ Stopping:
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -86,7 +87,13 @@ last_lease: dict[str, tuple[str, float]] = {}  # variable -> (value written, whe
 # Runners whose VM exited while GitHub still had a job on them: name -> {run_id, runner_id, since}
 dead: dict[str, dict] = {}
 rerun_when_done: set[int] = set()  # PR runs force-cancelled because a VM died mid-job
-VM_LOGS = STATE / "vm-logs"  # serial logs of VMs that exited early or mid-job
+# Serial logs of VMs that exited early or mid-job. install.sh makes the directory
+# ghrunner:froeht 2750, so froeht can read them over ssh without sudo.
+LOG_DIR = Path(os.environ.get("GH_RUNNER_LOG_DIR", "/var/log/ghrunner"))
+VM_LOGS = LOG_DIR / "vm-logs"
+# A JIT config is one long base64 string; nothing on the console should carry
+# one, but a copy readable by froeht must not either.
+SECRET_LIKE = re.compile(rb"[A-Za-z0-9+/=_-]{120,}")
 VM_LOGS_KEPT = 20
 DEAD_GRACE_S = 30  # a finished job can take a few seconds to free its runner
 DEAD_RETRY_S = 120  # then check again this often (each check is two API calls)
@@ -340,14 +347,59 @@ def completed_or_unknown(run_id: int) -> bool:
 # --- VMs --------------------------------------------------------------------
 
 
-def user_data(jit: str) -> str:
+# passt sends a guest's UDP flow from the host on the same source port, and drops
+# it when that port is taken (PP-itvwi): tailscaled holds 41641, and concurrent
+# VMs would take each other's ports. So each VM slot gets its own slice of the
+# guest's ephemeral range, and the ports the host has bound are reserved.
+EPHEMERAL = (32768, 60999)  # Linux default, in the guest and on the host
+TAILSCALE_PORT = 41641
+
+
+def port_range(slot: int, slots: int = MAX_VMS) -> tuple[int, int]:
+    span = (EPHEMERAL[1] - EPHEMERAL[0] + 1) // slots
+    low = EPHEMERAL[0] + slot * span
+    return low, low + span - 1
+
+
+def host_udp_ports(tables=("/proc/net/udp", "/proc/net/udp6")) -> set[int]:
+    """Local ports of the host's UDP sockets (the hex after the colon in column 2)."""
+    ports = set()
+    for table in tables:
+        try:
+            rows = Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            ports.add(int(row.split()[1].rsplit(":", 1)[1], 16))
+    return ports
+
+
+def reserved_ports(low: int, high: int, host_ports: set[int]) -> str:
+    keep = sorted(p for p in host_ports | {TAILSCALE_PORT} if low <= p <= high)
+    return ",".join(map(str, keep))
+
+
+def free_slot() -> int:
+    used = {vm["slot"] for vm in vms.values()}
+    return next(i for i in range(MAX_VMS) if i not in used)
+
+
+# The runner writes to the second serial port (runner.log). ttyS0 is the kernel
+# console, and the serial login prompt that starts there late in boot cuts off
+# every process writing to it: the runner then exits and the VM powers off.
+def user_data(jit: str, ports: tuple[int, int] = EPHEMERAL, reserved: str = "") -> str:
+    low, high = ports
+    bootcmd = f'  - [sysctl, -w, "net.ipv4.ip_local_port_range={low} {high}"]\n'
+    if reserved:
+        bootcmd += f'  - [sysctl, -w, "net.ipv4.ip_local_reserved_ports={reserved}"]\n'
     return f"""#cloud-config
-write_files:
+bootcmd:
+{bootcmd}write_files:
   - path: /home/runner/jit
     permissions: "0600"
     content: {jit}
 runcmd:
-  - [bash, -c, "chown runner:runner /home/runner/jit; cd /home/runner/actions-runner && sudo -u runner ./run.sh --jitconfig $(cat /home/runner/jit) > /dev/ttyS0 2>&1; poweroff"]
+  - [bash, -c, "chown runner:runner /home/runner/jit; cd /home/runner/actions-runner && sudo -u runner ./run.sh --jitconfig $(cat /home/runner/jit) < /dev/null > /dev/ttyS1 2>&1; poweroff"]
 """
 
 
@@ -361,6 +413,9 @@ def spawn(run, job) -> None:
     name = runner_name(run["id"], job["id"], time.time())
     label = job["labels"][0]
     vcpus, mem = size_for(label)
+    slot = free_slot()
+    ports = port_range(slot)
+    reserved = reserved_ports(*ports, host_udp_ports())
     resp = api(
         "POST",
         f"{runners_path()}/generate-jitconfig",
@@ -373,7 +428,7 @@ def spawn(run, job) -> None:
         d.mkdir(mode=0o700, parents=True)
         fd = os.open(d / "user-data", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
-            f.write(user_data(resp["encoded_jit_config"]))
+            f.write(user_data(resp["encoded_jit_config"], ports, reserved))
         (d / "meta-data").write_text(f"instance-id: {name}\nlocal-hostname: {name}\n")
         subprocess.run(
             [
@@ -439,6 +494,8 @@ def spawn(run, job) -> None:
                 "none",
                 "-serial",
                 f"file:{d / 'serial.log'}",
+                "-serial",
+                f"file:{d / 'runner.log'}",
                 "-no-reboot",
             ],
             stdout=subprocess.DEVNULL,
@@ -457,6 +514,7 @@ def spawn(run, job) -> None:
         "run_id": run["id"],
         "started": time.time(),
         "name": name,
+        "slot": slot,
     }
     admitted.setdefault(run["id"], time.time())
     log(f"spawned {name} ({vcpus} vCPU/{mem}) for {run['head_branch']} / {job['name']}")
@@ -510,8 +568,20 @@ def reap(force: bool = False) -> None:
 def keep_serial_log(vm) -> None:
     """Keep the console of a VM that died early or mid-job; its directory is deleted."""
     try:
-        VM_LOGS.mkdir(mode=0o700, exist_ok=True)
-        shutil.copyfile(vm["dir"] / "serial.log", VM_LOGS / f"{vm['name']}.log")
+        if not VM_LOGS.is_dir():
+            VM_LOGS.mkdir()
+            VM_LOGS.chmod(0o2750)  # the umask is 077; froeht's group reads these
+        text = b""
+        for part in ("runner.log", "serial.log"):
+            path = vm["dir"] / part
+            if path.exists():
+                text += f"===== {part}\n".encode() + path.read_bytes() + b"\n"
+        text = SECRET_LIKE.sub(b"[redacted]", text)
+        dest = VM_LOGS / f"{vm['name']}.log"
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+        with os.fdopen(fd, "wb") as f:
+            os.fchmod(f.fileno(), 0o640)
+            f.write(text)
         for old in sorted(VM_LOGS.iterdir(), key=lambda p: p.stat().st_mtime)[
             :-VM_LOGS_KEPT
         ]:

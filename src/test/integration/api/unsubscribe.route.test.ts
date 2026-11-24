@@ -1,18 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { getTestDb, setupTestDb } from "~/test/setup/pglite";
 import { notificationPreferences, userProfiles } from "~/server/db/schema";
 import { createTestUser } from "~/test/helpers/factories";
+import { generateUnsubscribeToken } from "~/lib/notifications/unsubscribe-token";
 import { GET, POST } from "~/app/api/unsubscribe/route";
-
-const verifyTokenMock = vi.hoisted(() =>
-  vi.fn<(uid: string, token: string) => boolean>()
-);
-
-vi.mock("~/lib/notifications/unsubscribe-token", () => ({
-  verifyUnsubscribeToken: verifyTokenMock,
-}));
 
 vi.mock("~/server/db", async () => {
   const { getTestDb } = await import("~/test/setup/pglite");
@@ -44,7 +37,11 @@ describe("/api/unsubscribe", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    verifyTokenMock.mockReturnValue(true);
+    vi.stubEnv("UNSUBSCRIBE_SIGNING_SECRET", "test-unsubscribe-secret");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   async function seedPreferences(): Promise<{ userId: string }> {
@@ -91,13 +88,11 @@ describe("/api/unsubscribe", () => {
 
     expect(response.status).toBe(400);
     expect(html).toContain("Invalid unsubscribe link.");
-    expect(verifyTokenMock).not.toHaveBeenCalled();
     await assertPreferencesUnmutated(userId);
   });
 
   it("GET returns 403 when token verification fails and does not mutate", async () => {
     const { userId } = await seedPreferences();
-    verifyTokenMock.mockReturnValue(false);
 
     const response = GET(buildGetRequest(`?uid=${userId}&token=bad`));
     const html = await response.text();
@@ -109,12 +104,19 @@ describe("/api/unsubscribe", () => {
 
   it("GET returns confirmation page and does not mutate preferences", async () => {
     const { userId } = await seedPreferences();
-    const response = GET(buildGetRequest(`?uid=${userId}&token=valid-token`));
+    const token = generateUnsubscribeToken(userId);
+    const response = GET(buildGetRequest(`?uid=${userId}&token=${token}`));
     const html = await response.text();
 
     expect(response.status).toBe(200);
     expect(html).toContain("Confirm unsubscribe");
     expect(html).toContain('<form method="post" action="/api/unsubscribe">');
+    expect(html).toContain(
+      `<input type="hidden" name="uid" value="${userId}" />`
+    );
+    expect(html).toContain(
+      `<input type="hidden" name="token" value="${token}" />`
+    );
     await assertPreferencesUnmutated(userId);
   });
 
@@ -130,7 +132,6 @@ describe("/api/unsubscribe", () => {
 
   it("POST returns 403 when token verification fails and does not mutate", async () => {
     const { userId } = await seedPreferences();
-    verifyTokenMock.mockReturnValue(false);
 
     const response = await POST(buildPostRequest(userId, "bad-token"));
     const html = await response.text();
@@ -142,7 +143,8 @@ describe("/api/unsubscribe", () => {
 
   it("POST returns 404 when user preferences are missing", async () => {
     const missingUserId = crypto.randomUUID();
-    const response = await POST(buildPostRequest(missingUserId, "valid-token"));
+    const token = generateUnsubscribeToken(missingUserId);
+    const response = await POST(buildPostRequest(missingUserId, token));
     const html = await response.text();
 
     expect(response.status).toBe(404);
@@ -151,8 +153,9 @@ describe("/api/unsubscribe", () => {
 
   it("POST unsubscribes user from all email notifications", async () => {
     const { userId } = await seedPreferences();
+    const token = generateUnsubscribeToken(userId);
 
-    const response = await POST(buildPostRequest(userId, "valid-token"));
+    const response = await POST(buildPostRequest(userId, token));
     const html = await response.text();
 
     expect(response.status).toBe(200);

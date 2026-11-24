@@ -1,7 +1,10 @@
 /**
  * E2E Tests for Public Issue Reporting
  *
- * Covers anonymous reporting workflow.
+ * Covers the anonymous reporting journey, success-page draft clearing, and
+ * draft preservation across login. Non-journey parameter/UI variants live in
+ * `public-issue-submit.test.ts`, `clear-draft.test.tsx`,
+ * `unified-report-form.test.tsx`, and `header-sign-in-button.test.tsx`.
  */
 
 import { test, expect } from "../support/fixtures.js";
@@ -17,6 +20,10 @@ import { fillReportForm } from "../support/page-helpers.js";
 
 const PUBLIC_PREFIX = "E2E Public Report";
 
+function uniqueTitle(label: string): string {
+  return `${PUBLIC_PREFIX} ${label} ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
 test.describe("Public Issue Reporting", () => {
   test.afterEach(async () => {
     await cleanupTestEntities({
@@ -24,190 +31,114 @@ test.describe("Public Issue Reporting", () => {
     });
   });
 
-  test("should submit anonymous issue and show confirmation", async ({
+  test("should submit anonymous issue, clear draft, and start fresh on next report", async ({
     page,
   }) => {
     await page.goto("/report/detailed");
     await expect(
-      page.getByRole("heading", {
-        name: "Report an Issue",
-      })
+      page.getByRole("heading", { name: "Report an Issue" })
     ).toBeVisible();
 
+    const machineValue = machineSelectValue(page);
+    expect(await machineValue.inputValue()).toBe("");
+
     await selectMachine(page);
-    // Wait for URL refresh (router.push) to prevent race conditions on Mobile Safari
+    const selectedMachineId = await machineValue.inputValue();
+    expect(selectedMachineId).toBeTruthy();
     await expect(page).toHaveURL(/machine=/);
 
-    // Verify no horizontal overflow on report page
     await assertNoHorizontalOverflow(page);
     await assertNoA11yViolations(page);
 
-    const issueTitle = `${PUBLIC_PREFIX} ${Date.now()}`;
     await fillReportForm(page, {
-      title: issueTitle,
+      title: uniqueTitle("Anon Submit"),
       description: "Playfield gets stuck during multiball.",
       includePriority: false,
     });
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.localStorage.getItem("report_draft"))
+      )
+      .not.toBeNull();
+
     await page.getByRole("button", { name: "Submit Issue Report" }).click();
 
     await expect(page).toHaveURL("/report/success");
-    await expect(
-      page.getByRole("heading", {
-        name: "Issue Sent!",
-      })
-    ).toBeVisible();
-
-    await assertNoA11yViolations(page);
-    await expect(
-      page.getByRole("link", { name: "Report Another Issue" })
-    ).toBeVisible();
-  });
-
-  test("should allow reporting another issue from success page", async ({
-    page,
-  }) => {
-    await page.goto("/report/success");
-    await page.getByRole("link", { name: "Report Another Issue" }).click();
-    await expect(page).toHaveURL("/report");
-  });
-
-  test("should preserve draft when logging in from inline report-form link", async ({
-    page,
-  }) => {
-    await page.goto("/report/detailed");
-    await selectMachine(page);
-    await expect(page).toHaveURL(/machine=/);
-
-    const machineInitials = new URL(page.url()).searchParams.get("machine");
-    expect(machineInitials).toBeTruthy();
-    if (!machineInitials) {
-      throw new Error("Expected machine initials in report URL before login.");
-    }
-
-    const issueTitle = `${PUBLIC_PREFIX} Inline Login Draft ${Date.now()}`;
-    const issueDescription = "Draft should survive inline login.";
-    await fillReportForm(page, {
-      title: issueTitle,
-      description: issueDescription,
-      includePriority: false,
-    });
-
-    await page.getByRole("link", { name: "Log in" }).click();
-    await expect(page).toHaveURL(/\/login\?/);
-
-    const next = new URL(page.url()).searchParams.get("next");
-    expect(next).toBe(`/report/detailed?machine=${machineInitials}`);
-
-    await page.getByLabel("Email").fill(TEST_USERS.member.email);
-    await page.getByLabel(/^Password\s*\*?$/).fill(TEST_USERS.member.password);
-    await page.getByRole("button", { name: "Sign In" }).click();
-
-    await expect(page).toHaveURL(
-      new RegExp(`/report/detailed\\?machine=${machineInitials}`)
-    );
-    await expect(page.getByLabel("Issue Title")).toHaveValue(issueTitle);
-    await expect(page.getByLabel("Description")).toHaveText(issueDescription);
-    await expect(page.getByLabel("First Name")).toHaveCount(0);
-  });
-
-  test("should preserve draft when logging in from header sign-in link", async ({
-    page,
-  }) => {
-    await page.goto("/report/detailed");
-    await selectMachine(page);
-    await expect(page).toHaveURL(/machine=/);
-
-    const machineInitials = new URL(page.url()).searchParams.get("machine");
-    expect(machineInitials).toBeTruthy();
-    if (!machineInitials) {
-      throw new Error("Expected machine initials in report URL before login.");
-    }
-
-    const issueTitle = `${PUBLIC_PREFIX} Header Login Draft ${Date.now()}`;
-    const issueDescription = "Draft should survive header sign-in login.";
-    await fillReportForm(page, {
-      title: issueTitle,
-      description: issueDescription,
-      includePriority: false,
-    });
-
-    // AppHeader is unified — same testid on all viewports
-    await page.getByTestId("nav-signin").click();
-    await expect(page).toHaveURL(/\/login\?/);
-
-    const next = new URL(page.url()).searchParams.get("next");
-    expect(next).toBe(`/report/detailed?machine=${machineInitials}`);
-
-    await page.getByLabel("Email").fill(TEST_USERS.member.email);
-    await page.getByLabel(/^Password\s*\*?$/).fill(TEST_USERS.member.password);
-    await page.getByRole("button", { name: "Sign In" }).click();
-
-    await expect(page).toHaveURL(
-      new RegExp(`/report/detailed\\?machine=${machineInitials}`)
-    );
-    await expect(page.getByLabel("Issue Title")).toHaveValue(issueTitle);
-    await expect(page.getByLabel("Description")).toHaveText(issueDescription);
-    await expect(page.getByLabel("First Name")).toHaveCount(0);
-  });
-
-  test("should clear form draft after successful submission", async ({
-    page,
-  }) => {
-    // Submit an issue first - select a machine (dropdown starts unselected)
-    await page.goto("/report/detailed");
-    const machineValue = machineSelectValue(page);
-
-    // Verify machine picker starts with no selection (empty value)
-    const initialMachineId = await machineValue.inputValue();
-    expect(initialMachineId).toBe(""); // Should be unselected by default
-
-    // Select the first actual machine option
-    await selectMachine(page);
-    const selectedMachineId = await machineValue.inputValue();
-    expect(selectedMachineId).toBeTruthy(); // Should have a valid selection now
-    await expect(page).toHaveURL(/machine=/);
-
-    const issueTitle = `${PUBLIC_PREFIX} Draft Clear Test ${Date.now()}`;
-    await fillReportForm(page, {
-      title: issueTitle,
-      description: "This should not persist after submission.",
-      includePriority: false,
-    });
-
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
-    await expect(page).toHaveURL("/report/success");
-
-    // Wait for success page to load and ClearReportDraft effect to run
     await expect(
       page.getByRole("heading", { name: "Issue Sent!" })
     ).toBeVisible();
+    await assertNoA11yViolations(page);
 
-    // Verify the unified draft was cleared on the success page
-    const draftAfterSuccess = await page.evaluate(() =>
-      window.localStorage.getItem("report_draft")
-    );
-    expect(draftAfterSuccess).toBeNull();
+    // ClearReportDraft effect removes persisted draft after anonymous submit.
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.localStorage.getItem("report_draft"))
+      )
+      .toBeNull();
 
-    // Click "Report Another Issue"
     await page.getByRole("link", { name: "Report Another Issue" }).click();
-
-    // Wait for the report page to load
     await expect(page).toHaveURL("/report");
     await expect(
       page.getByRole("heading", { name: "Report an Issue" })
     ).toBeVisible();
 
-    // The success link returns to Quick; inspect the shared blank draft in Detailed.
     await page.getByRole("link", { name: "Add details" }).click();
-
-    // Verify text fields are empty (draft cleared, not restored)
+    await expect(page).toHaveURL("/report/detailed");
     await expect(page.getByLabel("Issue Title")).toHaveValue("");
     await expect(page.getByLabel("Description")).toHaveText("");
-
-    // Machine should be back to unselected state (empty), not the one we selected
-    // This verifies draft wasn't restored - the form starts with no machine selected
     const machineAfterReset = await machineValue.inputValue();
-    expect(machineAfterReset).toBe(""); // Should be unselected again
+    expect(machineAfterReset).toBe("");
     expect(machineAfterReset).not.toBe(selectedMachineId);
+  });
+
+  test("should preserve draft and update sign-in return links across login", async ({
+    page,
+  }) => {
+    await page.goto("/report/detailed");
+    await selectMachine(page);
+    await expect(page).toHaveURL(/machine=/);
+
+    const machineInitials = new URL(page.url()).searchParams.get("machine");
+    expect(machineInitials).toBeTruthy();
+    if (!machineInitials) {
+      throw new Error("Expected machine initials in report URL before login.");
+    }
+
+    const issueTitle = uniqueTitle("Login Draft");
+    const issueDescription = "Draft should survive login round-trip.";
+    await fillReportForm(page, {
+      title: issueTitle,
+      description: issueDescription,
+      includePriority: false,
+    });
+
+    const expectedNext = `/report/detailed?machine=${machineInitials}`;
+    const headerSignInHref = await page
+      .getByTestId("nav-signin")
+      .getAttribute("href");
+    const headerSignInUrl = new URL(headerSignInHref ?? "", "http://localhost");
+    expect(headerSignInUrl.pathname).toBe("/login");
+    expect(headerSignInUrl.searchParams.get("next")).toBe(expectedNext);
+
+    await page.getByRole("link", { name: "Log in" }).click();
+    await expect(page).toHaveURL(/\/login\?/);
+
+    const loginUrl = new URL(page.url());
+    expect(loginUrl.searchParams.get("next")).toBe(expectedNext);
+
+    await page.getByLabel("Email").fill(TEST_USERS.member.email);
+    await page.getByLabel(/^Password\s*\*?$/).fill(TEST_USERS.member.password);
+    await page.getByRole("button", { name: "Sign In" }).click();
+
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return `${url.pathname}${url.search}`;
+      })
+      .toBe(expectedNext);
+    await expect(page.getByLabel("Issue Title")).toHaveValue(issueTitle);
+    await expect(page.getByLabel("Description")).toHaveText(issueDescription);
+    await expect(page.getByLabel("First Name")).toHaveCount(0);
   });
 });

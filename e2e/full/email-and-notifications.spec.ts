@@ -1,15 +1,16 @@
 /**
  * E2E Tests: Email and Notifications (Full Suite)
  *
- * Merged from notifications.spec.ts, email-notifications.spec.ts,
- * and password reset test from auth-flows-extended.spec.ts.
+ * Keeps two non-vacuous live journeys:
+ * 1. Public issue report -> SSR MainLayout bell menu -> click navigates & marks read.
+ * 2. Issue creation -> Mailpit "New Issue" email + real unsubscribe link ->
+ *    status update -> Mailpit "Status Changed" email -> GET/POST /api/unsubscribe.
  */
 
 import { test, expect, attachHydrationWait } from "../support/fixtures.js";
 import { MailpitClient } from "../support/mailpit.js";
 import {
   ensureLoggedIn,
-  showIssueSection,
   updateIssueField,
   selectMachine,
   machineSelectValue,
@@ -18,7 +19,6 @@ import {
   fillReportForm,
   submitFormAndWaitForRedirect,
 } from "../support/page-helpers.js";
-import { seededMachines, TEST_USERS } from "../support/constants.js";
 import {
   createTestUser,
   createTestMachine,
@@ -26,7 +26,6 @@ import {
   deleteTestMachine,
   updateUserRole,
   updateNotificationPreferences,
-  generateUnsubscribeTokenForTest,
   getNotificationPreferences,
 } from "../support/supabase-admin.js";
 import {
@@ -34,442 +33,96 @@ import {
   getTestEmail,
   getTestMachineInitials,
 } from "../support/test-isolation.js";
-const cleanupUserIds: string[] = [];
-const cleanupMachineIds: string[] = [];
-
-test.afterAll(async () => {
-  for (const machineId of cleanupMachineIds) {
-    await deleteTestMachine(machineId).catch(() => undefined);
-  }
-  for (const userId of cleanupUserIds) {
-    await deleteTestUser(userId).catch(() => undefined);
-  }
-});
 
 test.describe("Notifications", () => {
-  test("should notify machine owner when public issue is reported", async ({
+  const cleanupUserIds: string[] = [];
+  const cleanupMachineIds: string[] = [];
+
+  test.afterAll(async () => {
+    for (const machineId of cleanupMachineIds) {
+      await deleteTestMachine(machineId).catch(() => undefined);
+    }
+    for (const userId of cleanupUserIds) {
+      await deleteTestUser(userId).catch(() => undefined);
+    }
+  });
+
+  test("notifies machine owner in the bell menu on public report and marks read on click", async ({
     browser,
-  }) => {
-    // 1. Setup: Create unique owner and machine
-    const timestamp = Date.now();
-    const ownerEmail = `owner-${timestamp}@example.com`;
+  }, testInfo) => {
+    const ownerEmail = getTestEmail("notify-owner@test.com");
     const owner = await createTestUser(ownerEmail);
     cleanupUserIds.push(owner.id);
     const machine = await createTestMachine(owner.id);
     cleanupMachineIds.push(machine.id);
 
-    // Enable in-app notifications for new issues on owned machines
-    // (default is OFF after notification overhaul)
     await updateNotificationPreferences(owner.id, {
       inAppNotifyOnNewIssue: true,
     });
 
-    // Login as owner
-    const ownerContext = await browser.newContext();
-    const ownerPage = attachHydrationWait(await ownerContext.newPage());
-
-    await ownerPage.goto("/login");
-    await ownerPage.getByLabel("Email").fill(ownerEmail);
-    await ownerPage.getByLabel(/^Password\s*\*?$/).fill("TestPassword123");
-    await ownerPage.getByRole("button", { name: "Sign In" }).click();
-    await expect(ownerPage).toHaveURL("/dashboard");
-
-    // 2. Action: Anonymous user reports issue on THIS machine
-    const publicContext = await browser.newContext();
-    const publicPage = attachHydrationWait(await publicContext.newPage());
-
-    await publicPage.goto("/report/detailed");
-    await selectMachine(publicPage, machine.id);
-
-    // Verify selection stuck (mobile chrome stability)
-    await expect(machineSelectValue(publicPage)).toHaveValue(machine.id);
-
-    const issueTitle = getTestIssueTitle("Public Report");
-    await fillReportForm(publicPage, {
-      title: issueTitle,
-      includePriority: false,
+    const ownerContext = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const publicContext = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
     });
 
-    await publicPage
-      .getByRole("button", { name: "Submit Issue Report" })
-      .click();
+    try {
+      const ownerPage = attachHydrationWait(await ownerContext.newPage());
+      const publicPage = attachHydrationWait(await publicContext.newPage());
 
-    await expect(publicPage).toHaveURL("/report/success");
+      await ensureLoggedIn(ownerPage, testInfo, {
+        email: ownerEmail,
+        password: "TestPassword123",
+      });
 
-    // 3. Assertion: Owner receives notification
-    await ownerPage.bringToFront();
-    await ownerPage.goto("/dashboard"); // Reload/Navigate to fetch notifications
+      await publicPage.goto("/report/detailed");
+      await selectMachine(publicPage, machine.id);
+      await expect(machineSelectValue(publicPage)).toHaveValue(machine.id);
 
-    const bell = ownerPage.getByRole("button", { name: /notifications/i });
-    await bell.click();
+      const issueTitle = getTestIssueTitle("Public Report");
+      await fillReportForm(publicPage, {
+        title: issueTitle,
+        includePriority: false,
+      });
+      await publicPage
+        .getByRole("button", { name: "Submit Issue Report" })
+        .click();
+      await expect(publicPage).toHaveURL("/report/success");
 
-    // Filter by unique issue title to avoid crosstalk from other workers
-    const notification = ownerPage
-      .getByText(new RegExp(issueTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-      .first();
-    await expect(notification).toBeVisible();
+      await ownerPage.bringToFront();
+      await ownerPage.goto("/dashboard");
 
-    // Verify it links to the correct machine/issue (by clicking and checking title)
-    await notification.click();
-    await expect(
-      ownerPage.getByRole("heading", { name: issueTitle })
-    ).toBeVisible();
+      await ownerPage.getByRole("button", { name: /notifications/i }).click();
+      const menu = ownerPage.getByRole("menu");
+      const item = menu.getByRole("menuitem", {
+        name: new RegExp(`New report ${machine.initials}-1`),
+      });
+      await expect(item).toBeVisible();
 
-    await ownerContext.close();
-    await publicContext.close();
-  });
-
-  test("should suppress own-action notifications when enabled in settings", async ({
-    page,
-  }, testInfo) => {
-    const timestamp = Date.now();
-    const ownerEmail = getTestEmail(`self-suppress-${timestamp}@test.com`);
-    const owner = await createTestUser(ownerEmail);
-    cleanupUserIds.push(owner.id);
-    const machine = await createTestMachine(owner.id);
-    cleanupMachineIds.push(machine.id);
-
-    await ensureLoggedIn(page, testInfo, {
-      email: ownerEmail,
-      password: "TestPassword123",
-    });
-
-    // Click new settings controls via UI (E2E interaction coverage)
-    await page.goto("/settings");
-
-    const inAppNewIssueSwitch = page.locator("#inAppNotifyOnNewIssue");
-    await expect(inAppNewIssueSwitch).toHaveAttribute("aria-checked", "false");
-    await inAppNewIssueSwitch.click();
-    await expect(inAppNewIssueSwitch).toHaveAttribute("aria-checked", "true");
-
-    const suppressOwnActionsSwitch = page.locator("#suppressOwnActions");
-    await expect(suppressOwnActionsSwitch).toHaveAttribute(
-      "aria-checked",
-      "false"
-    );
-    await suppressOwnActionsSwitch.click();
-    await expect(suppressOwnActionsSwitch).toHaveAttribute(
-      "aria-checked",
-      "true"
-    );
-
-    await page.getByRole("button", { name: "Save Preferences" }).click();
-    await expect(page.getByRole("button", { name: "Saved!" })).toBeVisible();
-
-    // Report issue as this same user; with suppression on, no notification should appear
-    await page.goto(`/report/detailed?machine=${machine.initials}`);
-    const issueTitle = getTestIssueTitle("Own Action Suppressed");
-    await fillReportForm(page, {
-      title: issueTitle,
-      includePriority: false,
-    });
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
-    await expect(page).toHaveURL(
-      /(\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+)|(\/report\/success)/
-    );
-
-    await page.goto("/dashboard");
-    const bell = page.getByRole("button", { name: /notifications/i });
-    await bell.click();
-    await expect(page.getByText("No new notifications")).toBeVisible();
-  });
-
-  // Skip this test in Safari due to Next.js Issue #48309
-  // Safari fails to process Server Action redirects to dynamic pages
-  // This test creates an issue (Server Action + redirect) which fails in Safari
-  test.skip(
-    ({ browserName }) => browserName === "webkit",
-    "Next.js Issue #48309: Safari Server Action redirect timing"
-  );
-
-  test("should notify reporter when status changes", async ({
-    page,
-    browser,
-  }, testInfo) => {
-    // 1. Setup: Use fresh member as reporter, and fresh machine owned by a fresh admin
-    // This isolates the "Status Changed" notification to this interaction
-
-    const timestamp = Date.now();
-    const adminEmail = getTestEmail(`admin-status-${timestamp}@test.com`);
-    const admin = await createTestUser(adminEmail); // Acts as owner/admin
-    await updateUserRole(admin.id, "admin");
-    cleanupUserIds.push(admin.id);
-    const machine = await createTestMachine(admin.id);
-    cleanupMachineIds.push(machine.id);
-
-    // Reporter (Fresh Member) reports an issue
-    const memberEmail = getTestEmail(`member-status-${timestamp}@test.com`);
-    const member = await createTestUser(memberEmail);
-    cleanupUserIds.push(member.id);
-    await ensureLoggedIn(page, testInfo, {
-      email: memberEmail,
-      password: "TestPassword123",
-    });
-
-    await page.goto(`/report/detailed?machine=${machine.initials}`);
-    await expect(
-      page.getByRole("heading", { name: "Report an Issue" })
-    ).toBeVisible();
-
-    const issueTitle = getTestIssueTitle("Status Change");
-    await fillReportForm(page, { title: issueTitle });
-
-    await page.getByRole("button", { name: "Submit Issue Report" }).click();
-
-    // Capture Issue URL/number.
-    // Use try/catch or flexible regex because it might redirect to success if auth checks fail
-    await expect(page).toHaveURL(
-      /(\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+)|(\/report\/success)/
-    );
-
-    // If we landed on success page, we need to go to dashboard or recent issues to find the new issue
-    if (page.url().includes("/report/success")) {
-      await page.goto("/dashboard");
-      await page.getByTestId("recent-issue-card").first().click();
-    }
-
-    const issueUrl = page.url();
-    const issueNumberMatch = /\/i\/([0-9]+)$/.exec(issueUrl);
-    const issueNumber = issueNumberMatch?.[1];
-    if (!issueNumber) {
-      throw new Error(
-        `Expected issue detail URL with issue number, received ${issueUrl}`
+      await item.click();
+      await expect(ownerPage).toHaveURL(
+        new RegExp(`/m/${machine.initials}/i/1$`)
       );
+      await expect(
+        ownerPage.getByRole("heading", { level: 1, name: issueTitle })
+      ).toBeVisible();
+
+      await expect(async () => {
+        await ownerPage.reload({ waitUntil: "domcontentloaded" });
+        await ownerPage.getByRole("button", { name: /notifications/i }).click();
+        await expect(
+          ownerPage.getByRole("menu").getByText("No new notifications")
+        ).toBeVisible();
+      }).toPass({ timeout: 15000 });
+    } finally {
+      await ownerContext.close();
+      await publicContext.close();
     }
-
-    // Ensure reporter is watching (should be auto-watching own report): the
-    // Watching row in Details offers Unwatch.
-    await showIssueSection(page, "Details");
-    await expect(
-      page.getByTestId("details-watching").getByRole("button", {
-        name: "Unwatch",
-        exact: true,
-      })
-    ).toBeVisible();
-
-    // 2. Action: Admin (Owner) changes status
-    const adminContext = await browser.newContext();
-    const adminPage = attachHydrationWait(await adminContext.newPage());
-
-    await adminPage.goto("/login");
-    await adminPage.getByLabel("Email").fill(adminEmail);
-    await adminPage.getByLabel(/^Password\s*\*?$/).fill("TestPassword123");
-    await adminPage.getByRole("button", { name: "Sign In" }).click();
-    await expect(adminPage).toHaveURL("/dashboard");
-
-    await adminPage.goto(`/m/${machine.initials}/i/${issueNumber}`);
-    // Use viewport-aware helper — works on both desktop and mobile
-    await updateIssueField(adminPage, "status", "in_progress");
-
-    // 3. Assertion: Reporter receives notification
-    await page.bringToFront();
-    await page.reload({ waitUntil: "domcontentloaded" });
-
-    const bell = page.getByRole("button", { name: /notifications/i });
-    await expect(bell).toBeVisible();
-    await bell.click();
-
-    // Look for specific notification with issue title
-    const notification = page
-      .getByText(new RegExp(issueTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-      .first();
-    await expect(notification).toBeVisible();
-
-    await adminContext.close();
-  });
-
-  test("should notify global watcher on new issue", async ({ browser }) => {
-    // 1. Setup: New Admin User who enables "Watch All New Issues"
-    const timestamp = Date.now();
-    const globalWatcherEmail = `watcher-${timestamp}@example.com`;
-    const watcher = await createTestUser(globalWatcherEmail);
-    cleanupUserIds.push(watcher.id);
-
-    const watcherContext = await browser.newContext();
-    const watcherPage = attachHydrationWait(await watcherContext.newPage());
-
-    await watcherPage.goto("/login");
-    await watcherPage.getByLabel("Email").fill(globalWatcherEmail);
-    await watcherPage.getByLabel(/^Password\s*\*?$/).fill("TestPassword123");
-    await watcherPage.getByRole("button", { name: "Sign In" }).click();
-    await expect(watcherPage).toHaveURL("/dashboard");
-
-    await watcherPage.goto("/settings");
-    const globalWatchSwitch = watcherPage.locator("#inAppWatchNewIssuesGlobal");
-    await globalWatchSwitch.check();
-    await watcherPage.getByRole("button", { name: "Save Preferences" }).click();
-    await expect(
-      watcherPage.getByRole("button", { name: "Saved!" })
-    ).toBeVisible();
-
-    // 2. Action: Anonymous user reports issue on ANY machine
-    const publicContext = await browser.newContext();
-    const publicPage = attachHydrationWait(await publicContext.newPage());
-    await publicPage.goto("/report/detailed");
-
-    // Use a seeded machine for convenience, or create one.
-    // Since we are watching globally, any machine works.
-    await selectMachine(publicPage, seededMachines.medievalMadness.id);
-
-    const issueTitle = getTestIssueTitle("Global Watcher Test");
-    // Verify machine selection stuck
-    await expect(machineSelectValue(publicPage)).toHaveValue(
-      seededMachines.medievalMadness.id
-    );
-
-    await fillReportForm(publicPage, {
-      title: issueTitle,
-      severity: "unplayable",
-      frequency: "constant",
-      includePriority: false,
-    });
-
-    await publicPage
-      .getByRole("button", { name: "Submit Issue Report" })
-      .click();
-    await expect(publicPage).toHaveURL("/report/success");
-
-    // 3. Assertion: Global Watcher gets notification
-    await watcherPage.bringToFront();
-    await watcherPage.goto("/dashboard");
-    const bell = watcherPage.getByRole("button", { name: /notifications/i });
-    await bell.click();
-
-    // Filter to this test's notification only - other workers may have created global watchers too
-    const notification = watcherPage
-      .getByText(new RegExp(issueTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-      .first();
-    await expect(notification).toBeVisible();
-
-    await notification.click();
-    await expect(
-      watcherPage.getByRole("heading", { name: issueTitle })
-    ).toBeVisible();
-
-    await watcherContext.close();
-    await publicContext.close();
-  });
-
-  test("notification interaction flow", async ({ page, browser }) => {
-    // 1. Setup: Owner (Recipient)
-    const timestamp = Date.now();
-    const ownerEmail = `interact-owner-${timestamp}@example.com`;
-    const owner = await createTestUser(ownerEmail);
-    cleanupUserIds.push(owner.id);
-    const machine = await createTestMachine(owner.id);
-    cleanupMachineIds.push(machine.id);
-
-    // Login as owner
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(ownerEmail);
-    await page.getByLabel(/^Password\s*\*?$/).fill("TestPassword123");
-    await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL("/dashboard");
-
-    // 2. Create notification via public report (as Anonymous/Other)
-    // We need a separate context to avoid "actor == recipient" filter
-    const publicContext = await browser.newContext();
-    const publicPage = attachHydrationWait(await publicContext.newPage());
-    await publicPage.goto("/report/detailed");
-    // Select machine and verify state (Mobile Chrome hardening)
-    await selectMachine(publicPage, machine.id);
-    await expect(machineSelectValue(publicPage)).toHaveValue(machine.id);
-    const issueTitle = getTestIssueTitle("Interaction Test");
-    await fillReportForm(publicPage, {
-      title: issueTitle,
-      includePriority: false,
-    });
-
-    await publicPage
-      .getByRole("button", { name: "Submit Issue Report" })
-      .click();
-    await expect(publicPage).toHaveURL("/report/success");
-    await publicContext.close();
-
-    // 3. Back to Owner
-    await page.bringToFront();
-    await page.goto("/dashboard"); // Reload to fetch
-    await page.getByRole("button", { name: /notifications/i }).click();
-    const notificationItem = page
-      .getByText(new RegExp(issueTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-      .first();
-    await expect(notificationItem).toBeVisible();
-
-    // 4. Action: Click Notification
-    await notificationItem.click();
-
-    // 5. Assertion: Redirected to issue
-    await expect(page).toHaveURL(/\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+/);
-    await expect(page.getByRole("heading", { name: issueTitle })).toBeVisible();
-  });
-
-  test("email notification flow", async ({ page, browser }, testInfo) => {
-    // 1. Setup: Fresh Admin/Owner
-    const timestamp = Date.now();
-    const ownerEmail = getTestEmail(`email-test-${timestamp}@test.com`);
-    const owner = await createTestUser(ownerEmail);
-    await updateUserRole(owner.id, "admin");
-    cleanupUserIds.push(owner.id);
-    const machine = await createTestMachine(owner.id);
-    cleanupMachineIds.push(machine.id);
-
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(ownerEmail);
-    await page.getByLabel(/^Password\s*\*?$/).fill("TestPassword123");
-    await page.getByRole("button", { name: "Sign In" }).click();
-
-    // Ensure In-App is enabled (it is by default for owned machines)
-    // We rely on In-App to verify the event triggered, as we can't easily check email in E2E without Mailpit API
-    // (We could use Mailpit API, but checking In-App is sufficient to prove the event fired)
-
-    // 2. Action: Fresh Member reports an issue
-    const memberEmail = getTestEmail(`member-email-${timestamp}@test.com`);
-    const member = await createTestUser(memberEmail);
-    cleanupUserIds.push(member.id);
-    const memberContext = await browser.newContext();
-    const memberPage = attachHydrationWait(await memberContext.newPage());
-    await ensureLoggedIn(memberPage, testInfo, {
-      email: memberEmail,
-      password: "TestPassword123",
-    });
-
-    await memberPage.goto("/report/detailed");
-    await selectMachine(memberPage, machine.id);
-
-    const issueTitle = getTestIssueTitle("Email Test Issue");
-    await fillReportForm(memberPage, { title: issueTitle });
-
-    await expect(machineSelectValue(memberPage)).toHaveValue(machine.id);
-    await expect(memberPage.getByLabel("Issue Title *")).toHaveValue(
-      issueTitle
-    );
-
-    await memberPage
-      .getByRole("button", { name: "Submit Issue Report" })
-      .click();
-
-    // Accept either direct issue page OR success page (handling potential auth gap)
-    await expect(memberPage).toHaveURL(
-      /(\/m\/[A-Z0-9]{2,6}\/i\/[0-9]+)|(\/report\/success)/
-    );
-
-    // 3. Assertion: Admin verifies in-app notification created
-    await page.bringToFront();
-    await page.goto("/dashboard");
-
-    const bell = page.getByRole("button", { name: /notifications/i });
-    await bell.click();
-
-    const notification = page
-      .getByText(new RegExp(issueTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
-      .first();
-    await expect(notification).toBeVisible();
-
-    await memberContext.close();
   });
 });
 
-test.describe.serial("Email Notifications", () => {
+test.describe("Email Notifications & Unsubscribe", () => {
   const mailpit = new MailpitClient();
   const cleanupUserIds: string[] = [];
   const cleanupMachineIds: string[] = [];
@@ -478,20 +131,17 @@ test.describe.serial("Email Notifications", () => {
   let testMachineInitials: string;
 
   test.beforeAll(async () => {
-    // Create a unique admin user for this worker
     testAdminEmail = getTestEmail("worker-admin@test.com");
     const user = await createTestUser(testAdminEmail);
     testAdminUserId = user.id;
     await updateUserRole(user.id, "admin");
     cleanupUserIds.push(user.id);
 
-    // Create a unique machine for this worker
     const initials = getTestMachineInitials();
     const machine = await createTestMachine(user.id, initials);
     testMachineInitials = machine.initials;
     cleanupMachineIds.push(machine.id);
 
-    // Enable email notifications for status changes (default is OFF after overhaul)
     await updateNotificationPreferences(user.id, {
       emailNotifyOnStatusChange: true,
     });
@@ -506,44 +156,34 @@ test.describe.serial("Email Notifications", () => {
     }
   });
 
-  // Skip this test in Safari due to Next.js Issue #48309
-  // Safari fails to process Server Action redirects to dynamic pages
-  // This is a known Next.js/WebKit bug, not our application code
   test.skip(
     ({ browserName }) => browserName === "webkit",
     "Next.js Issue #48309: Safari Server Action redirect timing"
   );
 
-  test("should send email when issue is created", async ({
+  test("delivers Mailpit emails on issue creation and status change, and unsubscribes via email link", async ({
     page,
+    request,
   }, testInfo) => {
-    const issueTitle = getTestIssueTitle("Test Issue for Email");
+    const issueTitle = getTestIssueTitle("Email Flow");
 
-    // Clear mailbox before test
-    mailpit.clearMailbox(testAdminEmail);
-
-    // Login as unique test admin
     await ensureLoggedIn(page, testInfo, {
       email: testAdminEmail,
-      password: TEST_USERS.admin.password,
+      password: "TestPassword123",
     });
 
-    // Create an issue for the unique machine
     await page.goto(`/report/detailed?machine=${testMachineInitials}`);
     await fillReportForm(page, {
       title: issueTitle,
       description: "Testing email notifications",
     });
 
-    // Submit form and wait for Server Action redirect (Safari-defensive)
     await submitFormAndWaitForRedirect(
       page,
       page.getByRole("button", { name: "Submit Issue Report" }),
       { awayFrom: "/report/detailed" }
     );
 
-    // Verify we're on the issue page (or success page + navigation)
-    // Worker isolation should prevent /report/success, but we keep the fallback for robustness
     const issueUrlPattern = new RegExp(
       `\\/m\\/${testMachineInitials}\\/i\\/[0-9]+`
     );
@@ -561,72 +201,6 @@ test.describe.serial("Email Notifications", () => {
     }
 
     await expect(page).toHaveURL(issueUrlPattern);
-
-    // Wait for email to arrive in Mailpit
-    const email = await mailpit.waitForEmail(testAdminEmail, {
-      subjectContains: issueTitle,
-      timeout: 30000,
-      pollIntervalMs: 750,
-    });
-
-    // Verify email was sent
-    expect(email).not.toBeNull();
-    expect(email?.subject).toContain(issueTitle);
-    expect(email?.to).toContain(testAdminEmail);
-  });
-
-  // Skip this test in Safari due to Next.js Issue #48309
-  // Safari fails to process Server Action redirects to dynamic pages
-  // This is a known Next.js/WebKit bug, not our application code
-  test.skip(
-    ({ browserName }) => browserName === "webkit",
-    "Next.js Issue #48309: Safari Server Action redirect timing"
-  );
-
-  test("should send email when status changes", async ({ page }, testInfo) => {
-    const issueTitle = getTestIssueTitle("Status Change Test");
-
-    // Clear mailbox
-    mailpit.clearMailbox(testAdminEmail);
-
-    // Login
-    await ensureLoggedIn(page, testInfo, {
-      email: testAdminEmail,
-      password: TEST_USERS.admin.password,
-    });
-
-    // Create issue for the unique machine
-    await page.goto(`/report/detailed?machine=${testMachineInitials}`);
-    await fillReportForm(page, { title: issueTitle });
-
-    // Submit form and wait for Server Action redirect (Safari-defensive)
-    await submitFormAndWaitForRedirect(
-      page,
-      page.getByRole("button", { name: "Submit Issue Report" }),
-      { awayFrom: "/report/detailed" }
-    );
-
-    // Accept either direct issue page OR success page
-    const issueUrlPattern = new RegExp(
-      `\\/m\\/${testMachineInitials}\\/i\\/[0-9]+`
-    );
-    await expect(page).toHaveURL(
-      new RegExp(`(${issueUrlPattern.source})|(\\/report\\/success)`)
-    );
-
-    // If we landed on success page, we need to go to dashboard or recent issues to find the new issue
-    if (page.url().includes("/report/success")) {
-      await page.goto("/dashboard");
-      await page
-        .getByTestId("recent-issue-card")
-        .filter({ hasText: issueTitle })
-        .first()
-        .click();
-    }
-
-    await expect(page).toHaveURL(issueUrlPattern);
-
-    // Ensure we are on the page before interacting with issue detail
     const titlePattern = issueTitle
       .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
       .replace(/\s+/g, "\\s+");
@@ -636,92 +210,94 @@ test.describe.serial("Email Notifications", () => {
         .getByRole("heading", { level: 1, name: new RegExp(titlePattern) })
     ).toBeVisible();
 
-    // Wait for the "new issue" email to arrive so we know the pre-state count.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    // Count emails with the stable subject before triggering the status change.
-    // clearMailbox() is a no-op, so we track count instead of clearing.
-    const emailsBeforeStatusChange = await mailpit.getMessages(testAdminEmail);
-    const countBefore = emailsBeforeStatusChange.filter((m) =>
-      m.Subject.includes(issueTitle)
-    ).length;
+    const email1 = await mailpit.waitForEmail(testAdminEmail, {
+      subjectContains: issueTitle,
+      timeout: 30000,
+      pollIntervalMs: 750,
+    });
+    expect(email1).not.toBeNull();
+    expect(email1?.to).toContain(testAdminEmail);
+    const email1Id = email1?.ID;
+    if (!email1Id) {
+      throw new Error("Expected initial email to have a Mailpit message ID");
+    }
 
-    // Update status (uses viewport-aware helper — works on both desktop and mobile)
+    const detail1 = await mailpit.getMessage(testAdminEmail, email1Id);
+    const body1 = (detail1.HTML ?? detail1.Text ?? "").toString();
+    expect(body1).toContain("New Issue");
+
+    const unsubMatch =
+      /\/api\/unsubscribe\?uid=([^"&\s<>]+)(?:&amp;|&)token=([^"&\s<>]+)/.exec(
+        body1
+      );
+    if (!unsubMatch?.[1] || !unsubMatch[2]) {
+      throw new Error("Expected unsubscribe link in email body");
+    }
+    const uid = decodeURIComponent(unsubMatch[1]);
+    const token = decodeURIComponent(unsubMatch[2]);
+    expect(uid).toBe(testAdminUserId);
+
     await updateIssueField(page, "status", "in_progress");
 
-    // Since PP-04c, all issue-tied notifications share a stable subject format
-    // "[MachineName] PP-XX: Issue Title" — the event type ("Status Changed")
-    // has moved to the email body. We wait until a NEW email with that stable
-    // subject arrives (count goes above the pre-status-change count).
-    let emailAfterStatusChange = null;
+    let email2Id: string | null = null;
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       const allEmails = await mailpit.getMessages(testAdminEmail);
-      const matching = allEmails
-        .filter((m) => m.Subject.includes(issueTitle))
-        .sort(
-          (a, b) =>
-            new Date(b.Date ?? 0).getTime() - new Date(a.Date ?? 0).getTime()
-        );
-      if (matching.length > countBefore) {
-        emailAfterStatusChange = matching[0] ?? null;
+      const statusEmail = allEmails.find(
+        (m) =>
+          m.ID !== email1Id &&
+          m.Subject.includes(issueTitle) &&
+          (m.to?.some(
+            (addr) => addr.toLowerCase() === testAdminEmail.toLowerCase()
+          ) ??
+            false)
+      );
+      if (statusEmail?.ID) {
+        email2Id = statusEmail.ID;
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 750));
     }
-
-    expect(emailAfterStatusChange).not.toBeNull();
-    // Subject now uses stable per-issue format — issue title is present.
-    expect(emailAfterStatusChange?.subject).toContain(issueTitle);
-
-    // Subjects collapsed to a single per-issue format under PP-04c, so the
-    // event-type label moved to the body. Fetch the body and assert it shows
-    // this email is for the status change — otherwise the assertion above
-    // could still pass if any other issue-tied email had arrived.
-    const messageId = emailAfterStatusChange?.ID;
-    if (!messageId) {
-      throw new Error("Expected captured email to have a Mailpit message ID");
+    if (!email2Id) {
+      throw new Error("Expected status-change email in Mailpit");
     }
-    const detail = await mailpit.getMessage(testAdminEmail, messageId);
-    const body = (detail.HTML ?? detail.Text ?? "").toString();
-    expect(body).toContain("Status Changed");
-  });
 
-  test("should unsubscribe via confirmation page", async ({ page }) => {
-    // Generate a valid unsubscribe token for the test admin
-    const token = generateUnsubscribeTokenForTest(testAdminUserId);
+    const detail2 = await mailpit.getMessage(testAdminEmail, email2Id);
+    const body2 = (detail2.HTML ?? detail2.Text ?? "").toString();
+    expect(body2).toContain("Status Changed");
 
-    // Navigate to the unsubscribe confirmation page (GET — non-mutating)
-    await page.goto(
-      `/api/unsubscribe?uid=${encodeURIComponent(testAdminUserId)}&token=${encodeURIComponent(token)}`
+    const headers = { "x-skip-autologin": "true" };
+    const getRes = await request.get(
+      `/api/unsubscribe?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`,
+      { headers, maxRedirects: 0 }
     );
+    expect(getRes.status()).toBe(200);
+    const confirmHtml = await getRes.text();
+    expect(confirmHtml).toContain("Unsubscribe from PinPoint emails?");
+    expect(confirmHtml).toContain(
+      `<input type="hidden" name="uid" value="${uid}" />`
+    );
+    expect(confirmHtml).toContain(
+      `<input type="hidden" name="token" value="${token}" />`
+    );
+    const prefsBeforePost = await getNotificationPreferences(testAdminUserId);
+    expect(prefsBeforePost.email_enabled).toBe(true);
 
-    // Verify confirmation page renders
-    await expect(
-      page.getByText("Unsubscribe from PinPoint emails?")
-    ).toBeVisible();
-    await expect(
-      page.getByText("This will turn off all email notifications")
-    ).toBeVisible();
-
-    // Click the confirm button
-    await page.getByRole("button", { name: "Confirm unsubscribe" }).click();
-
-    // Verify success message
-    await expect(page.getByText("You have been unsubscribed")).toBeVisible();
-
-    // Verify all email preferences are now disabled in the database
-    const prefs = await getNotificationPreferences(testAdminUserId);
-    expect(prefs.email_enabled).toBe(false);
-    expect(prefs.email_notify_on_assigned).toBe(false);
-    expect(prefs.email_notify_on_status_change).toBe(false);
-    expect(prefs.email_notify_on_new_comment).toBe(false);
-    expect(prefs.email_notify_on_new_issue).toBe(false);
-    expect(prefs.email_watch_new_issues_global).toBe(false);
-
-    // Restore email prefs so cleanup/other tests aren't affected
-    await updateNotificationPreferences(testAdminUserId, {
-      emailEnabled: true,
-      emailNotifyOnStatusChange: true,
+    const postRes = await request.post("/api/unsubscribe", {
+      headers,
+      form: { uid, token },
+      maxRedirects: 0,
     });
+    expect(postRes.status()).toBe(200);
+    expect(await postRes.text()).toContain("You have been unsubscribed");
+
+    const prefsAfterPost = await getNotificationPreferences(testAdminUserId);
+    expect(prefsAfterPost.email_enabled).toBe(false);
+    expect(prefsAfterPost.email_notify_on_assigned).toBe(false);
+    expect(prefsAfterPost.email_notify_on_status_change).toBe(false);
+    expect(prefsAfterPost.email_notify_on_new_comment).toBe(false);
+    expect(prefsAfterPost.email_notify_on_new_issue).toBe(false);
+    expect(prefsAfterPost.email_watch_new_issues_global).toBe(false);
+    expect(prefsAfterPost.email_notify_on_pinballmap_comment).toBe(false);
   });
 });

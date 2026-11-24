@@ -59,13 +59,13 @@
 
 ---
 
-## 5. Sorting, Export, and View Options
+## 5. Sorting, Export, and Display
 
 - **5.1** Sort options are Updated, Created, Issue ID, Severity, Priority, and Assignee, each in either direction. The default is Updated, newest first.
 - **5.2** Assignee sorts by the assignee's display name, unassigned last; ties fall back to Updated, newest first.
 - **5.3** Every sort is deterministic: ties end in issue ID order.
 - **5.4** Export downloads a CSV of every issue matching the current View Configuration across all pages, within the Surface's scope. It is offered only to signed-in people.
-- **5.5** View options holds page size only.
+- **5.5** Display holds what list-views 5.6 names.
 
 ---
 
@@ -105,6 +105,7 @@
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | §5 and 5.5: View options is renamed Display (list-views 5.5, 5.6). |
 | 2026-11-21 | 2.3: Export, the page's only action, is its own button rather than ⋯'s only entry. |
 | 2026-11-20 | On line 2 the machine name gives way before the priority pill and the assignee: it truncates, down to not showing, after the age and comment count drop (3.9); the field ranking moves machine below priority (3.10). |
 | 2026-11-15 | Line 2 puts the assignee, comment count, and age in a group anchored to the right end (3.3); separator dots only between plain-text items (3.14); the priority stays a pill. |

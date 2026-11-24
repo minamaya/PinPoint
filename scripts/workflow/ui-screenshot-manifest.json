@@ -107,5 +107,23 @@
     "route": "/m/pinball-map",
     "authRole": "admin",
     "seedNeeds": "seeded Pinball Map state (supabase/seed-pinballmap-state.ts)"
+  },
+  "apron-print": {
+    "label": "Print apron cards",
+    "route": "/m/apron-cards",
+    "authRole": "member",
+    "seedNeeds": "default seed; shows the phone totals card (zero cards unless the seed has saved apron cards)"
+  },
+  "settings-sheets-print": {
+    "label": "Print settings sheets",
+    "route": "/m/settings-sheets",
+    "authRole": "member",
+    "seedNeeds": "default seed (machines On the Floor); shows the phone totals card"
+  },
+  "report-multiple": {
+    "label": "Report multiple issues (quick report grid)",
+    "route": "/report/multiple",
+    "authRole": "member",
+    "seedNeeds": "default seed; shows the Submit all card at the end of the entries"
   }
 }

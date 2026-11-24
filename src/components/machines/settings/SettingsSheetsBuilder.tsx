@@ -388,7 +388,7 @@ export function SettingsSheetsBuilder({
   ];
 
   return (
-    <div className="flex flex-col gap-5 pb-28 md:pb-0">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
         <Link
           href="/m"
@@ -398,6 +398,22 @@ export function SettingsSheetsBuilder({
           Machines
         </Link>
         <PageHeader title="Print settings sheets" />
+      </div>
+
+      {/* Phone: the run's totals sit in the page flow under the title (design
+          bible §3: nothing is pinned above the tab bar). */}
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5 md:hidden">
+        <span className="flex min-w-0 flex-col">
+          <span className="font-semibold">
+            {count(printing, "machine prints", "machines print")}
+          </span>
+          <span className="truncate text-sm text-muted-foreground">
+            {runDetail}
+          </span>
+        </span>
+        <Button asChild size="sm" className="ml-auto shrink-0">
+          <a href="#print-run">Print run</a>
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-start gap-6">
@@ -571,21 +587,6 @@ export function SettingsSheetsBuilder({
             )}
           </div>
         </aside>
-      </div>
-
-      {/* Phone: the run's totals stay in view above the pager and tab bar. */}
-      <div className="fixed inset-x-0 bottom-[calc(101px+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 border-t border-border bg-card px-4 py-2 md:hidden">
-        <span className="flex min-w-0 flex-col">
-          <span className="font-semibold">
-            {count(printing, "machine prints", "machines print")}
-          </span>
-          <span className="truncate text-sm text-muted-foreground">
-            {runDetail}
-          </span>
-        </span>
-        <Button asChild size="sm" className="ml-auto shrink-0">
-          <a href="#print-run">Print run</a>
-        </Button>
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>

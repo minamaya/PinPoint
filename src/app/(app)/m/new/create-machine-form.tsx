@@ -24,10 +24,7 @@ import {
 } from "~/components/machines/PinballMapLinkField";
 import { IscoredGamePicker } from "~/components/machines/IscoredGamePicker";
 import { MachineFormFields } from "~/components/machines/machine-form/MachineFormFields";
-import {
-  MachineFormActionBar,
-  PinnedActionBarSpacer,
-} from "~/components/machines/machine-form/MachineFormActionBar";
+import { MachineFormActionBar } from "~/components/machines/machine-form/MachineFormActionBar";
 import {
   NewMachinePinballmapFields,
   type NewMachinePinballmapFieldsProps,
@@ -406,7 +403,6 @@ export function CreateMachineForm({
             Create Machine
           </Button>
         </MachineFormActionBar>
-        <PinnedActionBarSpacer />
       </form>
     </>
   );

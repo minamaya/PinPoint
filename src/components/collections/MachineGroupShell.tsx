@@ -1,6 +1,6 @@
 import type React from "react";
 import { PageContainer } from "~/components/layout/PageContainer";
-import type { Crumb } from "~/components/collections/GroupBreadcrumb";
+import type { BreadcrumbProps } from "~/components/layout/Breadcrumb";
 import { GroupPageHeader } from "~/components/collections/GroupPageHeader";
 import { CollectionTabStrip } from "~/components/collections/CollectionTabStrip";
 import type { CollectionMachine } from "~/lib/collections/types";
@@ -10,8 +10,8 @@ import { db } from "~/server/db";
 
 interface MachineGroupShellProps {
   title: string;
-  /** Where the group lives (spec collections-and-tags 4.8); empty for none. */
-  breadcrumb: readonly Crumb[];
+  /** Where the group lives (spec collections-and-tags 4.8); null for none. */
+  breadcrumb: BreadcrumbProps | null;
   machines: CollectionMachine[];
   /** Route prefix the tabs hang off, e.g. `/c/<id>`. */
   basePath: string;

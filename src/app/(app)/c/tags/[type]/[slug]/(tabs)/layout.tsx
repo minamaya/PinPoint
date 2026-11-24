@@ -3,10 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { MachineGroupShell } from "~/components/collections/MachineGroupShell";
 import { PageExportProvider } from "~/components/list-view";
-import {
-  tagCrumbs,
-  type Crumb,
-} from "~/components/collections/GroupBreadcrumb";
+import type { Crumb } from "~/components/layout/Breadcrumb";
 import { TagPageActions } from "~/components/tags/TagPageActions";
 import { groupSettingsSheetsHref } from "~/lib/collections/settings-sheets-href";
 import type { ResolvedTag } from "~/lib/tags/tags";
@@ -31,14 +28,19 @@ export async function generateMetadata({
   };
 }
 
-/** The tag type a tag's breadcrumb links to; none for a tag without one (7.7). */
-function trailType(resolved: ResolvedTag): Crumb | undefined {
+/**
+ * The crumbs after Tags on a tag's breadcrumb: its tag type, or none for a
+ * tag without one (collections-and-tags 7.7).
+ */
+function trailCrumbs(resolved: ResolvedTag): Crumb[] {
   const { group } = resolved;
-  if (group.kind === "automatic") return group.type;
-  if (group.kind === "hand") {
-    return { label: group.type.name, href: group.type.href };
+  if (group.kind === "automatic") {
+    return [{ label: group.type.label, href: group.type.href }];
   }
-  return undefined;
+  if (group.kind === "hand") {
+    return [{ label: group.type.name, href: group.type.href }];
+  }
+  return [];
 }
 
 export default async function TagLayout({
@@ -61,7 +63,10 @@ export default async function TagLayout({
     <PageExportProvider>
       <MachineGroupShell
         title={tag.name}
-        breadcrumb={tagCrumbs(trailType(resolved))}
+        breadcrumb={{
+          section: "tags",
+          crumbs: trailCrumbs(resolved),
+        }}
         machines={tag.machines}
         basePath={tag.href}
         actions={

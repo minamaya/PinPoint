@@ -84,9 +84,15 @@ function makeMachine(
 }
 
 describe("MachineDetailHeader", () => {
-  it("renders the initials chip", () => {
+  it("renders the initials chip without artwork or OPDB credit", () => {
     render(<MachineDetailHeader machine={makeMachine({ initials: "GZ" })} />);
-    expect(screen.getByText("GZ")).toBeInTheDocument();
+    expect(screen.getByLabelText("Machine initials GZ")).toHaveTextContent(
+      "GZ"
+    );
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "OPDB" })
+    ).not.toBeInTheDocument();
   });
 
   it("renders the machine name", () => {

@@ -7,10 +7,7 @@ import { toast } from "sonner";
 
 import { RichTextEditor } from "~/components/editor/RichTextEditorDynamic";
 import { SegmentedToggle } from "~/components/machines/PinballmapListingControl";
-import {
-  MachineFormActionBar,
-  PinnedActionBarSpacer,
-} from "~/components/machines/machine-form/MachineFormActionBar";
+import { MachineFormActionBar } from "~/components/machines/machine-form/MachineFormActionBar";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { ItemActionsMenu } from "~/components/list-view/ItemActionsMenu";
@@ -638,7 +635,6 @@ export function ApronCardTab({
             cancelDisabled={!dirty || isSaving}
             saving={isSaving}
           />
-          <PinnedActionBarSpacer />
           {selected ? (
             <>
               <RenameCardDialog
@@ -685,7 +681,7 @@ function ActionBar({
   saving: boolean;
 }): React.JSX.Element {
   return (
-    <div className="md:border-t md:border-outline-variant">
+    <div className="border-t border-outline-variant">
       <MachineFormActionBar
         status={
           <span

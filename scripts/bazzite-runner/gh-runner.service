@@ -14,6 +14,8 @@ StateDirectory=ghrunner
 # Job directories hold each VM's JIT runner config: owner-only (PP-m39ur).
 StateDirectoryMode=0700
 UMask=0077
+# Saved VM consoles; install.sh makes it ghrunner:froeht 2750.
+ReadWritePaths=/var/log/ghrunner
 KillMode=mixed
 TimeoutStopSec=180
 # Not enabled at boot: `ci-runner on|off` starts and stops it.

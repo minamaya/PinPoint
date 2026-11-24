@@ -7,6 +7,7 @@
 #                         runners; an in-flight merge-queue PR leaves the queue
 #   ci-runner prs on|off  take Tim's own PR runs when Bazzite is otherwise idle (default on)
 #   ci-runner status      leases, service state, recent log
+#   ci-runner vmlogs [N]  saved consoles of VMs that died early: list, or print the Nth newest
 #   ci-runner deploy      copy this directory to Bazzite and install the supervisor
 #                         (takes effect at the next ci-runner on)
 #   ci-runner image       rebuild the runner VM image on Bazzite
@@ -46,7 +47,10 @@ case "${1:-status}" in
   deploy)
     here="$(cd "$(dirname "$0")" && pwd)"
     ssh "$host" 'mkdir -p ~/gh-runner/host'
-    scp -q "$here"/* "$host:gh-runner/host/"
+    # Files only: running the tests leaves a __pycache__ directory here.
+    files=()
+    for f in "$here"/*; do [ -f "$f" ] && files+=("$f"); done
+    scp -q "${files[@]}" "$host:gh-runner/host/"
     if ssh "$host" 'test -w /etc/ghrunner/app'; then
       scp -q "$here/supervisor.py" "$host:/etc/ghrunner/app/supervisor.py"
     else
@@ -61,6 +65,17 @@ case "${1:-status}" in
     playwright=$(sed -n 's/.*@playwright\/test@\([0-9][0-9.]*\)).*/\1/p' "$here/../../pnpm-lock.yaml" | head -1)
     # shellcheck disable=SC2029 # the version is read here, on the Mac, on purpose
     ssh "$host" "bash ~/gh-runner/host/build-golden.sh $playwright"
+    ;;
+  vmlogs)
+    if [ -z "${2:-}" ]; then
+      ssh "$host" 'ls -lt /var/log/ghrunner/vm-logs | head -21'
+    else
+      case "$2" in *[!0-9]*) echo "usage: ci-runner vmlogs [N]" >&2; exit 2 ;; esac
+      # Runner output and kernel messages, without the routine systemd lines.
+      # shellcheck disable=SC2029  # N is checked numeric and meant to expand here
+      ssh "$host" "f=\$(ls -t /var/log/ghrunner/vm-logs/*.log | sed -n '${2}p'); echo \"== \$f\";
+        tr -d '\\r' < \"\$f\" | grep -a -v -E '^\\[  OK  \\]|^ +(Starting|Stopping|Unmounting|Mounting) '"
+    fi
     ;;
   status)
     printf 'merge-queue lease: %s\n' "$(gh variable get BAZZITE_LEASE --repo "$repo" 2>/dev/null || echo unset)"

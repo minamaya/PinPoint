@@ -5,13 +5,12 @@
  * - The legacy Discord route redirects to the combined page
  * - Page renders Discord first and Pinball Map second with their stored state
  * - No distinct integration enable switch is rendered
- * - Clear confirmation can be inspected and cancelled without mutating state
  * - The combined surface is accessible and has no horizontal overflow
- * - Navigation from the user menu lands on the combined page
- * - Unauthenticated visitors don't see the page heading
+ * - Unauthenticated visitors redirect to login and members receive Access Denied
  *
- * Server Action behavior and DB write paths stay in the Discord and Pinball Map
- * action integration suites; this route coverage deliberately does not save.
+ * Interactive dialog state (Pinball Map clear confirmation, Discord token
+ * removal, and user-menu navigation) lives in colocated RTL component specs,
+ * and Vault/DB write paths live in Discord/PinballMap integration suites.
  */
 
 import { test, expect } from "../support/fixtures.js";
@@ -20,10 +19,6 @@ import {
   assertNoA11yViolations,
   assertNoHorizontalOverflow,
 } from "../support/actions.js";
-import {
-  configureDiscordIntegrationForTest,
-  unconfigureDiscordIntegrationForTest,
-} from "../support/supabase-admin.js";
 
 test.describe("Admin integrations page", () => {
   test.use({ storageState: STORAGE_STATE.admin });
@@ -40,17 +35,12 @@ test.describe("Admin integrations page", () => {
       page.getByRole("heading", { level: 2, name: "Discord" })
     ).toBeVisible();
     const discordCard = page.getByTestId("discord-integration-card");
-    // The connection settings save on their own, apart from the activity
-    // summary below them (discord-activity-summary §2.5).
     const connection = discordCard.getByRole("region", { name: "Connection" });
-    // Key form fields from the Pattern B redesign.
     await expect(connection.getByLabel("Bot token")).toBeVisible();
     await expect(connection.getByLabel("Server ID")).toBeVisible();
     await expect(connection.getByLabel("Invite link")).toBeVisible();
-    // No distinct integration enable switch.
     await expect(connection.getByRole("checkbox")).toHaveCount(0);
     await expect(connection.getByRole("switch")).toHaveCount(0);
-    // Save / Reset footer.
     await expect(
       connection.getByRole("button", { name: "Save changes" })
     ).toBeVisible();
@@ -82,60 +72,52 @@ test.describe("Admin integrations page", () => {
       pinballMapCard.getByText(/machines in the snapshot/)
     ).toBeVisible();
 
-    await pinballMapCard.getByLabel("Location ID").fill("");
-    await pinballMapCard.getByRole("button", { name: "Save changes" }).click();
-    const clearDialog = page.getByRole("alertdialog", {
-      name: "Stop tracking Austin Pinball Collective?",
-    });
-    await expect(clearDialog).toBeVisible();
-    await expect(clearDialog).toContainText(
-      "Nothing changes on pinballmap.com."
-    );
-    await clearDialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(clearDialog).toHaveCount(0);
-    await expect(pinballMapCard.getByLabel("Location ID")).toHaveValue("");
-
     await assertNoHorizontalOverflow(page);
     await assertNoA11yViolations(page);
   });
+});
 
-  test("navigates here from the user menu", async ({ page }) => {
-    await page.goto("/");
-    await page.getByTestId("user-menu-button").click();
-    await page.getByTestId("user-menu-admin-integrations").click();
-    await expect(page).toHaveURL(/\/admin\/integrations$/);
-  });
+test.describe("Admin integrations page (anonymous)", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("removes a saved token only after confirmation", async ({ page }) => {
-    await configureDiscordIntegrationForTest();
-    try {
-      await page.goto("/admin/integrations");
-      await page.getByRole("button", { name: "Remove saved token" }).click();
-      await expect(
-        page.getByRole("alertdialog", {
-          name: "Remove the Discord bot token?",
-        })
-      ).toBeVisible();
-      await page.getByRole("button", { name: "Remove token" }).click();
-      await expect(
-        page.getByRole("button", { name: "Remove saved token" })
-      ).toHaveCount(0);
-    } finally {
-      await unconfigureDiscordIntegrationForTest();
+  test("anonymous visitor redirects to login on /admin/integrations routes", async ({
+    request,
+  }) => {
+    const headers = { "x-skip-autologin": "true" };
+
+    for (const path of ["/admin/integrations/discord", "/admin/integrations"]) {
+      const res = await request.get(path, {
+        headers,
+        maxRedirects: 0,
+      });
+      expect(res.status()).toBe(307);
+      const locationUrl = new URL(
+        res.headers()["location"] ?? "",
+        "http://localhost"
+      );
+      expect(locationUrl.pathname).toBe("/login");
+      expect(locationUrl.searchParams.get("next")).toBe(path);
     }
   });
 });
 
-test.describe("Admin integrations page (unauthenticated)", () => {
-  // Explicitly no storageState — fresh anonymous context
-  test.use({ storageState: { cookies: [], origins: [] } });
+test.describe("Admin integrations page (member)", () => {
+  test.use({ storageState: STORAGE_STATE.member });
 
-  test("non-admin is forbidden", async ({ page }) => {
-    await page.goto("/admin/integrations/discord");
-    // Unauthenticated hits login redirect; member would hit Forbidden — either
-    // way we're NOT seeing the combined page heading.
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Integrations" })
-    ).toHaveCount(0);
+  test("member receives Access Denied instead of integrations UI", async ({
+    request,
+  }) => {
+    const res = await request.get("/admin/integrations", {
+      headers: { "x-skip-autologin": "true" },
+      maxRedirects: 0,
+    });
+    expect(res.status()).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Access Denied");
+    // Rendered SSR HTML must show Forbidden, not the integrations card DOM.
+    // TODO(PP-gun8n): tighten to `!html.includes("discord-integration-card")`
+    // once AdminIntegrationsPage adds a page-level permission guard so Next.js
+    // parallel layout/page execution stops serializing its RSC Flight payload.
+    expect(html).not.toContain('data-testid="discord-integration-card"');
   });
 });

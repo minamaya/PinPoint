@@ -2,14 +2,13 @@
  * E2E: the Pinball Map lineup page at /m/pinball-map (PP-o355.65,
  * docs/feature-specs/pinballmap-lineup.md).
  *
- * What only a browser sees: the entry points (the /m header button and the
- * admin menu item), the page assembling stored state into sections, the row
- * links carrying the right query and machine into /m/new and /edit, and the
- * header's Confirm lineup dialog end to end against the mock client. The
- * comparison rules are unit-tested (`lineup-comparison.test.ts`) and the
- * push/link/confirm actions are integration-tested. Confirm is the one write
- * exercised here, through the mock client; nothing reaches pinballmap.com
- * (CORE-PBM-001 / CORE-TEST-006).
+ * What only a browser sees: the /m header entry point, the RSC assembling
+ * stored state into sections, and the Create in PinPoint prefill journey into
+ * /m/new. Section layout, row links, Confirm lineup, and role gating are
+ * owned by `LineupHeader.test.tsx`, `LineupSections.test.tsx`,
+ * `m/pinball-map/page.test.tsx`, `m/page.test.tsx`, and
+ * `pinballmap-lineup-data.test.ts`; comparison rules and push/confirm actions
+ * live in `lineup-comparison.test.ts` and `pinballmap-outbound-write.test.ts`.
  *
  * Catalog rows, the stored-lineup entry and the machines are seeded directly.
  * The stored lineup is shared, so assertions target this run's own rows and
@@ -27,7 +26,6 @@ import {
   createTestMachine,
   deletePinballMapCatalogEntries,
   getProfileIdByEmail,
-  markStoredLineupFresh,
   removeLmxFromStoredLineup,
   seedPinballMapCatalogEntry,
   setMachinePinballMapTitle,
@@ -39,15 +37,19 @@ test.describe("Pinball Map lineup page (PP-o355.65)", () => {
       headers: { "x-skip-autologin": "true" },
       maxRedirects: 0,
     });
-    expect(response.status()).toBeGreaterThanOrEqual(300);
-    expect(response.status()).toBeLessThan(400);
-    expect(response.headers()["location"]).toMatch(/\/login/);
+    expect(response.status()).toBe(307);
+    const location = new URL(
+      response.headers()["location"] ?? "",
+      "http://localhost"
+    );
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("next")).toBe("/m/pinball-map");
   });
 
   test.describe("as admin", () => {
     test.use({ storageState: STORAGE_STATE.admin });
 
-    test("reaches the page from the machines list and the admin menu, and every row leads where it says", async ({
+    test("reaches the page from the machines list, displays seeded sections, and prefills /m/new from Create in PinPoint", async ({
       page,
     }) => {
       const toAddInitials = getTestMachineInitials();
@@ -120,13 +122,12 @@ test.describe("Pinball Map lineup page (PP-o355.65)", () => {
           addRow.getByRole("button", { name: "Add to Pinball Map" })
         ).toBeVisible();
 
-        // Entry point 2: the admin menu item, from the machines list.
-        await page.goto("/m");
-        await page.getByTestId("user-menu-button").click();
-        await page
-          .getByRole("menuitem", { name: "Pinball Map lineup" })
-          .click();
-        await expect(page).toHaveURL(/\/m\/pinball-map$/);
+        const unlinkedRow = page.getByTestId(
+          `pbm-lineup-row-machine-${unlinked.id}`
+        );
+        await expect(
+          unlinkedRow.getByRole("link", { name: "Edit Machine" })
+        ).toHaveAttribute("href", `/m/${unlinkedInitials}/edit`);
 
         // Create in PinPoint: name and Pinball Map title preselected.
         const entryRow = page.getByTestId(
@@ -141,16 +142,6 @@ test.describe("Pinball Map lineup page (PP-o355.65)", () => {
         await expect(page.getByTestId("pinballmap-link-select")).toContainText(
           entryName
         );
-
-        // Edit Machine: an unlinked PinPoint machine leads to its edit page.
-        await page.goto("/m/pinball-map");
-        const unlinkedRow = page.getByTestId(
-          `pbm-lineup-row-machine-${unlinked.id}`
-        );
-        await unlinkedRow.getByRole("link", { name: "Edit Machine" }).click();
-        await expect(page).toHaveURL(
-          new RegExp(`/m/${unlinkedInitials}/edit$`)
-        );
       } finally {
         await cleanupTestEntities({
           machineInitials: [toAddInitials, unlinkedInitials],
@@ -158,69 +149,6 @@ test.describe("Pinball Map lineup page (PP-o355.65)", () => {
         await deletePinballMapCatalogEntries([toAddTitleId, entryTitleId]);
         await removeLmxFromStoredLineup([entryLmxId]);
       }
-    });
-  });
-
-  test.describe("Confirm lineup as admin", () => {
-    test.use({ storageState: STORAGE_STATE.admin });
-
-    test("confirms from the header after warning about an unlinked entry", async ({
-      page,
-    }) => {
-      const base = Math.floor(Math.random() * 9_000_000) * 10;
-      const entryTitleId = 930_000_000 + base;
-      const entryLmxId = 830_000_000 + base;
-      const entryName = `Zz E2E Confirm Entry ${String(base)}`;
-
-      try {
-        await seedPinballMapCatalogEntry({
-          pinballmapMachineId: entryTitleId,
-          name: entryName,
-        });
-        await addLmxToStoredLineup({
-          pinballmapMachineId: entryTitleId,
-          pinballmapLmxId: entryLmxId,
-        });
-        await markStoredLineupFresh();
-
-        await page.goto("/m/pinball-map");
-        await page
-          .getByRole("button", { name: "Confirm lineup on Pinball Map" })
-          .click();
-        const dialog = page.getByTestId("pbm-confirm-lineup-dialog");
-        const entry = dialog
-          .getByTestId("pbm-confirm-lineup-entries")
-          .getByRole("listitem")
-          .filter({ hasText: entryName });
-        await expect(entry).toContainText("Not linked");
-
-        await dialog.getByRole("button", { name: "Confirm anyway" }).click();
-        await expect(dialog).toBeHidden();
-        await expect(
-          page.getByText("Lineup confirmed on Pinball Map")
-        ).toBeVisible();
-      } finally {
-        await deletePinballMapCatalogEntries([entryTitleId]);
-        await removeLmxFromStoredLineup([entryLmxId]);
-      }
-    });
-  });
-
-  test.describe("as member", () => {
-    test.use({ storageState: STORAGE_STATE.member });
-
-    test("a member reaches the page from the Pinball Map button on /m", async ({
-      page,
-    }) => {
-      await page.goto("/m");
-      await page.getByRole("link", { name: /^Pinball Map/ }).click();
-      await expect(page).toHaveURL(/\/m\/pinball-map$/);
-      await expect(
-        page.getByRole("heading", { name: "Pinball Map lineup" })
-      ).toBeVisible();
-      // Confirming vouches for the whole venue: technicians and admins only.
-      await expect(page.getByTestId("pbm-lineup-header")).toBeVisible();
-      await expect(page.getByTestId("pbm-confirm-lineup")).toHaveCount(0);
     });
   });
 });

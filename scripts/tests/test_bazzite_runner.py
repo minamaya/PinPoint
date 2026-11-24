@@ -244,7 +244,30 @@ def test_vm_that_exits_with_its_job_still_assigned_is_recorded(monkeypatch, tmp_
     supervisor.reap()
     assert supervisor.vms == {}
     assert supervisor.dead["bazzite-100-7-a"]["run_id"] == 100
-    assert (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text() == "runner console"
+    assert "runner console" in (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text()
+
+
+def test_saved_console_is_readable_by_froeht_and_carries_no_token(
+    monkeypatch, tmp_path
+):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    token = "A" * 200
+    (supervisor.vms[7]["dir"] / "serial.log").write_text(f"before {token} after")
+    old = supervisor.os.umask(0o077)  # the unit's UMask=
+    try:
+        supervisor.reap()
+    finally:
+        supervisor.os.umask(old)
+    saved = supervisor.VM_LOGS / "bazzite-100-7-a.log"
+    assert "before [redacted] after" in saved.read_text()
+    assert "A" * 120 not in saved.read_text()
+    assert saved.stat().st_mode & 0o777 == 0o640
+    assert supervisor.VM_LOGS.stat().st_mode & 0o7777 == 0o2750
+
+
+def test_service_can_write_the_log_directory():
+    unit = (RUNNER_DIR / "gh-runner.service").read_text().splitlines()
+    assert "ReadWritePaths=/var/log/ghrunner" in unit
 
 
 def test_vm_that_finished_its_job_is_not_recorded(monkeypatch, tmp_path):
@@ -377,6 +400,67 @@ def test_dead_runner_released_by_github_is_dropped(monkeypatch):
     monkeypatch.setattr(supervisor, "api", _raise(AssertionError("no API call")))
     supervisor.recover_dead()
     assert supervisor.dead == {}
+
+
+# --- Guest UDP source ports (PP-itvwi) --------------------------------------
+
+
+def test_vm_slots_get_disjoint_ephemeral_ranges():
+    ranges = [supervisor.port_range(i) for i in range(supervisor.MAX_VMS)]
+    for (low, high), (next_low, _) in zip(ranges, ranges[1:]):
+        assert low < high < next_low
+    assert ranges[0][0] == supervisor.EPHEMERAL[0]
+    assert ranges[-1][1] <= supervisor.EPHEMERAL[1]
+
+
+def test_host_udp_ports_reads_both_tables(tmp_path):
+    header = "  sl  local_address rem_address   st tx_queue rx_queue\n"
+    udp = tmp_path / "udp"
+    udp.write_text(header + "   0: 00000000:A2A9 00000000:0000 07 00000000:00000000\n")
+    udp6 = tmp_path / "udp6"
+    udp6.write_text(
+        header
+        + "   0: 00000000000000000000000000000000:14E9 00000000000000000000000000000000:0000 07\n"
+    )
+    missing = tmp_path / "missing"
+    assert supervisor.host_udp_ports((udp, udp6, missing)) == {41641, 5353}
+
+
+def test_tailscale_port_is_reserved_in_the_slot_that_holds_it():
+    for slot in range(supervisor.MAX_VMS):
+        low, high = supervisor.port_range(slot)
+        reserved = supervisor.reserved_ports(low, high, {53, 50000})
+        assert ("41641" in reserved.split(",")) is (low <= 41641 <= high)
+        assert "53" not in reserved.split(",")  # outside every guest range
+
+
+def test_user_data_sets_the_guest_port_range_before_the_runner_starts():
+    doc = yaml.safe_load(supervisor.user_data("JIT", (38414, 44059), "40000,41641"))
+    assert doc["bootcmd"] == [
+        ["sysctl", "-w", "net.ipv4.ip_local_port_range=38414 44059"],
+        ["sysctl", "-w", "net.ipv4.ip_local_reserved_ports=40000,41641"],
+    ]
+    assert doc["write_files"][0]["content"] == "JIT"
+
+
+def test_runner_writes_to_the_second_serial_port():
+    # The login prompt that starts on ttyS0 late in boot cuts off writers there.
+    runcmd = yaml.safe_load(supervisor.user_data("JIT"))["runcmd"][0][2]
+    assert "> /dev/ttyS1 2>&1" in runcmd
+    assert "ttyS0" not in runcmd
+
+
+def test_saved_console_holds_the_runner_output_first(monkeypatch, tmp_path):
+    _dead_vm(tmp_path, monkeypatch, delete_ok=False)
+    (supervisor.vms[7]["dir"] / "runner.log").write_text("Listening for Jobs")
+    supervisor.reap()
+    saved = (supervisor.VM_LOGS / "bazzite-100-7-a.log").read_text()
+    assert saved.index("Listening for Jobs") < saved.index("runner console")
+
+
+def test_free_slot_takes_the_lowest_unused(monkeypatch):
+    monkeypatch.setattr(supervisor, "vms", {1: {"slot": 0}, 2: {"slot": 2}})
+    assert supervisor.free_slot() == 1
 
 
 def test_heavy_label_gets_the_large_vm():

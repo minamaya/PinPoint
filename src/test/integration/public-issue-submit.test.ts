@@ -481,3 +481,115 @@ describe("submitPublicIssueAction — single-line titles (integration)", () => {
     expect(row?.title).toBe("Left flipper weak after warm-up");
   });
 });
+
+describe("submitPublicIssueAction — anonymous redirect & anti-enumeration (integration)", () => {
+  setupTestDb();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+  });
+
+  async function expectActionRedirect(formData: FormData): Promise<URL> {
+    const { redirect } = await import("next/navigation");
+    vi.mocked(redirect).mockImplementationOnce((url: string) => {
+      throw Object.assign(new Error("NEXT_REDIRECT"), {
+        digest: `NEXT_REDIRECT;replace;${url};307;`,
+      });
+    });
+
+    let caught: unknown;
+    try {
+      await submitPublicIssueAction({ error: "" }, formData);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(vi.mocked(redirect)).toHaveBeenCalledOnce();
+    const target = vi.mocked(redirect).mock.calls[0]?.[0] ?? "";
+    return new URL(target, "http://localhost");
+  }
+
+  it("redirects anonymous name + email submission to /report/success with signup pre-fill params", async () => {
+    const owner = await seedUser("member");
+    const machine = await seedMachine(owner.id);
+
+    const fd = makeFormData({ machineId: machine.id });
+    fd.set("firstName", "John");
+    fd.set("lastName", "Smith");
+    fd.set("email", "reporter-anon@example.com");
+
+    const url = await expectActionRedirect(fd);
+    expect(url.pathname).toBe("/report/success");
+    expect(url.searchParams.get("new_pending")).toBe("true");
+    expect(url.searchParams.get("firstName")).toBe("John");
+    expect(url.searchParams.get("lastName")).toBe("Smith");
+    expect(url.searchParams.get("email")).toBe("reporter-anon@example.com");
+
+    const db = await getTestDb();
+    const persisted = await db.query.issues.findFirst({
+      where: eq(issues.machineInitials, machine.initials),
+      columns: { reporterName: true, reporterEmail: true },
+    });
+    expect(persisted).toEqual({
+      reporterName: "John Smith",
+      reporterEmail: "reporter-anon@example.com",
+    });
+  });
+
+  it("redirects anonymous name-only submission to /report/success without an email param", async () => {
+    const owner = await seedUser("member");
+    const machine = await seedMachine(owner.id);
+
+    const fd = makeFormData({ machineId: machine.id });
+    fd.set("firstName", "Jane");
+    fd.set("lastName", "Reporter");
+
+    const url = await expectActionRedirect(fd);
+    expect(url.pathname).toBe("/report/success");
+    expect(url.searchParams.get("new_pending")).toBe("true");
+    expect(url.searchParams.get("firstName")).toBe("Jane");
+    expect(url.searchParams.get("lastName")).toBe("Reporter");
+    expect(url.searchParams.has("email")).toBe(false);
+
+    const db = await getTestDb();
+    const persisted = await db.query.issues.findFirst({
+      where: eq(issues.machineInitials, machine.initials),
+      columns: { reporterName: true, reporterEmail: true },
+    });
+    expect(persisted).toEqual({
+      reporterName: "Jane Reporter",
+      reporterEmail: null,
+    });
+  });
+
+  it("redirects plain anonymous submission to /report/success without new_pending", async () => {
+    const owner = await seedUser("member");
+    const machine = await seedMachine(owner.id);
+
+    const url = await expectActionRedirect(
+      makeFormData({ machineId: machine.id })
+    );
+    expect(url.pathname).toBe("/report/success");
+    expect(url.searchParams.has("new_pending")).toBe(false);
+  });
+
+  it("silently redirects without creating an issue when anonymous email matches an active user", async () => {
+    const existing = await seedUser("member");
+    const machine = await seedMachine(existing.id);
+
+    const fd = makeFormData({ machineId: machine.id });
+    fd.set("email", existing.email.toUpperCase());
+
+    const url = await expectActionRedirect(fd);
+    expect(url.pathname).toBe("/report/success");
+    expect(url.searchParams.has("new_pending")).toBe(false);
+
+    const db = await getTestDb();
+    const rows = await db.query.issues.findMany({
+      where: eq(issues.machineInitials, machine.initials),
+    });
+    expect(rows).toEqual([]);
+  });
+});
