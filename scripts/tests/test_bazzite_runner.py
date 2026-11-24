@@ -150,6 +150,7 @@ def test_jit_config_is_owner_only(monkeypatch, tmp_path):
     def fake_run(cmd, **_kwargs):
         if cmd[0] == supervisor.XORRISO:
             job_dir = Path(cmd[cmd.index("-o") + 1]).parent
+            seen["path"] = job_dir
             seen["dir"] = job_dir.stat().st_mode & 0o777
             seen["user-data"] = (job_dir / "user-data").stat().st_mode & 0o777
             seen["text"] = (job_dir / "user-data").read_text()
@@ -164,9 +165,12 @@ def test_jit_config_is_owner_only(monkeypatch, tmp_path):
         supervisor.spawn(_run(), _job(["pinpoint-run-100"]))
     finally:
         supervisor.os.umask(old)
+    job_dir = seen.pop("path")
     assert seen == {"dir": 0o700, "user-data": 0o600, "text": seen["text"]}
     assert "SECRET" in seen["text"]
-    assert not (supervisor.JOBS / "1" / "user-data").exists()
+    assert job_dir.parent == supervisor.JOBS
+    assert job_dir.is_dir()  # the VM's directory stays; only the plain-text copy goes
+    assert not (job_dir / "user-data").exists()
 
 
 def test_service_unit_keeps_its_state_owner_only():
