@@ -47,38 +47,51 @@ test.describe("Machines Public Access", () => {
     await expect(page.getByTestId("issue-card").first()).toBeVisible();
   });
 
-  // Summary Widgets sit side by side at desktop width and drop from the right
-  // when the row cannot hold both (widgets §2.3, §2.7).
-  test("Summary Widgets sit side by side at 1024px and drop Playability at 375px", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1024, height: 768 });
-    await page.goto("/m");
+  // Summary Widgets sit side by side at every width, each at least 240px
+  // wide, and whole widgets drop from the right when the row cannot hold
+  // them (widgets §2.3, §2.7).
+  test.describe("at a desktop width", () => {
+    test.use({ viewport: { width: 1024, height: 768 } });
 
-    const presence = page.getByRole("region", { name: "Presence" });
-    const playability = page.getByRole("region", { name: "Playability" });
-    await expect(presence).toBeVisible();
-    await expect(playability).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Summary: / })).toHaveCount(
-      0
-    );
+    test("Presence and Playability sit side by side", async ({ page }) => {
+      await page.goto("/m");
+      const presence = page.getByRole("region", { name: "Presence" });
+      const playability = page.getByRole("region", { name: "Playability" });
+      await expect(presence).toBeVisible();
+      await expect(playability).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /^Summary: / })
+      ).toHaveCount(0);
 
-    const presenceBox = await presence.boundingBox();
-    const playabilityBox = await playability.boundingBox();
-    expect(presenceBox).not.toBeNull();
-    expect(playabilityBox).not.toBeNull();
-    if (presenceBox && playabilityBox) {
-      expect(playabilityBox.y).toBe(presenceBox.y);
-      expect(playabilityBox.x).toBeGreaterThan(
-        presenceBox.x + presenceBox.width
-      );
-    }
+      const presenceBox = await presence.boundingBox();
+      const playabilityBox = await playability.boundingBox();
+      expect(presenceBox).not.toBeNull();
+      expect(playabilityBox).not.toBeNull();
+      if (presenceBox && playabilityBox) {
+        expect(playabilityBox.y).toBe(presenceBox.y);
+        expect(playabilityBox.x).toBeGreaterThan(
+          presenceBox.x + presenceBox.width
+        );
+      }
+    });
+  });
 
-    await page.setViewportSize({ width: 375, height: 812 });
-    await expect(presence).toBeVisible();
-    await expect(playability).toBeHidden();
-    await expect(page.getByRole("button", { name: /^Summary: / })).toHaveCount(
-      0
-    );
+  test.describe("on a phone too narrow for two widgets", () => {
+    test.use({ viewport: { width: 375, height: 812 } });
+
+    test("only Presence shows; Playability drops from the right", async ({
+      page,
+    }) => {
+      await page.goto("/m");
+      await expect(
+        page.getByRole("region", { name: "Presence" })
+      ).toBeVisible();
+      await expect(
+        page.getByRole("region", { name: "Playability" })
+      ).toBeHidden();
+      await expect(
+        page.getByRole("button", { name: /^Summary: / })
+      ).toHaveCount(0);
+    });
   });
 });

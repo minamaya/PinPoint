@@ -25,14 +25,16 @@ import { TooltipProvider } from "~/components/ui/tooltip";
 
 vi.mock("~/lib/supabase/server", () => import("~/test/helpers/mock-auth"));
 
-const redirectSpy = vi.fn((url: string): never => {
-  throw new Error(`NEXT_REDIRECT:${url}`);
-});
-const routerMock = {
-  replace: vi.fn(),
-  refresh: vi.fn(),
-  push: vi.fn(),
-};
+const { redirectSpy, routerMock } = vi.hoisted(() => ({
+  redirectSpy: vi.fn((url: string): never => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
+  routerMock: {
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    push: vi.fn(),
+  },
+}));
 let currentSearchParams = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({

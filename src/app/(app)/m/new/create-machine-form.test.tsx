@@ -213,15 +213,33 @@ describe("CreateMachineForm — iScored picker integration", () => {
   });
 
   it("submits selected ownerId and navigates to result.value.redirectTo on success", async () => {
-    const originalLocation = Object.getOwnPropertyDescriptor(
-      window,
-      "location"
-    );
+    const realLocation = window.location;
     const assignMock = vi.fn();
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, assign: assignMock },
-    });
+    vi.stubGlobal(
+      "location",
+      new Proxy(
+        { assign: assignMock },
+        {
+          get(_target, prop) {
+            if (prop === "assign") return assignMock;
+            const value: unknown = Reflect.get(
+              realLocation,
+              prop,
+              realLocation
+            );
+            return typeof value === "function"
+              ? value.bind(realLocation)
+              : value;
+          },
+          set(_target, prop, value) {
+            return Reflect.set(realLocation, prop, value, realLocation);
+          },
+          has(_target, prop) {
+            return prop in realLocation;
+          },
+        }
+      )
+    );
 
     try {
       const user = userEvent.setup();
@@ -254,11 +272,7 @@ describe("CreateMachineForm — iScored picker integration", () => {
       const fd = vi.mocked(createMachineAction).mock.calls[0]?.[1];
       expect(fd?.get("ownerId")).toBe(adminOwner.id);
     } finally {
-      if (originalLocation) {
-        Object.defineProperty(window, "location", originalLocation);
-      } else {
-        Reflect.deleteProperty(window, "location");
-      }
+      vi.unstubAllGlobals();
     }
   });
 });
