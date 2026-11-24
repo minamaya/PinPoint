@@ -1,14 +1,19 @@
 /**
  * E2E Tests: Collection descriptions (PP-wqit.11)
  *
- * Journey for spec collections-and-tags 2.8 and 4.7: the owner writes a
- * description in the Edit dialog, it shows in the header on every tab
- * clamped with Show more, a View Link visitor sees it too, and
- * clearing it removes it. Validation, normalization and permissions are
- * covered by src/test/integration/collections-actions.test.ts.
+ * Real-browser TipTap editor & CSS `line-clamp` / `ClampedDescription` overflow
+ * journey (collections-and-tags 2.8, 4.7, 4.12): writes a long description in
+ * the Edit dialog, verifies real-browser clamping ("Show more" -> "Show less")
+ * and cross-tab visibility, and clears it.
+ *
+ * Validation, normalization, permissions, empty-description omission, and View
+ * Link description rendering are covered by:
+ * - `src/test/integration/collections-actions.test.ts`
+ * - `src/test/integration/collections-pages.test.tsx`
+ * - `src/components/collections/ClampedDescription.test.tsx`
  */
 
-import { test, expect, attachHydrationWait } from "../support/fixtures.js";
+import { test, expect } from "../support/fixtures.js";
 import { STORAGE_STATE } from "../support/auth-state.js";
 import { getTestPrefix } from "../support/test-isolation.js";
 import { clickPageAction } from "../support/page-actions.js";
@@ -24,14 +29,11 @@ const DESCRIPTION =
 test.describe("Collection descriptions (PP-wqit.11)", () => {
   test.use({ storageState: STORAGE_STATE.member });
 
-  test("the owner describes a collection and everyone who can open it sees the description", async ({
+  test("writes, clamps, persists across tabs, and clears a collection description", async ({
     page,
-    browser,
   }) => {
     const name = `${getTestPrefix()} Described`;
 
-    // Create the collection (same retry-with-fill pattern as
-    // e2e/smoke/collections.spec.ts, PP-2b3r) and give it a machine.
     await page.goto("/c/collections");
     await expect(async () => {
       await page.keyboard.press("Escape");
@@ -42,20 +44,11 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
     }).toPass({ timeout: 15_000 });
     await page.getByTestId("create-collection-submit").click();
     await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}/);
-    const collectionUrl = page.url();
-    await page.getByTestId("collection-machines-multiselect").click();
-    await page.getByPlaceholder("Search machines…").fill("Attack from Mars");
-    await page.getByRole("option", { name: /Attack from Mars/ }).click();
-    await page.keyboard.press("Escape");
-    await page.getByTestId("collection-add-machines").click();
-    await expect(
-      page.getByRole("link", { name: "Attack from Mars", exact: true })
-    ).toBeVisible();
 
     // No description yet: the header shows none (4.7).
     await expect(page.getByTestId("collection-description")).toHaveCount(0);
 
-    // Write one in the Edit dialog, from Edit collection in ⋯ (4.17).
+    // Write one in the Edit dialog via TipTap (4.17).
     await clickPageAction(page, "Edit collection…");
     const dialog = page.getByRole("dialog", { name: "Edit collection" });
     const editor = dialog.getByRole("textbox", { name: "Description" });
@@ -64,8 +57,7 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
     await dialog.getByTestId("collection-save").click();
     await expect(dialog).toBeHidden();
 
-    // Shown in the header, beside the title on desktop and under it on
-    // phones, clamped with Show more (4.11, 4.12).
+    // Real-browser CSS line-clamp triggers Show more / Show less (4.11, 4.12).
     const description = page.getByTestId("collection-description");
     await expect(description).toContainText("tournament-ready");
     const showMore = description.getByRole("button", { name: "Show more" });
@@ -75,33 +67,12 @@ test.describe("Collection descriptions (PP-wqit.11)", () => {
       description.getByRole("button", { name: "Show less" })
     ).toHaveAttribute("aria-expanded", "true");
 
-    // Every tab, not just Overview.
+    // Shown across tabs, not just Overview.
     await page.getByTestId("collection-tab-issues").click();
     await expect(page).toHaveURL(/\/issues$/);
     await expect(page.getByTestId("collection-description")).toContainText(
       "tournament-ready"
     );
-
-    // A View Link visitor sees it too.
-    await page.goto(collectionUrl);
-    await clickPageAction(page, "Share");
-    await page.getByTestId("collection-share-toggle").click();
-    const shareUrl = await page
-      .getByTestId("collection-share-url")
-      .inputValue();
-    await page.keyboard.press("Escape");
-    const anon = await browser.newContext({
-      storageState: { cookies: [], origins: [] },
-    });
-    try {
-      const anonPage = attachHydrationWait(await anon.newPage());
-      await anonPage.goto(shareUrl);
-      await expect(
-        anonPage.getByTestId("collection-description")
-      ).toContainText("tournament-ready");
-    } finally {
-      await anon.close();
-    }
 
     // Clearing the description removes it.
     await clickPageAction(page, "Edit collection…");
