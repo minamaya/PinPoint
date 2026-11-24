@@ -88,8 +88,8 @@ The control's states (§4) are comparisons across these: _in sync_ means the lin
 ## 5. Automatic behavior
 
 - **5.1** **PinPoint never changes the lineup setting automatically, in either direction.** Every out-of-sync state persists until a person resolves it with the toggle or a push. _(2026-08-16: the earlier lone-candidate auto-set died here — with intent a genuine operator decision, an automatic flip could silently override a deliberate Off.)_
-- **5.2** If Pinball Map's internal handle for an entry changes but the entry is otherwise the same, PinPoint repairs its record silently — this touches bookkeeping, never the lineup setting.
-- **5.3** Machines set to Don't sync are exempt from repair and imports; the location-level refresh itself always runs while the integration is configured.
+- **5.2** PinPoint finds each machine's Pinball Map entry by title in the latest location snapshot, so a change to Pinball Map's internal handle for that entry needs no action and never touches the lineup setting.
+- **5.3** Machines set to Don't sync are exempt from imports; the location-level refresh itself always runs while the integration is configured.
 
 ## 6. Availability interplay
 
@@ -194,6 +194,7 @@ Changes to this document. Divergence-table rows are working state and are not lo
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | §5.2: PinPoint finds each machine's entry by title in the location snapshot and stores no per-machine handle, so nothing needs repair; §5.3 drops repair accordingly. |
 | 2026-10-08 | §2.4: the manual model adds programmers, an ordered list of names shown wherever OPDB code credits are. |
 | 2026-10-03 | §2.1: a machine must be matched or uncataloged and can no longer be saved as neither. §2.3 drops clearing a match, which 2.1 rules out. §4.2's No model names the machines it still covers. |
 | 2026-10-03 | §10 preamble drops the sync-report channel; the activity summary (`discord-activity-summary.md`) replaced the weekly sync report. |

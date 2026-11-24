@@ -129,7 +129,7 @@
 - **8.4** A batch submission attempts every complete row, creates each valid row, leaves each failed submitted row editable with its error, and leaves incomplete rows editable without submitting them.
 - **8.5** A successful row cannot be created twice by overlapping submission attempts.
 - **8.6** Unsubmitted batch content survives ordinary navigation between reporting modes and a page reload.
-- **8.7** PinPoint warns before navigation that would discard non-empty, unsubmitted batch content.
+- **8.7** Leaving with unsubmitted batch content asks for no confirmation; the content stays as a draft (8.6).
 - **8.8** Multiple issues does not provide image uploads.
 - **8.9** A draft received from Quick report or Detailed report occupies the first row without losing shared field values.
 - **8.10** Leaving Multiple issues for a single-issue form leads to Detailed report and preserves the first row as its draft.
@@ -159,6 +159,7 @@
 
 | Date | Change |
 | :-- | :-- |
+| 2026-11-23 | §8.7: leaving with unsubmitted Multiple-issues rows no longer asks for confirmation, since the rows persist as a draft (§8.6). |
 | 2026-10-03 | Added machine choice (§10): Removed machines are not offered, and no path creates an issue on one. |
 | 2026-09-22 | Split the report-mode preference into mobile bottom-bar and tablet/desktop header settings with distinct defaults and fallbacks; clarified that direct `/report` links remain Quick. |
 | 2026-09-12 | Added a per-user default report mode with a capability-safe fallback, and made recent open issues always visible. |
