@@ -274,6 +274,9 @@ describe("SettingsSheetsBuilder", () => {
       />
     );
 
+    const panel = screen.getByRole("complementary", { name: "Print run" });
+    expect(within(panel).getByRole("button", { name: "Print" })).toBeDisabled();
+
     await user.selectOptions(screen.getByLabelText("to"), "tag:bat-city-2025");
 
     const addButtons = screen.getAllByRole("button", {
@@ -287,9 +290,16 @@ describe("SettingsSheetsBuilder", () => {
       expect(screen.getByLabelText("To set for Humpty Dumpty")).toBeVisible();
     });
     expect(screen.getAllByText("Choose a set").length).toBeGreaterThan(0);
-    const panel = screen.getByRole("complementary", { name: "Print run" });
     expect(within(panel).getByText("0 machines print")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: "Print" })).toBeDisabled();
+    const unresolvedPrintLink = await within(panel).findByRole("link", {
+      name: "Print",
+    });
+    expect(
+      new URL(
+        unresolvedPrintLink.getAttribute("href") ?? "",
+        "http://localhost"
+      ).searchParams.getAll("set")
+    ).toEqual([]);
 
     await user.selectOptions(
       screen.getByLabelText("To set for Humpty Dumpty"),
@@ -297,6 +307,7 @@ describe("SettingsSheetsBuilder", () => {
     );
 
     expect(await screen.findByText("3 changes")).toBeInTheDocument();
+    expect(within(panel).getByText("1 machine prints")).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("radio", { name: /^Set up and restore/ })
