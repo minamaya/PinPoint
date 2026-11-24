@@ -150,6 +150,7 @@ def test_jit_config_is_owner_only(monkeypatch, tmp_path):
     def fake_run(cmd, **_kwargs):
         if cmd[0] == supervisor.XORRISO:
             job_dir = Path(cmd[cmd.index("-o") + 1]).parent
+            seen["path"] = job_dir
             seen["dir"] = job_dir.stat().st_mode & 0o777
             seen["user-data"] = (job_dir / "user-data").stat().st_mode & 0o777
             seen["text"] = (job_dir / "user-data").read_text()
@@ -164,9 +165,12 @@ def test_jit_config_is_owner_only(monkeypatch, tmp_path):
         supervisor.spawn(_run(), _job(["pinpoint-run-100"]))
     finally:
         supervisor.os.umask(old)
+    job_dir = seen.pop("path")
     assert seen == {"dir": 0o700, "user-data": 0o600, "text": seen["text"]}
     assert "SECRET" in seen["text"]
-    assert not (supervisor.JOBS / "1" / "user-data").exists()
+    assert job_dir.parent == supervisor.JOBS
+    assert job_dir.is_dir()  # the VM's directory stays; only the plain-text copy goes
+    assert not (job_dir / "user-data").exists()
 
 
 def test_service_unit_keeps_its_state_owner_only():
@@ -190,9 +194,7 @@ def test_runner_names_differ_for_the_same_job():
 def test_one_failed_spawn_does_not_stop_the_others(monkeypatch):
     run = _run()
     jobs = [_job(["pinpoint-run-100"], job_id=i) for i in (1, 2, 3)]
-    monkeypatch.setattr(
-        supervisor, "queued_jobs", lambda _full: [(run, j) for j in jobs]
-    )
+    monkeypatch.setattr(supervisor, "run_jobs", lambda _full: [(run, jobs)])
     monkeypatch.setattr(supervisor, "vms", {})
     monkeypatch.setattr(supervisor, "log", lambda _msg: None)
     started = []
@@ -205,6 +207,76 @@ def test_one_failed_spawn_does_not_stop_the_others(monkeypatch):
     monkeypatch.setattr(supervisor, "spawn", spawn)
     supervisor.serve_once(full=False)
     assert started == [2, 3]
+
+
+def _vm(run_id, label, name, queue=False):
+    return {"run_id": run_id, "label": label, "name": name, "queue": queue}
+
+
+def test_a_job_whose_vm_took_another_job_still_gets_one():
+    # PP-gakbw follow-up: the VM started for E2E Full took Integration, and E2E
+    # Full waited 242 s with a slot free because a VM was keyed to it.
+    run = _run()
+    heavy = "pinpoint-run-100-l"
+    jobs = [
+        _job([heavy], job_id=1, status="in_progress") | {"runner_name": "vm-a"},
+        _job([heavy], job_id=2, status="queued"),
+    ]
+    supervisor.vms.clear()
+    supervisor.vms["vm-a"] = _vm(100, heavy, "vm-a")
+    try:
+        assert [j["id"] for j in supervisor.unserved(run, jobs, [jobs[1]])] == [2]
+    finally:
+        supervisor.vms.clear()
+
+
+def test_a_booting_vm_counts_toward_its_label_only():
+    run = _run()
+    light, heavy = "pinpoint-run-100", "pinpoint-run-100-l"
+    queued = [_job([heavy], job_id=1), _job([light], job_id=2)]
+    supervisor.vms.clear()
+    supervisor.vms["vm-b"] = _vm(100, heavy, "vm-b")  # not on a job yet
+    supervisor.vms["vm-c"] = _vm(999, light, "vm-c")  # another run's
+    try:
+        assert [j["id"] for j in supervisor.unserved(run, queued, queued)] == [2]
+    finally:
+        supervisor.vms.clear()
+
+
+def test_pr_runs_leave_room_for_the_merge_queue(monkeypatch):
+    pr = _run(run_id=1)
+    queue = _run(run_id=2, event="merge_group", branch="gh-readonly-queue/main/pr-9-a")
+    pr_jobs = [_job(["pinpoint-run-1-l"], job_id=i) for i in (10, 11, 12, 13, 14)]
+    queue_jobs = [_job(["pinpoint-run-2-l"], job_id=i) for i in (20, 21)]
+    monkeypatch.setattr(
+        supervisor, "run_jobs", lambda _full: [(pr, pr_jobs), (queue, queue_jobs)]
+    )
+    monkeypatch.setattr(supervisor, "vms", {})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+
+    def spawn(run, job):
+        name = f"vm-{job['id']}"
+        supervisor.vms[name] = _vm(run["id"], job["labels"][0], name, run is queue)
+
+    monkeypatch.setattr(supervisor, "spawn", spawn)
+    supervisor.serve_once(full=False)
+    assert supervisor.pr_vms() == supervisor.PR_VMS
+    assert len(supervisor.vms) == supervisor.PR_VMS + 2
+    # With the PR run holding its share, a later merge-queue job still fits.
+    assert len(supervisor.vms) <= supervisor.MAX_VMS
+
+
+def test_a_job_with_a_foreign_label_cancels_its_run(monkeypatch):
+    run = _run()
+    jobs = [_job(["pinpoint-run-100"], job_id=1), _job(["pinpoint-run-999"], job_id=2)]
+    monkeypatch.setattr(supervisor, "run_jobs", lambda _full: [(run, jobs)])
+    monkeypatch.setattr(supervisor, "vms", {})
+    monkeypatch.setattr(supervisor, "log", lambda _msg: None)
+    cancelled = []
+    monkeypatch.setattr(supervisor, "cancel", cancelled.append)
+    monkeypatch.setattr(supervisor, "spawn", _raise(AssertionError("no spawn")))
+    supervisor.serve_once(full=False)
+    assert cancelled == [100]
 
 
 class _ExitedVM:

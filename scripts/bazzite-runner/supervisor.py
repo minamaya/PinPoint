@@ -49,6 +49,9 @@ MAX_RUNS = int(os.environ.get("GH_RUNNER_MAX_RUNS", "2"))  # runs admitted at on
 # PR runs only fill an otherwise idle machine, so a merge-queue run always has room.
 PR_RUNS = int(os.environ.get("GH_RUNNER_PR_RUNS", "1"))
 MAX_VMS = int(os.environ.get("GH_RUNNER_MAX_VMS", "5"))
+# VMs that PR runs may hold together, so a merge-queue run that arrives finds
+# room at once: a PR run admitted while Bazzite was idle took all five once.
+PR_VMS = int(os.environ.get("GH_RUNNER_PR_VMS", str(max(1, MAX_VMS - 2))))
 HEAVY = ("4", os.environ.get("GH_RUNNER_HEAVY_MEM", "8G"))
 LIGHT = ("2", os.environ.get("GH_RUNNER_LIGHT_MEM", "3G"))
 HEAVY_SUFFIX = "-l"  # ci.yml marks the build, integration and E2E jobs with it
@@ -81,7 +84,8 @@ QEMU_IMG = os.environ.get(
 XORRISO = os.environ.get("GH_RUNNER_XORRISO", "/home/linuxbrew/.linuxbrew/bin/xorriso")
 
 stopping = False
-vms: dict[int, dict] = {}  # job id -> {proc, dir, runner_id, run_id, started, name}
+# runner name -> {proc, dir, runner_id, run_id, label, started, name, slot}
+vms: dict[str, dict] = {}
 admitted: dict[int, float] = {}  # run id -> when its first VM started
 last_lease: dict[str, tuple[str, float]] = {}  # variable -> (value written, when)
 # Runners whose VM exited while GitHub still had a job on them: name -> {run_id, runner_id, since}
@@ -228,7 +232,15 @@ def serve_order(pairs):
 
 
 def queued_jobs(full: bool):
-    """Yield (run, job) for queued jobs in queued or in-progress runs.
+    """Yield (run, job) for queued jobs in queued or in-progress runs."""
+    for run, jobs in run_jobs(full):
+        for job in jobs:
+            if job["status"] == "queued":
+                yield run, job
+
+
+def run_jobs(full: bool):
+    """Yield (run, jobs) for queued or in-progress runs.
 
     Candidate runs are read on every poll. Every other run is read only on a
     full scan, which looks for a job that names some other run's label.
@@ -246,9 +258,7 @@ def queued_jobs(full: bool):
                 "GET",
                 f"/repos/{FULL}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100",
             )["jobs"]
-            for job in jobs:
-                if job["status"] == "queued":
-                    yield run, job
+            yield run, jobs
 
 
 def busy_value(now: datetime) -> str:
@@ -424,7 +434,7 @@ def spawn(run, job) -> None:
     try:
         # The JIT config registers a runner for this repository, so only ghrunner may
         # read it: in user-data, in the seed ISO, and in the overlay once the VM boots.
-        d = JOBS / str(job["id"])
+        d = JOBS / name
         d.mkdir(mode=0o700, parents=True)
         fd = os.open(d / "user-data", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -505,13 +515,15 @@ def spawn(run, job) -> None:
         # Leave nothing registered or on disk for a VM that never started.
         # delete_runner catches its own errors, so the original one is re-raised.
         delete_runner(resp["runner"]["id"])
-        shutil.rmtree(JOBS / str(job["id"]), ignore_errors=True)
+        shutil.rmtree(JOBS / name, ignore_errors=True)
         raise
-    vms[job["id"]] = {
+    vms[name] = {
         "proc": proc,
         "dir": d,
         "runner_id": resp["runner"]["id"],
         "run_id": run["id"],
+        "label": label,
+        "queue": is_queue_run(run),
         "started": time.time(),
         "name": name,
         "slot": slot,
@@ -521,7 +533,7 @@ def spawn(run, job) -> None:
 
 
 def reap(force: bool = False) -> None:
-    for job_id, vm in list(vms.items()):
+    for key, vm in list(vms.items()):
         expired = time.time() - vm["started"] > JOB_TIMEOUT_S
         # A run cancelled before this VM picked up a job (a newer push superseded
         # it) leaves the JIT runner waiting forever; free the slot.
@@ -552,7 +564,7 @@ def reap(force: bool = False) -> None:
         if not freed or lived < 120:
             keep_serial_log(vm)
         shutil.rmtree(vm["dir"], ignore_errors=True)
-        del vms[job_id]
+        del vms[key]
         why = (
             " (timeout)"
             if expired
@@ -686,25 +698,54 @@ def serve_once(full: bool) -> list:
     machine's label was routed here and cannot move, so it is always served,
     draining or not, as soon as a VM is free.
     """
-    queued = list(queued_jobs(full))
     ours = []
-    for run, job in queued:
-        if not wants_us(job) or job["id"] in vms:
+    for run, jobs in run_jobs(full):
+        queued = [j for j in jobs if j["status"] == "queued" and wants_us(j)]
+        if not queued:
             continue
-        reason = refusal(run, job)
+        # Every job is checked: a PR can edit one job's runs-on and not the others.
+        reason = next(filter(None, (refusal(run, j) for j in queued)), None)
         if reason:
             log(f"cancelling run {run['id']} ({run['head_branch']}): {reason}")
             cancel(run["id"])
-        else:
-            ours.append((run, job))
+            continue
+        ours.extend((run, job) for job in unserved(run, jobs, queued))
     for run, job in serve_order(ours):
         if len(vms) >= MAX_VMS:
             break
+        if not is_queue_run(run) and pr_vms() >= PR_VMS:
+            continue  # the rest of the room is the merge queue's
         try:
             spawn(run, job)
         except Exception as err:  # noqa: BLE001 - one job's failure must not stop the rest
             log(f"spawn for run {run['id']} / {job['name']} failed: {err}")
     return ours
+
+
+def unserved(run, jobs, queued):
+    """The queued jobs that no VM of this run is on its way to take.
+
+    A run's VMs share its labels, so any of them takes any queued job with its
+    label: what matters is how many VMs per label have not picked up a job yet,
+    not which job each VM was started for.
+    """
+    claimed = {j.get("runner_name") for j in jobs if j.get("runner_name")}
+    waiting = {}
+    for vm in vms.values():
+        if vm["run_id"] == run["id"] and vm["name"] not in claimed:
+            waiting[vm["label"]] = waiting.get(vm["label"], 0) + 1
+    out = []
+    for job in queued:
+        label = job["labels"][0] if len(job["labels"]) == 1 else None
+        if label and waiting.get(label, 0) > 0:
+            waiting[label] -= 1
+        else:
+            out.append(job)
+    return out
+
+
+def pr_vms() -> int:
+    return sum(1 for vm in vms.values() if not vm["queue"])
 
 
 def renew_leases(draining: bool) -> None:
