@@ -189,9 +189,7 @@
 
 ## Known divergences (code vs spec)
 
-| Requirement | Divergence | Resolution |
-| :-- | :-- | :-- |
-| §1, 5.5, 5.6, 8.17, 12.1 | The List Header's page-size control is named View options with its own icon, and Sort never moves into it. | PP-jb9v.21 |
+_None — the current implementation matches this spec._
 
 ---
 

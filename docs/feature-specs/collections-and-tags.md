@@ -179,7 +179,6 @@
 | Requirement | Divergence | Resolution |
 | :-- | :-- | :-- |
 | §12.1–§12.6 | Neither the Machines list nor the Issues list offers a Tag or a Collection filter. | PP-wqit.15 |
-| 4.15 | A tag's Share copies the address on phones too, instead of opening the share sheet. | PP-jb9v.21 |
 | 4.12 | "… Show more" sits at the bottom-right of the clamped box rather than at the end of the last shown line, and the description's color comes from the rich-text styles. | PP-jb9v.18 |
 
 ---
