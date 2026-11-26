@@ -66,7 +66,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # ratchet:step-security/harden-runner@v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # ratchet:step-security/harden-runner@v2.22.4
         with:
           egress-policy: audit
 
@@ -146,7 +146,7 @@ jobs:
       - name: Review
         id: review
         if: steps.range.outputs.mode != 'skip'
-        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c  # ratchet:anthropics/claude-code-action@v1.0.268
+        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed  # ratchet:anthropics/claude-code-action@v1.0.271
         env:
           # Telemetry and error reporting stay off.
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
