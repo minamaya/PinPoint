@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, cleanup } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { randomUUID } from "node:crypto";
 import {
   ReportDraftProvider,
   useReportDraft,
   entryHasContent,
+  INITIAL_ENTRY_IDEMPOTENCY_KEY,
 } from "./report-draft-store";
 import {
   REPORT_DRAFT_KEY,
@@ -168,5 +170,84 @@ describe("ReportDraftProvider", () => {
     expect(screen.getByTestId("title0").textContent).toBe("Legacy issue");
     expect(screen.getByTestId("machine0").textContent).toBe(MACHINE);
     expect(window.localStorage.getItem(LEGACY_DRAFT_KEY)).toBeNull();
+  });
+});
+
+// Regression guard for PP-hqqib: the initial entry's idempotency key must be
+// deterministic so the server-rendered HTML and the first client render agree
+// (the key feeds QuickReportGrid's `machine-<key>` test id, the row's
+// `<key>-watch` checkbox id, and the Single form's hidden `idempotencyKey`
+// input), while still minting a unique key per session before any submit.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+describe("ReportDraftProvider — hydration determinism (PP-hqqib)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("uses a deterministic initial key on the server (SSR render is stable)", () => {
+    const markup1 = renderToString(
+      <ReportDraftProvider machines={machines} assignees={assignees}>
+        <Harness />
+      </ReportDraftProvider>
+    );
+    const markup2 = renderToString(
+      <ReportDraftProvider machines={machines} assignees={assignees}>
+        <Harness />
+      </ReportDraftProvider>
+    );
+    // A random initial key would differ between server and client (and between
+    // two server renders), which is exactly the hydration mismatch we're fixing.
+    expect(markup1).toBe(markup2);
+    expect(markup1).toContain(INITIAL_ENTRY_IDEMPOTENCY_KEY);
+    // The placeholder is a valid UUID shape (passes the draft schema's guard).
+    expect(INITIAL_ENTRY_IDEMPOTENCY_KEY).toMatch(UUID_RE);
+  });
+
+  it("swaps the placeholder for a real unique key after mount (no stored draft)", () => {
+    renderStore();
+    const key0 = screen.getByTestId("key0").textContent;
+    expect(key0).not.toBe(INITIAL_ENTRY_IDEMPOTENCY_KEY);
+    expect(key0).toMatch(UUID_RE);
+  });
+
+  it("mints a distinct first-row key per fresh mount (idempotency uniqueness)", () => {
+    renderStore();
+    const keyA = screen.getByTestId("key0").textContent;
+    cleanup();
+    window.localStorage.clear();
+    renderStore();
+    const keyB = screen.getByTestId("key0").textContent;
+    expect(keyA).not.toBe(keyB);
+    expect(keyA).not.toBe(INITIAL_ENTRY_IDEMPOTENCY_KEY);
+    expect(keyB).not.toBe(INITIAL_ENTRY_IDEMPOTENCY_KEY);
+  });
+
+  it("swaps the placeholder on restore too, so it never survives into a draft", () => {
+    // A draft could be persisted with the placeholder key in the sub-ms window
+    // before the no-draft swap runs; a second same-browser tab restoring it must
+    // still mint a real key rather than carry the shared placeholder to submit.
+    window.localStorage.setItem(
+      REPORT_DRAFT_KEY,
+      JSON.stringify({
+        version: 2,
+        entries: [
+          {
+            ...defaultEntry(INITIAL_ENTRY_IDEMPOTENCY_KEY),
+            title: "Resumed",
+          },
+        ],
+        single: { firstName: "", lastName: "", email: "", uploadedImages: [] },
+      })
+    );
+    renderStore();
+    expect(screen.getByTestId("title0").textContent).toBe("Resumed");
+    const key0 = screen.getByTestId("key0").textContent;
+    expect(key0).not.toBe(INITIAL_ENTRY_IDEMPOTENCY_KEY);
+    expect(key0).toMatch(UUID_RE);
   });
 });

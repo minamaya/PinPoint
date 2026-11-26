@@ -56,6 +56,41 @@ function blankEntry(): SharedEntry {
   return defaultEntry(crypto.randomUUID());
 }
 
+/**
+ * Deterministic idempotency key for the initial blank entry. The provider's
+ * initial state runs on the server (SSR) and again on the first client render;
+ * a real `crypto.randomUUID()` here produces a different value each time, so
+ * the DOM attributes derived from it — QuickReportGrid's
+ * `data-testid="machine-<key>"`, the row's `<key>-watch` checkbox id, and the
+ * Single form's hidden `idempotencyKey` input value — mismatch between server
+ * and client and trigger a React hydration warning (PP-hqqib). Using a fixed
+ * key makes the first render identical on both sides; the mount-time hydrate
+ * effect below swaps it for a fresh unique key (via `withRealKeys`) before the
+ * user can submit, so submission idempotency is preserved. It is a valid
+ * UUIDv4 shape so it passes the draft schema's `.uuid()` guard if it is briefly
+ * persisted.
+ */
+export const INITIAL_ENTRY_IDEMPOTENCY_KEY =
+  "00000000-0000-4000-8000-000000000000";
+
+function placeholderEntry(): SharedEntry {
+  return defaultEntry(INITIAL_ENTRY_IDEMPOTENCY_KEY);
+}
+
+/** Replace the deterministic SSR placeholder key with a real unique one
+ *  wherever it appears. The placeholder must never survive into post-hydration
+ *  state, or it could be submitted and share one idempotency token across
+ *  sessions (including a draft briefly persisted with the placeholder before
+ *  the swap, then restored by a second same-browser tab). Applied in every
+ *  hydrate branch so the invariant holds regardless of the restore path. */
+function withRealKeys(list: SharedEntry[]): SharedEntry[] {
+  return list.map((e) =>
+    e.idempotencyKey === INITIAL_ENTRY_IDEMPOTENCY_KEY
+      ? { ...e, idempotencyKey: crypto.randomUUID() }
+      : e
+  );
+}
+
 interface ReportDraftProviderProps {
   machines: MachineOption[];
   assignees: Assignee[];
@@ -67,10 +102,10 @@ export function ReportDraftProvider({
   assignees,
   children,
 }: ReportDraftProviderProps): React.JSX.Element {
-  // SSR-safe: start blank, hydrate from localStorage after mount so the server
-  // and first client render match.
+  // SSR-safe: start blank with a deterministic key, hydrate from localStorage
+  // after mount so the server and first client render match (PP-hqqib).
   const [entries, setEntriesState] = React.useState<SharedEntry[]>(() => [
-    blankEntry(),
+    placeholderEntry(),
   ]);
   const [single, setSingle] = React.useState<SingleOnlyState>(() =>
     emptySingle()
@@ -101,6 +136,10 @@ export function ReportDraftProvider({
       // Corrupt/absent — clear both keys so a poisoned draft can't linger.
       window.localStorage.removeItem(REPORT_DRAFT_KEY);
       window.localStorage.removeItem(LEGACY_DRAFT_KEY);
+      // No stored draft to restore: swap the deterministic SSR placeholder key
+      // for a real unique one now that we're past hydration, so a first-row
+      // submit carries a unique idempotency token (PP-hqqib).
+      setEntriesState(withRealKeys);
       return;
     }
     // Drop a stale machineId that no longer exists in the current list, so a
@@ -109,7 +148,9 @@ export function ReportDraftProvider({
     const restored = draft.entries.map((e) =>
       e.machineId && !validIds.has(e.machineId) ? { ...e, machineId: "" } : e
     );
-    setEntriesState(restored.length > 0 ? restored : [blankEntry()]);
+    setEntriesState(
+      withRealKeys(restored.length > 0 ? restored : [blankEntry()])
+    );
     setSingle(draft.single);
     // Retire the legacy key now that it's folded into the unified draft.
     window.localStorage.removeItem(LEGACY_DRAFT_KEY);
