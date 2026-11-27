@@ -14,10 +14,9 @@
 const workerIndex = process.env["TEST_PARALLEL_INDEX"] ?? "0";
 
 // Stable run ID for this worker process — generated once at module load so
-// that every call to getTestPrefix() / hasTestPrefix() returns the same value
-// within a single worker. Previously this was computed inside getTestPrefix(),
-// which meant two calls produced *different* runIds and hasTestPrefix() would
-// never match getTestPrefix().
+// that every call to getTestPrefix() returns the same value within a single
+// worker. Previously this was computed inside getTestPrefix(), which meant two
+// calls produced *different* runIds across calls.
 const timestampPart = Date.now().toString(36).slice(-4);
 const randomPart = Math.random().toString(36).slice(2, 6);
 const runId = `${timestampPart}${randomPart}`;
@@ -81,13 +80,4 @@ export function getTestMachineInitials(): string {
  */
 export function getTestIssueTitle(baseTitle: string): string {
   return `[${getTestPrefix()}] ${baseTitle}`;
-}
-
-/**
- * Check if a string contains this worker's test prefix
- *
- * Useful for filtering Mailpit emails or database records
- */
-export function hasTestPrefix(value: string): boolean {
-  return value.includes(`[${getTestPrefix()}]`);
 }
