@@ -73,13 +73,7 @@ export { expect };
 
 // Re-exported so a spec needs exactly one import line from here, rather than
 // splitting values and types across two modules.
-export type {
-  APIRequestContext,
-  BrowserContext,
-  Locator,
-  Page,
-  TestInfo,
-} from "@playwright/test";
+export type { Locator, Page, TestInfo } from "@playwright/test";
 
 /** Matches the attribute `HydrationBeacon` sets in `ClientProviders`. */
 const HYDRATED_SELECTOR = "html[data-hydrated]";

@@ -6,7 +6,7 @@ export const seededMember = users.member;
 
 export const seededMachines = machines;
 
-export const seededIssues = issues;
+const seededIssues = issues;
 
 /**
  * Index into a seeded-issue array with a guaranteed-defined result.

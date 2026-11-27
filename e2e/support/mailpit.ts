@@ -75,22 +75,6 @@ export class MailpitClient {
   }
 
   /**
-   * Get the latest message for a mailbox
-   */
-  async getLastEmail(email: string): Promise<MailpitMessage | null> {
-    const messages = await this.getMessages(email);
-    if (messages.length === 0) {
-      return null;
-    }
-    // Sort by date descending and return the latest
-    const sorted = messages.sort(
-      (a, b) =>
-        new Date(b.Date ?? 0).getTime() - new Date(a.Date ?? 0).getTime()
-    );
-    return sorted[0] ?? null;
-  }
-
-  /**
    * Get a specific message by ID
    */
   async getMessage(
@@ -200,53 +184,6 @@ export class MailpitClient {
     }
     return decodeHtmlEntities(match[1]);
   }
-
-  /**
-
-     * Delete all messages for a specific email
-
-     */
-
-  clearMailbox(email: string): void {
-    // Mailpit does not support mailbox-scoped delete.
-
-    // For test isolation in parallel runs, we should avoid global deletes.
-
-    // Tests should instead rely on unique subjects or timestamps.
-
-    console.log(
-      `[Mailpit] clearMailbox(${email}) called (no-op for parallel stability)`
-    );
-  }
-
-  /**
-   * Delete a specific message by ID
-   */
-  async deleteMessage(messageId: string): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/message/${messageId}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete message ${messageId}: ${response.status} ${response.statusText}`
-      );
-    }
-  }
-
-  /**
-   * Delete all messages across all mailboxes
-   */
-  async deleteAllMessages(): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/messages`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to clear all messages: ${response.status} ${response.statusText}`
-      );
-    }
-  }
 }
 
 const decodeHtmlEntities = (text: string): string =>
@@ -259,25 +196,5 @@ const decodeHtmlEntities = (text: string): string =>
 
 const mailpitClient = new MailpitClient();
 
-export const deleteAllMessages = async (email?: string): Promise<void> => {
-  if (email) {
-    mailpitClient.clearMailbox(email);
-    return;
-  }
-  await mailpitClient.deleteAllMessages();
-};
-
 export const getSignupLink = async (email: string): Promise<string> =>
   mailpitClient.getSignupLink(email);
-
-export const waitForEmail = async (
-  email: string,
-  criteria: {
-    subject?: string;
-    subjectContains?: string;
-    timeout?: number;
-  } = {}
-) => mailpitClient.waitForEmail(email, criteria);
-
-export const getLastEmail = async (email: string) =>
-  mailpitClient.getLastEmail(email);

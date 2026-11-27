@@ -162,7 +162,7 @@ export async function logout(page: Page, _testInfo: TestInfo): Promise<void> {
     "User menu trigger not visible — expected an authenticated AppHeader."
   ).toBeVisible();
 
-  await openUserMenu(userMenu);
+  await openDropdownMenu(userMenu);
 
   const signOutItem = page.getByTestId("user-menu-signout");
   await expect(
@@ -267,16 +267,6 @@ export async function openDropdownMenu(trigger: Locator): Promise<void> {
       timeout: DROPDOWN_OPEN_TIMEOUT,
     });
   }
-}
-
-/**
- * Click the user-menu trigger and confirm it actually opened. Delegates to
- * the generic openDropdownMenu helper.
- */
-async function openUserMenu(
-  userMenu: ReturnType<typeof visibleUserMenu>
-): Promise<void> {
-  await openDropdownMenu(userMenu);
 }
 
 interface RetryNavClickOptions {
@@ -458,7 +448,7 @@ export async function openListSearch(
 /**
  * Locate every row in a `MachineView` list (`Machines list`).
  */
-export function machineViewRows(scope: Page | Locator): Locator {
+function machineViewRows(scope: Page | Locator): Locator {
   return scope
     .getByRole("list", { name: "Machines list" })
     .getByRole("listitem");
