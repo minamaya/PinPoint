@@ -592,6 +592,37 @@ describe("Machine Owner Promotion — Server Action Integration (PP-rb8)", () =>
       });
       expect(createdMachine).toBeDefined();
     });
+
+    it("should allow technician to create a machine assigned to another owner", async () => {
+      const { createMachineAction } = await import("~/app/(app)/m/actions");
+      const db = await getTestDb();
+
+      const techUser = await createUser("technician");
+      const adminOwner = await createUser("admin");
+
+      await mockAuth(techUser.id);
+
+      machineCounter += 1;
+      const uniqueInitials = `TO${String(machineCounter).padStart(2, "0")}`;
+      const formData = newMachineForm(
+        "Technician Test Machine",
+        uniqueInitials
+      );
+      formData.append("ownerId", adminOwner.id);
+
+      const result = await createMachineAction(undefined, formData);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.redirectTo).toBe(`/m/${uniqueInitials}`);
+      }
+
+      const createdMachine = await db.query.machines.findFirst({
+        where: eq(machines.initials, uniqueInitials),
+      });
+      expect(createdMachine?.name).toBe("Technician Test Machine");
+      expect(createdMachine?.ownerId).toBe(adminOwner.id);
+    });
   });
 
   describe("createMachineAction — ownerId null regression", () => {
@@ -762,6 +793,34 @@ describe("Machine Owner Promotion — Server Action Integration (PP-rb8)", () =>
         where: eq(machines.id, machine.id),
       });
       expect(updatedMachine?.name).toBe("Owner Updated Name");
+    });
+
+    it("should allow technician to update a machine they do not own", async () => {
+      const { updateMachineAction } = await import("~/app/(app)/m/actions");
+      const db = await getTestDb();
+
+      const adminOwner = await createUser("admin");
+      const techUser = await createUser("technician");
+      const machine = await createMachine(adminOwner.id);
+
+      await mockAuth(techUser.id);
+
+      const formData = new FormData();
+      formData.append("id", machine.id);
+      formData.append("name", "TAF Technician Edit");
+
+      const result = await updateMachineAction(undefined, formData);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.machineId).toBe(machine.id);
+      }
+
+      const updatedMachine = await db.query.machines.findFirst({
+        where: eq(machines.id, machine.id),
+      });
+      expect(updatedMachine?.name).toBe("TAF Technician Edit");
+      expect(updatedMachine?.ownerId).toBe(adminOwner.id);
     });
 
     it("should return UNAUTHORIZED when guest-owner tries to edit (regression: drift fix)", async () => {

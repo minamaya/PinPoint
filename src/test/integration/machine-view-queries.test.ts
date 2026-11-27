@@ -490,4 +490,48 @@ describe("machine view database pipeline", () => {
       { id: ownerOneId, name: "Owner One" },
     ]);
   });
+
+  it("matches Playability Segment counts to On the Floor filtered rows (machine-widgets §4.3)", async () => {
+    const db = await getTestDb();
+    await db
+      .insert(issues)
+      .values([
+        createTestIssue("AAA", { issueNumber: 1, severity: "unplayable" }),
+        createTestIssue("BBB", { issueNumber: 1, severity: "major" }),
+      ]);
+
+    const tx = asDbOrTx(db);
+    const baseline = await loadMachineViewFromDatabase(tx, {
+      scope: { kind: "all" },
+      preset: "machines",
+      viewerId: null,
+      searchParams: new URLSearchParams({ presence: "all" }),
+    });
+    const byStatus = baseline.summary.playability.byStatus;
+    expect(byStatus).toEqual({
+      operational: 1,
+      needs_service: 1,
+      unplayable: 1,
+    });
+
+    for (const status of [
+      "unplayable",
+      "needs_service",
+      "operational",
+    ] as const) {
+      const filtered = await loadMachineViewFromDatabase(tx, {
+        scope: { kind: "all" },
+        preset: "machines",
+        viewerId: null,
+        searchParams: new URLSearchParams({
+          presence: "on_the_floor",
+          status,
+        }),
+      });
+      expect(filtered.totalCount).toBe(byStatus[status]);
+      expect(
+        filtered.rows.every((row) => row.health.playability === status)
+      ).toBe(true);
+    }
+  });
 });

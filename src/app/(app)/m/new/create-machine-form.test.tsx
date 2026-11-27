@@ -211,6 +211,70 @@ describe("CreateMachineForm — iScored picker integration", () => {
       expect(initialsInput).toHaveValue("");
     });
   });
+
+  it("submits selected ownerId and navigates to result.value.redirectTo on success", async () => {
+    const realLocation = window.location;
+    const assignMock = vi.fn();
+    vi.stubGlobal(
+      "location",
+      new Proxy(
+        { assign: assignMock },
+        {
+          get(_target, prop) {
+            if (prop === "assign") return assignMock;
+            const value: unknown = Reflect.get(
+              realLocation,
+              prop,
+              realLocation
+            );
+            return typeof value === "function"
+              ? value.bind(realLocation)
+              : value;
+          },
+          set(_target, prop, value) {
+            return Reflect.set(realLocation, prop, value, realLocation);
+          },
+          has(_target, prop) {
+            return prop in realLocation;
+          },
+        }
+      )
+    );
+
+    try {
+      const user = userEvent.setup();
+      const adminOwner: OwnerSelectUser = {
+        id: "admin-1",
+        name: "Admin User",
+        lastName: "User",
+        machineCount: 1,
+        status: "active",
+        role: "admin",
+      };
+      render(<CreateMachineForm allUsers={[adminOwner]} canSelectOwner />);
+
+      await user.type(
+        screen.getByLabelText(/Machine Name/),
+        "Medieval Madness"
+      );
+      await user.type(screen.getByLabelText(/Initials/), "MM");
+      await user.selectOptions(
+        screen.getByLabelText("Machine Owner"),
+        adminOwner.id
+      );
+      await user.click(screen.getByRole("button", { name: /Create Machine/i }));
+
+      await waitFor(() => {
+        expect(createMachineAction).toHaveBeenCalled();
+        expect(assignMock).toHaveBeenCalledWith("/m/MM");
+      });
+
+      const fd = vi.mocked(createMachineAction).mock.calls[0]?.[1];
+      expect(fd?.get("ownerId")).toBe(adminOwner.id);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("CreateMachineForm — opened from a lineup entry (pinballmap 4.11)", () => {
