@@ -1,5 +1,25 @@
 {/* This file is auto-updated by the weekly changelog workflow. Newest entries at top. */}
 
+## November 23, 2026
+
+### New Features
+
+- **One Set of Page Buttons Everywhere** — Every page now follows one standard for its buttons: the page's own create action (Add Machine, Add tag, New collection, Invite User) is the only filled button, anything else with a label is outlined, and the rest of a page's actions — Edit, Rename, Move, Merge, Export, Print, and Delete in red — live together in a ⋯ More menu. On desktop More opens a dropdown; on a phone it opens a sheet with big tap targets. When a page runs out of room, button labels drop first and then whole buttons fold into More one at a time, and a menu never holds just one thing
+- **Collection and Tag Page Header** — A collection's or tag's page header now carries its breadcrumb, title, and buttons as one block at every width, and a long collection description ends its last visible line with "… Show more" instead of hiding the toggle underneath. Tabbing into a link inside a clamped description opens the whole description, so keyboard focus never lands on text you cannot see
+- **Breadcrumbs in One Style** — Tag, tag type, collection, settings tag, and help pages now share one breadcrumb: its own line directly above the page title at every width, each crumb a green link behind its section's icon. It always stays on one line — the last crumb shortens with an ellipsis rather than wrapping — and the page you are on is never a crumb, because the title already names it
+- **Phone Buttons Scroll With the Page** — On a phone, Cancel and Save on the machine add and edit forms, and the totals and Print run links on Print apron cards and Print settings sheets, now sit at the end of the page and scroll with it instead of floating in a bar above the tab bar. Nothing is pinned over the content any more
+- **Share a Tag From Your Phone** — Share on a tag page now opens your phone's own share sheet, so a tag's link can go straight to Messages, Discord, or anywhere else you share things. On desktop it still copies the link and confirms with "Link copied"
+- **Display, and Exports That Show Their Work** — The list's View options button is now called Display, a sliders icon button at every width; it holds page size, and takes in Sort when the list header gets crowded. The filter overflow now reads More filters, and an export that is still building shows a spinner and "Exporting…" on the button you pressed, so a big download no longer looks like nothing happened
+- **Ask PinBrain From a Machine** — The page you land on after scanning a machine's QR code now puts its buttons in the page itself instead of pinning them above the tab bar: Post a score and Report a problem on the first row, Game details and Ask PinBrain on the second. Ask PinBrain opens the Collective's PinBrain notebook in a new tab, and the Info tab gets the same button. When a machine has no iScored link, Report a problem takes the whole row
+- **Edit a Machine's Description From the Apron Card Tab** — When an apron card prints the machine's main description, you can now edit that description right on the Apron card tab, and one Save writes the cards and the description together — if the save is refused, neither change is kept
+
+### Bug Fixes
+
+- A dialog or sheet you had typed into could be thrown away by a stray click outside it. Dialogs and sheets that hold input now ignore outside clicks, and ask before discarding unsaved changes when you close them
+- Checking the Discord bot token could report that the bot "logs in as @undefined" when Discord answered without a name — it now simply says the token is valid. A reply that did not come from Discord at all is reported as a temporary problem instead of a success
+
+---
+
 ## November 16, 2026
 
 ### New Features
